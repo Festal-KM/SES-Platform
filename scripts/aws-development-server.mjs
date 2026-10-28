@@ -9,7 +9,7 @@ for (const key of ['POSTGRES_PASSWORD', 'APP_MIGRATOR_PASSWORD', 'MIGRATION_DATA
   if (process.env[key]) throw new Error(`アプリに${key}を設定できません`);
 }
 const args = role === 'web'
-  ? [resolve(root, 'apps/web/node_modules/next/dist/bin/next'), 'dev', '--hostname', '127.0.0.1', '--port', '3000']
+  ? [resolve(root, 'apps/web/node_modules/next/dist/bin/next'), 'start', '--hostname', '0.0.0.0', '--port', '3000']
   : [resolve(root, 'apps/worker/dist/main.js')];
 const child = spawn(process.execPath, args, { cwd: resolve(root, 'apps', role === 'web' ? 'web' : 'worker'), stdio: 'inherit' });
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill(signal));

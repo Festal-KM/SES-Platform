@@ -2,6 +2,8 @@
 
 ## 2026-10-28 開発アプリの配備と日常操作
 
+**同日訂正: 画面は `https://dev-es.bizorch.com/signin` を直接開く。以下の3000番・9000番転送の記録は旧手順で、利用者の接続には使わない。** ビルドと起動はAWSで行い、公開HTTPSのALBからだけアプリへ接続する。Nextの開発サーバーは公開しない。添付も開発用AWS S3へ直接接続する。最新の日常操作は `AWS-AGENT-RUNBOOK.md` を参照。
+
 ドメインはCloudflare管理の `bizorch.com` に決定した。PCではソース編集・SSM転送・ブラウザ確認だけを行い、アプリ・依存のインストール・ビルド・DB・Redis・workerはAWS開発VMで動かす。以下は開発専用であり、デモ・本番の配備手順ではない。
 
 初めて使う端末にはGit、Node.js 24、AWS CLI v2、AWS Session Manager pluginが必要。各自のAWS認証を設定し、`aws sts get-caller-identity --query Account --output text` が `117425831827` と一致することを確認する。必要なら各自の `AWS_PROFILE` を指定する。他人のアクセスキーは共有しない。Windowsのplugin導入は [AWS公式手順](https://docs.aws.amazon.com/systems-manager/latest/userguide/install-plugin-windows.html) を参照。管理者権限が必要なインストーラーをAIが自動で権限昇格して実行しない。

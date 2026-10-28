@@ -24,6 +24,7 @@ try {
   run('corepack', ['enable']);
   run('pnpm', ['install', '--frozen-lockfile', '--store-dir', '/app/.pnpm-store'], process.env, '依存のインストール');
   run('pnpm', ['-r', '--workspace-concurrency=1', '--filter', '@ses/worker...', '--filter', '@ses/ui...', 'run', 'build'], process.env, '共有パッケージとワーカーのビルド');
+  run('pnpm', ['--filter', '@ses/web', 'run', 'build'], { ...process.env, NODE_ENV: 'production', NODE_OPTIONS: '--max-old-space-size=4096' }, 'AWS上の画面確認用ビルド');
   const { loadAppEnv } = await import('../packages/config/dist/index.js');
   const runtime = loadAppEnv(Object.fromEntries(Object.entries(env).filter(([, value]) => value !== '')));
   const values = Object.entries(runtime).filter(([, value]) => value !== undefined).map(([key, value]) => {

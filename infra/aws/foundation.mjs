@@ -48,6 +48,7 @@ export function foundationTemplate(environment) {
       Properties: {
         BucketName: sub(`${prefix}-files-` + '${AWS::AccountId}-${AWS::Region}'),
         VersioningConfiguration: { Status: 'Enabled' },
+        ...(environment === 'development' ? { CorsConfiguration: { CorsRules: [{ AllowedOrigins: ['https://dev-es.bizorch.com'], AllowedMethods: ['GET', 'PUT', 'HEAD'], AllowedHeaders: ['*'], ExposedHeaders: ['ETag', 'x-amz-version-id'], MaxAge: 3600 }] } } : {}),
         OwnershipControls: { Rules: [{ ObjectOwnership: 'BucketOwnerEnforced' }] },
         PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true },
         BucketEncryption: { ServerSideEncryptionConfiguration: [{ BucketKeyEnabled: true, ServerSideEncryptionByDefault: { SSEAlgorithm: 'aws:kms', KMSMasterKeyID: attr('StorageKey', 'Arn') } }] },

@@ -19,7 +19,7 @@ for name in previous.keys() - current.keys():
         raise ValueError('Invalid source cleanup path')
     if path.is_file(): path.unlink()
 changed = [name for name, digest in current.items() if previous.get(name) != digest]
-print('yes' if not previous or any(name.startswith(('packages/', 'apps/worker/', 'prompts/')) or name in ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'scripts/aws-development-initialize.mjs'] for name in changed) else 'no')
+print('yes' if not previous or any(name.startswith(('packages/', 'apps/', 'prompts/')) or name in ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'scripts/aws-development-initialize.mjs'] for name in changed) else 'no')
 PY
 )
 if [ ! -x /usr/local/lib/docker/cli-plugins/docker-compose ]; then
@@ -28,6 +28,7 @@ if [ ! -x /usr/local/lib/docker/cli-plugins/docker-compose ]; then
   printf '%s  %s\n' 47737f4236e6d3ccea7291995203f8f018058783b4c3a9469119811a0b5db8c0 /usr/local/lib/docker/cli-plugins/docker-compose | sha256sum -c -
   chmod 755 /usr/local/lib/docker/cli-plugins/docker-compose
 fi
+
 if [ ! -f .env ]; then
   python3 - <<'PY'
 import base64, pathlib, secrets
@@ -48,10 +49,21 @@ for key, role, password in [('DATABASE_URL','app_tenant','APP_TENANT_PASSWORD'),
 pathlib.Path('.env').write_text(''.join('%s=%s\n' % item for item in values.items()))
 PY
 fi
+# 公開HTTPSの開発画面に揃える。既存の暗号鍵とDBパスワードは保持する。
+python3 - <<'PY'
+import pathlib
+path = pathlib.Path('.env')
+values = dict(line.split('=', 1) for line in path.read_text().splitlines() if line and not line.startswith('#') and '=' in line)
+values.update(APP_URL='https://dev-es.bizorch.com', NODE_ENV='production', S3_FORCE_PATH_STYLE='false')
+for key in ['S3_ENDPOINT', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY']:
+    values.pop(key, None)
+path.write_text(''.join('%s=%s\n' % item for item in values.items()))
+PY
 touch .runtime.env
 chmod 600 .env .runtime.env
 compose=(docker compose -f docker-compose.yml -f infra/aws/development.compose.yml)
-"${compose[@]}" up -d postgres redis s3mock s3mock-init mailhog clamav
+"${compose[@]}" up -d postgres redis mailhog clamav
+"${compose[@]}" stop s3mock
 for attempt in $(seq 1 60); do
   if docker exec ses-postgres pg_isready -U ses >/dev/null 2>&1; then break; fi
   sleep 2
@@ -64,4 +76,4 @@ fi
 mkdir -p apps/web/.next
 chown -R 1000:1000 apps/web/.next
 "${compose[@]}" up -d web worker
-echo 'AWS開発アプリを起動しました。SSMで3000番と9000番を転送して確認してください。'
+echo 'AWS開発アプリを起動しました。https://dev-es.bizorch.com/signin で確認してください。'
