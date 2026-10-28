@@ -84,7 +84,7 @@ export type AuthShellProps = {
 
 export function AuthShell({ wordmark, widthClass = 'prose', children }: AuthShellProps) {
   return (
-    <main className="flex min-h-dvh justify-center bg-surface px-4 py-12">
+    <main className="flex min-h-dvh justify-center px-4 py-12">
       <PageBody widthClass={widthClass} className={cn(AUTH_CARD_WIDTH_CLASSES, 'px-0')}>
         <div className="mb-8">{typeof wordmark === 'string' ? <BrandLogo src="/brand-logo.png" alt={wordmark} context="authentication" /> : wordmark}</div>
         {children}

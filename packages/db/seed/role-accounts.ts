@@ -18,7 +18,8 @@ async function main(): Promise<void> {
       }
       const tenant = DEMO_SEED_IDS.tenants[account.tenantNumber - 1];
       if (!tenant) throw new Error('合成テナントが不正です');
-      const partner = account.role.startsWith('PARTNER_') ? tenant.partners[account.accountNumber - 1]?.partnerCompanyId : null;
+      // ブラボーは取引先1社のため、2名とも同じ取引先に所属させる。
+      const partner = account.role.startsWith('PARTNER_') ? (tenant.partners[account.accountNumber - 1] ?? tenant.partners[0])?.partnerCompanyId : null;
       if (account.role.startsWith('PARTNER_') && !partner) throw new Error('合成取引先が不正です');
       await db.$transaction(async (tx) => {
         await tx.user.upsert({ where: { id: account.id }, update: {}, create: { id: account.id, tenantId: tenant.tenantId,

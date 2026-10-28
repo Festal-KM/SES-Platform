@@ -59,8 +59,9 @@ export function NonproductionAccountPicker({ options, realm, onAuthenticated, on
     </Field>
     <Field label={messages.account} className="mb-6">
       <Select value={current?.id ?? ''} onChange={(event) => { if (!busy) { setSelected(event.target.value); setFailed(false); } }} data-testid={`role-account-account-${realm}`}>
-        {candidates.map((account) => <option key={account.id} value={account.id}>{realm === 'tenant' ? `${messages.company}${account.tenantNumber} · ${account.email}` : account.email}</option>)}
+        {candidates.map((account) => <option key={account.id} value={account.id}>{realm === 'tenant' ? `${messages.company}${account.tenantNumber} · ${messages.account}${account.accountNumber}` : `${messages.account}${account.accountNumber}`}</option>)}
       </Select>
+      <span className="mt-2 break-all text-xs text-fg-muted">{current?.email}</span>
     </Field>
     {failed ? <FieldError className="mb-4" data-testid={`role-account-error-${realm}`}>{messages.error}</FieldError> : null}
     <Button type="submit" className="w-full" aria-busy={busy} data-testid={`role-account-submit-${realm}`}>{busy ? messages.submitting : messages.submit}</Button>

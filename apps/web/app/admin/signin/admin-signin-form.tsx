@@ -243,8 +243,11 @@ export function AdminSignInForm({
     );
   }
 
-  if (roleAccounts && entryMethod === 'account') return <NonproductionAccountPicker options={roleAccounts} realm="platform" onManual={() => setEntryMethod('email')}
-    onAuthenticated={async () => { await beginTwoFactor(); }} />;
+  if (roleAccounts && entryMethod === 'account') return <>
+    <p className="mb-4 text-body text-fg-muted">{messages.twoFactorRequiredNotice}</p>
+    <NonproductionAccountPicker options={roleAccounts} realm="platform" onManual={() => setEntryMethod('email')}
+      onAuthenticated={async () => { setError(null); await beginTwoFactor(); }} />
+  </>;
 
   return (
     <form method="post" onSubmit={onSubmitCredentials} noValidate data-testid="admin-signin-form">
