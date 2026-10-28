@@ -1153,6 +1153,8 @@ describe('🔴 F-013 AC-2: 一覧にも商流情報が現れない', () => {
       'audience',
       'headcount',
       'id',
+      // 卸単価の列はホストの一覧だけに含む。取引先の許可リストには足さない。
+      'internalUnitPrice',
       'moreMustRequirementCount',
       'mustRequirements',
       'name',
