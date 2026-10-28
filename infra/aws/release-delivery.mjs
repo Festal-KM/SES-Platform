@@ -26,7 +26,7 @@ export function releaseDeliveryTemplate() {
     } else {
       statements.push(
         { Effect: 'Allow', Action: 'ecr:GetAuthorizationToken', Resource: '*' },
-        { Effect: 'Allow', Action: ['ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer', 'ecr:BatchCheckLayerAvailability'], Resource: ['demo', 'production'].map(env => arn('ecr', `repository/ses-platform-${env}`)) },
+        { Effect: 'Allow', Action: ['ecr:DescribeImages', 'ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer', 'ecr:BatchCheckLayerAvailability'], Resource: ['demo', 'production'].map(env => arn('ecr', `repository/ses-platform-${env}`)) },
         { Effect: 'Allow', Action: ['ecr:InitiateLayerUpload', 'ecr:UploadLayerPart', 'ecr:CompleteLayerUpload', 'ecr:PutImage'], Resource: arn('ecr', `repository/${prefix}`) },
         { Effect: 'Allow', Action: 's3:GetObject', Resource: `arn:aws:s3:::ses-platform-demo-files-${ACCOUNT_ID}-${REGION}/releases/*` },
         { Effect: 'Allow', Action: 'kms:Decrypt', Resource: { Ref: 'DemoKeyArn' }, Condition: { StringEquals: { 'kms:ViaService': `s3.${REGION}.amazonaws.com` } } },

@@ -1,10 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { releaseDeliveryTemplate } from './release-delivery.mjs';
+import { foundationTemplate } from './foundation.mjs';
 import { taskDefinition } from './tasks.mjs';
 import { releaseImage, releaseRecord } from '../../scripts/aws/release.mjs';
 const digest = `sha256:${'a'.repeat(64)}`;
 const descriptor = { environment: 'demo', image: releaseImage('demo', digest), runtimeSecretArn: 'arn:aws:secretsmanager:ap-northeast-1:117425831827:secret:/ses-platform-demo/runtime-abc', runtimeKeys: ['APP_ENV', 'DATABASE_URL'] };
+test('アプリの実行ロールから配備証跡とビルド元へアクセスできない', () => {
+  for (const environment of ['demo', 'production']) {
+    const statements = foundationTemplate(environment).Resources.TaskRole.Properties.Policies[0].PolicyDocument.Statement;
+    const deny = statements.find(item => item.Effect === 'Deny' && item.Action === 's3:*' && item.Resource);
+    assert.deepEqual(deny.Resource, [{ 'Fn::Sub': '${Files.Arn}/releases/*' }, { 'Fn::Sub': '${Files.Arn}/bootstrap/*' }]);
+  }
+});
 test('デモと本番の配備ロールは別environmentを完全一致で照合する', () => {
   for (const [name, environment] of [['DemoRole', 'demo'], ['ProductionRole', 'production']]) {
     const role = releaseDeliveryTemplate().Resources[name].Properties;

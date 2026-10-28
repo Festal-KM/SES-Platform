@@ -10,6 +10,8 @@ try {
   const value = aws(['s3', 'cp', `s3://ses-platform-demo-files-${ACCOUNT_ID}-${REGION}/releases/${commit}.json`, '-', '--only-show-errors'], { json: false });
   const record = releaseRecord(JSON.parse(value));
   if (record.commit !== commit || !record.verifiedAt || Number.isNaN(Date.parse(record.verifiedAt))) throw new Error('デモで確認済みの成果物ではありません');
+  const demo = aws(['ecr', 'describe-images', '--repository-name', 'ses-platform-demo', '--image-ids', `imageTag=${commit}`]).imageDetails[0];
+  if (demo.imageDigest !== record.digest) throw new Error('デモのコミットタグと確認記録のdigestが一致しません');
   const registry = `${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com`;
   let exists = false;
   try {
