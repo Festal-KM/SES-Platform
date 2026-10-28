@@ -1,5 +1,7 @@
 # 別の端末・AIからAWS開発を引き継ぐ手順
 
+mainから開発への自動反映・停止中の扱い・手動再実行・復旧は [`CI-CD-AWS.md`](./CI-CD-AWS.md) を読む。Actionsの配備中に手動転送で共有VMを上書きしない。
+
 更新日: 2026-10-28。最初に `CLAUDE.md`、`HANDOFF.md`、本書、`docs/DEPLOY-AWS.md` を読む。画面を触る場合は `UI_GUIDELINES.md` も読む。
 
 ## 方針と確認済みの状態
