@@ -20,7 +20,13 @@ try {
   });
   const env = { ...process.env };
   const plugin = env.LOCALAPPDATA && join(env.LOCALAPPDATA, 'Amazon', 'SessionManagerPlugin', 'bin');
-  if (plugin && existsSync(join(plugin, 'session-manager-plugin.exe'))) env.PATH = `${plugin}${delimiter}${env.PATH ?? ''}`;
+  if (plugin && existsSync(join(plugin, 'session-manager-plugin.exe'))) {
+    // WindowsのPath/PATH重複でAWS CLIの検索先を失わないよう1つに揃える。
+    const pathKeys = Object.keys(env).filter((key) => key.toLowerCase() === 'path');
+    const currentPath = pathKeys.map((key) => env[key]).find(Boolean) ?? '';
+    for (const key of pathKeys) delete env[key];
+    env.PATH = `${plugin}${delimiter}${currentPath}`;
+  }
   console.log(`AWS開発環境の${port}番へ接続します。このターミナルを開いたまま利用してください。`);
   const child = spawn('aws', ['ssm', 'start-session', '--region', REGION, '--target', InstanceId,
     '--document-name', 'AWS-StartPortForwardingSession', '--parameters', JSON.stringify({ portNumber: [port], localPortNumber: [port] })],
