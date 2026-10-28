@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { cicdTemplate, DEVELOPMENT_DOCUMENT, DEVELOPMENT_INSTANCE, OIDC_SUBJECT } from './cicd.mjs';
+test('配備手順は実行開始時のコミットに固定し、待機中に進んだmainを実行しない', () => {
+  for (const workflow of ['aws-deploy-development.yml', 'aws-release.yml']) {
+    const source = readFileSync(new URL(`../../.github/workflows/${workflow}`, import.meta.url), 'utf8');
+    assert.match(source, /ref:\s*\$\{\{\s*github\.sha\s*\}\}\s*\n\s*path:\s*delivery/);
+    assert.match(source, /ref:\s*\$\{\{\s*needs\.verify\.outputs\.commit\s*\}\}\s*\n\s*path:\s*source/);
+  }
+});
 test('一時認証は不変リポジトリIDと開発environmentに限定する', () => {
   const role = cicdTemplate().Resources.DevelopmentRole.Properties;
   const trust = role.AssumeRolePolicyDocument.Statement[0];
