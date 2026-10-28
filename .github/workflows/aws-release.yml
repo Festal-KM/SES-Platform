@@ -1,0 +1,96 @@
+name: AWSデモ・本番へ反映
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: '反映先。本番はデモ確認済み成果物の承認後に反映'
+        required: true
+        type: choice
+        options: [demo, production]
+      commit:
+        description: 'mainに統合済みでCIが成功した完全な40桁SHA'
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: aws-release-${{ inputs.environment }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.verify.outputs.commit }}
+    steps:
+      - name: mainと全CIの成功を照合
+        id: verify
+        uses: actions/github-script@v7
+        env:
+          REQUESTED_COMMIT: ${{ inputs.commit }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const sha = process.env.REQUESTED_COMMIT;
+            if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error('完全なSHAを指定してください');
+            const compare = await github.rest.repos.compareCommits({ owner, repo, base: sha, head: 'main' });
+            if (!['ahead', 'identical'].includes(compare.data.status)) throw new Error('mainに統合されていません');
+            const runs = await github.rest.actions.listWorkflowRuns({ owner, repo, workflow_id: 'ci.yml', head_sha: sha, event: 'push', branch: 'main', per_page: 100 });
+            if (!runs.data.workflow_runs.some(run => run.conclusion === 'success' && run.head_repository.full_name === context.payload.repository.full_name)) throw new Error('mainの全CIが成功していません');
+            core.setOutput('commit', sha);
+  deliver:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ inputs.environment == 'demo' && 'https://demo-es.bizorch.com/signin' || 'https://es.bizorch.com/signin' }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: delivery
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: 選択環境だけの一時認証
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
+        with:
+          role-to-assume: arn:aws:iam::117425831827:role/ses-platform-${{ inputs.environment }}-github
+          aws-region: ap-northeast-1
+          allowed-account-ids: '117425831827'
+          role-duration-seconds: 7200
+      - name: AWSで成果物を作成
+        if: inputs.environment == 'demo'
+        id: build
+        env:
+          DEPLOY_SOURCE_DIRECTORY: ${{ github.workspace }}/source
+          DEPLOY_COMMIT: ${{ needs.verify.outputs.commit }}
+        run: node delivery/scripts/aws-build-release.mjs "$DEPLOY_COMMIT"
+      - name: 成果物のコピー用ツールを準備
+        if: inputs.environment == 'production'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq skopeo
+      - name: デモ確認済みの同一成果物を昇格
+        if: inputs.environment == 'production'
+        id: promote
+        env:
+          DEPLOY_COMMIT: ${{ needs.verify.outputs.commit }}
+        run: node delivery/scripts/aws-promote-release.mjs "$DEPLOY_COMMIT"
+      - name: 設定検査・migration・サービス反映
+        env:
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+          DEPLOY_COMMIT: ${{ needs.verify.outputs.commit }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest || steps.promote.outputs.digest }}
+          BUILD_ID: ${{ steps.build.outputs.build_id || steps.promote.outputs.build_id }}
+        run: node delivery/scripts/aws-deploy-release.mjs "$DEPLOY_ENVIRONMENT" "$DEPLOY_COMMIT" "$IMAGE_DIGEST" "$BUILD_ID"

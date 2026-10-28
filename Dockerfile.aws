@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+# AWS用のWeb・worker・migration共通成果物。秘密値は起動時だけ渡す。
+FROM node:24-bookworm-slim AS build
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+ENV PNPM_HOME=/pnpm
+ENV PATH=/pnpm:$PATH
+RUN corepack enable
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/web/package.json ./apps/web/
+COPY apps/worker/package.json ./apps/worker/
+COPY packages/ai/package.json ./packages/ai/
+COPY packages/config/package.json ./packages/config/
+COPY packages/connectors/package.json ./packages/connectors/
+COPY packages/db/package.json ./packages/db/
+COPY packages/domain/package.json ./packages/domain/
+COPY packages/i18n/package.json ./packages/i18n/
+COPY packages/ui/package.json ./packages/ui/
+COPY prompts/package.json ./prompts/
+RUN --mount=type=cache,target=/pnpm/store pnpm install --frozen-lockfile --prod=false --store-dir=/pnpm/store
+COPY . .
+RUN pnpm -r --workspace-concurrency=1 run build
+
+FROM node:24-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+ENV PNPM_HOME=/pnpm
+ENV PATH=/pnpm:$PATH
+ENV NODE_ENV=production
+RUN corepack enable
+WORKDIR /app
+COPY --from=build --chown=node:node /app /app
+USER node
+ENTRYPOINT ["node", "scripts/aws-start.mjs"]
+CMD ["web"]
