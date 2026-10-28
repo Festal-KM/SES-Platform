@@ -1,5 +1,11 @@
 # HANDOFF.md — 作業の引き継ぎ
 
+## 2026-10-28 AWS開発アプリの実機確認
+
+PCでアプリを起動せず、AWS開発VMでNext dev・worker・PostgreSQL・Redis・S3互換・ClamAVを起動。ソース転送でcredentials.tsを除外していた不具合を修正。SSM経由で `/signin` 200、テスト営業の認証200とセッション発行、認証後の `/projects` と `/api/projects` 200を確認。日常の起動・同期・接続・停止は `docs/DEPLOY-AWS.md` 冒頭。別端末では各自のAWS認証・Session Manager pluginが必要。共有VMのソースを複数人で同時に上書きしない。
+
+AWSデモ・本番とGit CI/CDは引き続き構築中。RailwayはAWS完成後に停止してよいと宮田から承認済みだが、実機確認・旧データの引き継ぎ要否・バックアップ・配備復旧・利用者の新URL確認が済むまでは維持する。DB等の削除はしない。OpenAIキーは将来用の保管のみ。
+
 🔴 **作業を始める前に、このファイルを最初に読む。** `CLAUDE.md` が一次資料（仕様・ハードルール）で、このファイルは**いま何が未完で、何に気をつけるか**を記録する。
 
 > **最終更新**: 2026-10-03 / HEAD = `aa71a50` / ブランチ = `main` / 🔴 **CI 緑**（run [`36976938729`](https://github.com/Festal-KM/SES-Platform/actions/runs/36976938729)。`T-22-05` 以降で**全スイートが実際に実行された最初の run**）
