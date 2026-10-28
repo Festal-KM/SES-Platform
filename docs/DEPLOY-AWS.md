@@ -1,5 +1,48 @@
 # AWS 開発・営業デモ・本番
 
+## 2026-10-28 開発アプリの配備と日常操作
+
+ドメインはCloudflare管理の `bizorch.com` に決定した。PCではソース編集・SSM転送・ブラウザ確認だけを行い、アプリ・依存のインストール・ビルド・DB・Redis・workerはAWS開発VMで動かす。以下は開発専用であり、デモ・本番の配備手順ではない。
+
+初めて使う端末にはGit、Node.js 24、AWS CLI v2、AWS Session Manager pluginが必要。各自のAWS認証を設定し、`aws sts get-caller-identity --query Account --output text` が `117425831827` と一致することを確認する。必要なら各自の `AWS_PROFILE` を指定する。他人のアクセスキーは共有しない。Windowsのplugin導入は [AWS公式手順](https://docs.aws.amazon.com/systems-manager/latest/userguide/install-plugin-windows.html) を参照。管理者権限が必要なインストーラーをAIが自動で権限昇格して実行しない。
+
+リポジトリをcloneし、CLAUDE・HANDOFF・AGENTSを読んで、最新mainから作業ブランチを切る。既存VMを共有するため、別の人が使用中なら同期前に調整する。別ブランチのソースを同時に反映しない。
+
+```powershell
+# 日々の起動・確認。initは初回の基盤構築用なので通常は不要。
+node scripts/aws-development.mjs start
+node scripts/aws-development.mjs status
+# 編集中のソースを転送。PCで依存をインストールしない。
+node scripts/aws-sync-development.mjs
+```
+
+同期はGit管理対象と未追跡のソースを転送するため、未コミット変更も反映される。秘密値・node_modules・dist・.nextは転送しない。ローカルで削除したソースだけを前回のmanifestと照合してサーバーから除去する。DB・環境設定・依存は削除しない。共有パッケージやworkerの変更はAWSで再ビルドする。データのseedは初回のみでresetしない。
+
+出力のcommandIdでSSM実行を追う。Successになるまで完了扱いしない。出力には秘密値が混じる可能性があるため、全文をPRやチャットへ貼らない。
+
+```powershell
+aws ssm get-command-invocation --region ap-northeast-1 --command-id <commandId> --instance-id <statusに表示されたinstanceId> --query Status --output text
+# 初回準備や依存更新の再試行。既存データとキーは保持する。
+node scripts/aws-sync-development.mjs --initialize
+```
+
+別ターミナルで以下を実行し、開いたまま `http://localhost:3000/signin` を使う。添付ファイルの直接転送を使う場合はさらに別のターミナルで9000番も接続する。MailHogの確認は8025番。他のプロジェクトがポートを使っている場合は停止しない。
+
+```powershell
+node scripts/aws-connect-development.mjs
+node scripts/aws-connect-development.mjs 9000
+# 必要なときだけ
+node scripts/aws-connect-development.mjs 8025
+```
+
+テストアカウントは `docs/DEV-ACCOUNTS.md`。2026-10-28にSSM経由でログイン画面200、営業テストアカウントの認証200・セッション発行、認証後の `/projects` と `/api/projects` の200を確認。添付、全権限分離、全ジョブ、デモ・本番の切替を確認したものではない。
+
+終了後は接続ターミナルを閉じ、`node scripts/aws-development.mjs stop` を実行し、statusでstoppedを確認する。停止してもデータは保持する。起動から8時間後以降に自動停止し、start再実行で期限を延長できる。
+
+宮田からAWS完成後のRailway停止は承認済み。AWSデモのHTTPS・ログイン・主要操作・実送信禁止、旧デモのデータ引き継ぎ要否・バックアップ、Git配備・復旧と手順書、新URLの利用を確認してから対象サービスを停止する。DB・ボリューム・プロジェクトは削除しない。現在はCI/CDとデモ・本番配備が未完のためRailwayを維持する。
+
+以下は初期基盤の記録であり、上記の日常操作と区別する。
+
 2026-10-26 の宮田の指示で、AWS アカウント `117425831827`、東京リージョン `ap-northeast-1` に3環境を構築する。ドメインは未定。Railway は更新せず、AWS の動作確認が完了するまでは既存デモを維持する。
 
 ## 確定した要件と今回の範囲

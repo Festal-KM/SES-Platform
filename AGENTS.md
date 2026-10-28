@@ -8,6 +8,8 @@
 2. `HANDOFF.md` —— いま何が未完か・何が壊れているか・知らないと詰まる罠
 3. `UI_GUIDELINES.md` —— 画面を 1 つでも触るなら必読（外れた実装は CI が落とす）
 
+AWS開発・配備・別端末への引き継ぎでは、続けて [`docs/AWS-AGENT-RUNBOOK.md`](docs/AWS-AGENT-RUNBOOK.md) と [`docs/DEPLOY-AWS.md`](docs/DEPLOY-AWS.md) を読む。アプリは原則AWS開発環境で起動し、構築途中の項目を利用可能と扱わない。
+
 ## 1. 絶対に守ること（違反はレビューで必ず差し戻し）
 - **情報の境界**（`CLAUDE.md` §3.1）
   - テナント分離: DB アクセスは必ず `withTenant(ctx, ...)` 経由（PostgreSQL RLS + Prisma 拡張の二重防御）。`tenant_id` / `partner_company_id` は**認証コンテキスト（ctx）からだけ**取り、リクエストの body / query / path から受け取らない。`@ses/db` の生 `PrismaClient` をアプリから import しない。
