@@ -1,5 +1,9 @@
 # HANDOFF.md — 作業の引き継ぎ
 
+## 2026-10-28 開発画面はAWSのURLを直接開く
+
+宮田から再確認: PCは編集・ブラウザのみ。localhostのSSM転送を画面確認の標準にせず、`https://dev-es.bizorch.com/signin` を直接開く。AWS開発ALBと認証済み証明書を使い、VMへの3000番はALBからだけ許可する。AWSでビルドしたNext成果物を `APP_ENV=development` の送信モックで動かす。添付は自環境AWS S3へ直接接続する。公開URLの実機検証は作業中。旧localhost手順を利用者向けに案内しない。営業デモのデータは新規の架空データでよいと宮田から回答済み。
+
 ## 2026-10-28 AWS開発アプリの実機確認
 
 PCでアプリを起動せず、AWS開発VMでNext dev・worker・PostgreSQL・Redis・S3互換・ClamAVを起動。ソース転送でcredentials.tsを除外していた不具合を修正。SSM経由で `/signin` 200、テスト営業の認証200とセッション発行、認証後の `/projects` と `/api/projects` 200を確認。日常の起動・同期・接続・停止は `docs/DEPLOY-AWS.md` 冒頭。別端末では各自のAWS認証・Session Manager pluginが必要。共有VMのソースを複数人で同時に上書きしない。

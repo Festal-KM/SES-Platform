@@ -8,7 +8,7 @@
 
 アカウントは `117425831827`、リージョンは `ap-northeast-1`。development / demo / productionを分ける。ドメイン `bizorch.com` はCloudflare管理。
 
-開発VMへのソース同期、AWS上での依存導入・ビルド・migration、PCのSSM転送、ログインと案件画面・APIの200応答を確認済み。コミット済みソースだけで再構築し、既存データを保持したまま同じ操作を再確認した。全権限分離・添付の実操作・デモ本番の配備・Gitからの自動配備は未完であり、AWS移行全体の完了とは扱わない。
+開発画面は **https://dev-es.bizorch.com/signin** を直接開く。PCでアプリ・DB・Dockerを起動せず、画面確認にlocalhostやSSM転送を使わない。AWS上でビルドした成果物を開発データ・送信モックで動かす。公開URLへの切替後の実機確認結果はHANDOFFを参照し、デモ・本番移行や自動配備の完了とは混同しない。
 
 ## 新しいPCの準備
 
@@ -32,19 +32,19 @@ node scripts/aws-development.mjs status
 
 `status` が示すインスタンスIDを使う。現在は `i-0bc41c9e860ebe14c`。runningだけでは画面の準備完了を意味しない。初回構築用の `init` を日常操作で実行しない。
 
-シェル接続は `aws ssm start-session --region ap-northeast-1 --target <インスタンスID>`。ブラウザ用転送は別ターミナルで以下を実行し、接続中は開いたままにする。
+画面確認はブラウザで `https://dev-es.bizorch.com/signin` を開く。ログの調査やMailHog確認にだけSSMを使用する。シェル接続は以下。
 
 ```powershell
-aws ssm start-session --region ap-northeast-1 --target <インスタンスID> --document-name AWS-StartPortForwardingSession --parameters '{"portNumber":["3000"],"localPortNumber":["3000"]}'
+aws ssm start-session --region ap-northeast-1 --target <インスタンスID>
 ```
 
-接続先で `cd /workspaces/ses-platform`、`docker ps` を確認し、`curl -I --max-time 60 http://127.0.0.1:3000/signin` で応答を確認する。準備できたらPCで `http://localhost:3000/signin` を開く。初回コンパイル中か起動失敗かを切り分ける。SSHや3000番をインターネットに公開しない。
+接続先で `cd /workspaces/ses-platform`、`docker ps` を確認し、必要ならVM内部の `curl -I --max-time 60 http://127.0.0.1:3000/signin` で起動失敗を切り分ける。このループバックURLはAWS内部の診断用。利用者には公開HTTPS URLを案内する。SSHや3000番をインターネットに公開しない。
 
 PCの3000番を他プロジェクトが使っていたら止めない。別ポートを使う際はアプリorigin・認証設定も合わせる。ログの秘密値・接続URL・業務データをチャットやPRに貼らない。
 
 ソース更新は `node scripts/aws-sync-development.mjs`。出力されたSSMのcommandIdを使い、`docs/DEPLOY-AWS.md` 冒頭の手順でSuccessを確認する。初回や依存再構築には `--initialize` を付ける。PCでpnpm installは不要。未コミットの編集内容も転送される。共有VMを別担当者が使用中なら無断でソースを上書きしない。
 
-接続コマンドを簡単にする場合は `node scripts/aws-connect-development.mjs` を使える。添付用は別ターミナルで末尾に `9000`、MailHog用は `8025` を付ける。既存ポートを使用するプロセスは停止しない。
+添付はAWS S3への署名付きHTTPS接続を使う。3000番・9000番の転送は不要。MailHogの調査をする担当者だけ `node scripts/aws-connect-development.mjs 8025` を使える。既存ポートを使用する他プロジェクトは停止しない。
 
 終了後は `node scripts/aws-development.mjs stop`、続いて `status` でstoppedを確認する。停止してもディスクとデータは保持される。起動から8時間後以降の定期検査で自動停止する。長時間作業では `start` の再実行で期限を延長できる。停止中もディスク等の保存費は残る。
 
