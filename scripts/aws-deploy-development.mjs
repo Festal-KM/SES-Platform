@@ -60,7 +60,7 @@ try {
       if (['Failed', 'Cancelled', 'TimedOut', 'Cancelling'].includes(result.Status)) throw new Error(`AWSでの配備に失敗しました。SSMコマンド ${command} のログを管理者が確認してください（秘密値を公開しない）`);
     }
     if (!successful) throw new Error('配備結果の待機期限を超過しました。再送する前にSSMの実行状態を確認してください');
-    const response = await fetch('https://dev-es.bizorch.com/signin', { signal: AbortSignal.timeout(30_000), redirect: 'manual' });
+    const response = await fetch('https://dev-es.bizorch.com/signin', { signal: globalThis.AbortSignal.timeout(30_000), redirect: 'manual' });
     if (response.status !== 200) throw new Error('公開HTTPSのログイン画面が正常応答しません');
     report(`反映完了: ${commit} / https://dev-es.bizorch.com/signin （HTTP 200）`);
   }
