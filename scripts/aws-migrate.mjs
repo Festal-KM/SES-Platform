@@ -45,7 +45,11 @@ try {
       const unknown = execute('psql', ['-X', '-A', '-t', '-v', 'ON_ERROR_STOP=1'], owner,
         `SELECT count(*) FROM tenants WHERE id NOT IN (${ids.map(id => `'${id}'`).join(',')});\n`).trim();
       if (unknown !== '0') throw new Error('既知の合成テナント以外が存在するため、投入を中止しました');
-      const fixtureEnv = { ...process.env, SEED_DATABASE_URL: connection.toString(), APP_ENV: 'demo' };
+      // 合成seedは専用の特権接続を要求する。RDS管理者はこの一回限りのタスクにだけ渡す。
+      const seedConnection = new URL(connection);
+      seedConnection.username = process.env.DB_ADMIN_USERNAME;
+      seedConnection.password = process.env.DB_ADMIN_PASSWORD;
+      const fixtureEnv = { ...process.env, SEED_DATABASE_URL: seedConnection.toString(), APP_ENV: 'demo' };
       execute(process.execPath, ['packages/db/dist/seed/cli.js', '--preset=demo'], fixtureEnv);
       execute(process.execPath, ['packages/db/dist/seed/role-accounts.js'], fixtureEnv);
     } finally { force(true); }
