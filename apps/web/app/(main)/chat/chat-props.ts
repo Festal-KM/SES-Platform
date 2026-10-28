@@ -8,11 +8,14 @@ import { t } from '@ses/i18n';
 import type { ChatFormat } from '../../../lib/chat/markdown';
 import type { ChatProjectCardLabels } from '../../../lib/chat/project-card-text';
 import type { ChatReactionKind } from '../../../lib/chat/views';
+import type { ChatAttachmentLabels } from './chat-attachment';
 import { PREFECTURE_MESSAGE_KEYS } from '../../../lib/format/prefectures';
 import { PROJECT_REMOTE_MODE_MESSAGE_KEYS, PROJECT_STATUS_MESSAGE_KEYS } from '../../../lib/projects/labels';
 
 /** 会話（中央）の島が使う語。 */
 export type ChatConversationMessages = {
+  /** ✅ 2026-10-26（#164 の 2）: 開いている間に読めなくなった（部屋から外れた等）ときの案内。 */
+  readonly unavailable?: string;
   readonly heading: string;
   readonly listLabel: string;
   readonly empty: string;
@@ -25,7 +28,9 @@ export type ChatConversationMessages = {
   readonly backToList: string;
   readonly composeLabel: string;
   readonly composePlaceholder: string;
+  readonly composePlaceholderSuffix: string;
   readonly composeHint: string;
+  readonly composeMemberHint: string;
   /** ✅ 2026-10-22: 書式ボタン・書く／プレビュー・@（GitHub のコメント欄に寄せた）。 */
   readonly composeToolbar: string;
   /** ✅ 2026-10-22: スマホの会話の見出しの「…」（その他の操作）。 */
@@ -97,6 +102,25 @@ export type ChatConversationMessages = {
   readonly bookmark: string;
   readonly unbookmark: string;
   readonly bookmarked: string;
+  /** ✅ 2026-10-26: アナウンス（部屋の上部に固定する発言。1 部屋 1 件）。 */
+  readonly announcementLabel: string;
+  readonly announcementSet: string;
+  readonly announcementUnset: string;
+  readonly announcementClear: string;
+  readonly announcementJump: string;
+  readonly announcementSetBySuffix: string;
+  readonly announcementNotLoadedSuffix: string;
+  readonly announcementFailed: string;
+  /** ✅ 2026-10-27（F-038 ⑬ ⑭）: 引用して返信と、自分宛ての発言の印。省略時は描かない（古い呼び出し・テストの互換）。 */
+  readonly quote?: {
+    readonly action: string;
+    readonly chipPrefix: string;
+    readonly remove: string;
+    readonly label: string;
+    readonly jump: string;
+    readonly unavailable: string;
+  };
+  readonly mentionToYou?: string;
   /** ✅ 2026-10-23: 行頭の「/」のメニューと、案件を貼る小窓。 */
   readonly slash: { readonly label: string; readonly project: string; readonly template: string };
   readonly pasteProject: {
@@ -121,7 +145,50 @@ export type ChatConversationMessages = {
     readonly open: string;
     readonly quote: string;
   };
+  /** ✅ 2026-10-27（`docs/04` §S-031 改訂 44）: ファイル（社内だけの部屋から）。 */
+  readonly attachment: ChatAttachmentLabels;
 };
+
+/** ✅ 2026-10-27: ファイルの語（会話の島と右の欄の一覧が同じものを使う）。 */
+export function chatAttachmentLabels(): ChatAttachmentLabels {
+  return {
+    add: t('chat.attachment.add'),
+    // ✅ 2026-10-27（#182）: どの部屋でも「スキルシートは提案から」を添えて出す。
+    note: t('chat.attachment.noteWithSkillSheet'),
+    selected: t('chat.attachment.selected'),
+    remove: t('chat.attachment.remove'),
+    scanning: t('chat.attachment.scanning'),
+    blocked: t('chat.attachment.blocked'),
+    unscannable: t('chat.attachment.unscannable'),
+    open: t('chat.attachment.open'),
+    openNewTab: t('chat.attachment.openNewTab'),
+    openFailed: t('chat.attachment.openFailed'),
+    unsupported: t('chat.attachment.unsupported'),
+    uploadFailed: t('chat.attachment.uploadFailed'),
+    imageAlt: t('chat.attachment.imageAlt'),
+    pdfTitle: t('chat.attachment.pdfTitle'),
+    filesHeading: t('chat.attachment.files.heading'),
+    filesEmpty: t('chat.attachment.files.empty'),
+    filesLoading: t('chat.attachment.files.loading'),
+    filesFailed: t('chat.attachment.files.failed'),
+    filesMore: t('chat.attachment.files.more'),
+    types: {
+      image: t('chat.attachment.type.image'),
+      pdf: t('chat.attachment.type.pdf'),
+      docx: t('chat.attachment.type.docx'),
+      xlsx: t('chat.attachment.type.xlsx'),
+      csv: t('chat.attachment.type.csv'),
+      txt: t('chat.attachment.type.txt'),
+      other: t('chat.attachment.type.other'),
+    },
+    units: {
+      byte: t('chat.attachment.unit.byte'),
+      kilo: t('chat.attachment.unit.kilo'),
+      mega: t('chat.attachment.unit.mega'),
+    },
+    separator: t('chat.attachment.separator'),
+  };
+}
 
 /** ✅ 2026-10-23: 値 → 語の写像を、島に渡せる素の記録にする（島は `t()` を呼ばない）。 */
 function resolvedLabels(keys: Readonly<Record<string, Parameters<typeof t>[0]>>): Readonly<Record<string, string>> {
@@ -139,6 +206,7 @@ export function chatPaneDropMessages(): ChatPaneDropMessages {
 
 export function chatConversationMessages(): ChatConversationMessages {
   return {
+    unavailable: t('chat.thread.missing'),
     heading: t('chat.messages.heading'),
     listLabel: t('chat.messages.label'),
     empty: t('chat.messages.empty'),
@@ -151,7 +219,9 @@ export function chatConversationMessages(): ChatConversationMessages {
     backToList: t('chat.backToList'),
     composeLabel: t('chat.compose.label'),
     composePlaceholder: t('chat.compose.placeholder'),
+    composePlaceholderSuffix: t('chat.compose.placeholderSuffix'),
     composeHint: t('chat.compose.hint'),
+    composeMemberHint: t('chat.compose.memberHint'),
     composeToolbar: t('chat.compose.toolbar'),
     headerMenu: t('chat.header.menu'),
     composeFormats: {
@@ -241,6 +311,23 @@ export function chatConversationMessages(): ChatConversationMessages {
     bookmark: t('chat.message.bookmark'),
     unbookmark: t('chat.message.unbookmark'),
     bookmarked: t('chat.message.bookmarked'),
+    announcementLabel: t('chat.announcement.label'),
+    announcementSet: t('chat.announcement.set'),
+    announcementUnset: t('chat.announcement.unset'),
+    announcementClear: t('chat.announcement.clear'),
+    announcementJump: t('chat.announcement.jump'),
+    announcementSetBySuffix: t('chat.announcement.setBySuffix'),
+    announcementNotLoadedSuffix: t('chat.announcement.notLoadedSuffix'),
+    announcementFailed: t('chat.announcement.failed'),
+    quote: {
+      action: t('chat.quote.action'),
+      chipPrefix: t('chat.quote.chipPrefix'),
+      remove: t('chat.quote.remove'),
+      label: t('chat.quote.label'),
+      jump: t('chat.quote.jump'),
+      unavailable: t('chat.quote.unavailable'),
+    },
+    mentionToYou: t('chat.mention.toYou'),
     slash: {
       label: t('chat.compose.slash.label'),
       project: t('chat.compose.slash.project'),
@@ -274,5 +361,6 @@ export function chatConversationMessages(): ChatConversationMessages {
       none: t('projects.detail.valueNone'),
       yearsOrMore: t('projects.list.requirements.yearsOrMore'),
     },
+    attachment: chatAttachmentLabels(),
   };
 }

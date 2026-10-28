@@ -46,9 +46,10 @@ import {
   type ChatThreadSort,
 } from './thread-tree';
 import { FAST_REPLY_WINDOW_DAYS, fastReplyGroupKeys } from './reply-speed';
-import { countUnread, readPositions, readThreadPrefs, type ChatThreadPrefs } from './read-state';
+import { countUnread, readMentionUnreadThreadIds, readPositions, readThreadPrefs, readViewerDisplayName, type ChatThreadPrefs } from './read-state';
 import { readPeople, readRoomDetail, type ChatPeopleData } from './people';
 import { readChatUserStatuses } from './user-status';
+import { readThreadAnnouncements } from './announcement-read';
 import {
   chatThreadCursorWhere,
   decodeChatThreadCursor,
@@ -60,7 +61,10 @@ import {
   COMPANY_ROOM_KINDS,
   chatThreadDetailView,
   chatThreadListItem,
+  chatMessageVisibleWhere,
+  isChatMessageVisibleToViewer,
   type ChatMessageRow,
+  type ChatAnnouncementView,
   type ChatMessageView,
   type ChatParticipantView,
   type ChatProjectRef,
@@ -86,7 +90,10 @@ const CHAT_THREAD_SELECT = {
   lastMessageAt: true,
 } as const;
 
-/** 🔴 `messages` の `select`。**`attachmentKey` / `attachmentScanStatus` / `reviewGateId` を読まない。** */
+/**
+ * 🔴 `messages` の `select`。**`attachmentKey` / `reviewGateId` を読まない。**
+ * ✅ 2026-10-27: 添えたファイルの種類・大きさ・検査の状態だけを読む（キーは共有 URL の発行〔#51q〕だけが読む）。
+ */
 export const CHAT_MESSAGE_SELECT = {
   id: true,
   senderUserId: true,
@@ -95,8 +102,13 @@ export const CHAT_MESSAGE_SELECT = {
   sentAt: true,
   editedAt: true,
   deletedAt: true,
+  // ✅ 2026-10-26: 消去済みの印（本文を返さない判定に使う。応答には載せない）。
+  purgedAt: true,
   // ✅ 2026-10-23: 貼った案件の ID（カードは読む人の RLS で読み直す。応答には ID を直接載せない）。
   attachedProjectId: true,
+  attachmentContentType: true,
+  attachmentByteSize: true,
+  attachmentScanStatus: true,
 } as const;
 
 export type SelectedChatThreadRow = ChatThreadRow & { readonly partnerCompanyId: string };
@@ -106,6 +118,13 @@ type SelectedThreadRow = SelectedChatThreadRow;
 
 export type ChatThreadListView = CursorPage<ChatThreadListItem>;
 export type ChatMessageListView = CursorPage<ChatMessageView>;
+/**
+ * ✅ 2026-10-26（#166 の 4・8）: `after` / `around` で読んだ窓。
+ * `nextCursor` は通常のページと同じ意味（古い方へ辿るときに `cursor` へ渡す。`around` のときだけ値を持つ）。
+ * `hasMoreAfter` は「この窓の最後より新しい発言がまだある」（`after` に最後の ID を渡して続きを読む）。
+ * 🔴 件数（残り何件か）は返さない（§4.8）。
+ */
+export type ChatMessageWindowView = ChatMessageListView & { readonly hasMoreAfter: boolean };
 
 /**
  * 相手の社名を引く。
@@ -272,7 +291,8 @@ async function readThreadTree(
     threadIds.length === 0
       ? []
       : await db.message.findMany({
-          where: { threadId: { in: threadIds } },
+          // ✅ 2026-10-27: 🔴 検査中の他人の添付の発言を冒頭に出さない（`chatMessageVisibleWhere`。RLS の二重）。
+          where: { threadId: { in: threadIds }, AND: [chatMessageVisibleWhere(ctx.userId)] },
           distinct: ['threadId'],
           orderBy: [{ threadId: 'asc' }, { sentAt: 'desc' }, { id: 'desc' }],
           select: { threadId: true, senderPartnerCompanyId: true, body: true, attachedProjectId: true },
@@ -330,7 +350,7 @@ async function readThreadTree(
       ? []
       : (
           await db.message.findMany({
-            where: { threadId: { in: threadIds }, body: freeWordFilter(needle) },
+            where: { threadId: { in: threadIds }, body: freeWordFilter(needle), AND: [chatMessageVisibleWhere(ctx.userId)] },
             select: { id: true, threadId: true, body: true, sentAt: true },
             orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
             take: MESSAGE_SEARCH_LIMIT,
@@ -421,7 +441,7 @@ async function readThreadDetail(
 }
 
 /** 送信者の表示名（`users` の C8 DIRECTORY。読めなければ `null`）。 */
-async function resolveSenderNames(
+export async function resolveSenderNames(
   db: Pick<TenantDb, 'user'>,
   userIds: readonly string[],
 ): Promise<ReadonlyMap<string, string>> {
@@ -442,8 +462,11 @@ export async function projectChatMessages(
     TenantDb,
     'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction' | 'chatSavedMessage' | 'chatUserStatus' | 'project' | 'projectRequirement'
   >,
-  rows: readonly ChatMessageRow[],
+  allRows: readonly ChatMessageRow[],
 ): Promise<readonly ChatMessageView[]> {
+  // ✅ 2026-10-27（AC-14）: 🔴 `CLEAN` でない添付の発言は送った本人にだけ写す。本体は RLS の RESTRICTIVE ポリシーであり、
+  //    ここは写しの段の二重の守り（RLS が静かに緩んでも応答に出さない）。
+  const rows = allRows.filter((row) => isChatMessageVisibleToViewer(row, ctx.userId));
   if (rows.length === 0) return [];
   // ✅ 2026-10-16: リアクション。🔴 RLS が「発言が読める」ときだけ行を返す（migration 20261016010000）。
   const reactionRows = await db.chatMessageReaction.findMany({
@@ -504,6 +527,10 @@ async function readMessagePage(
   threadId: string,
   query: ChatMessageListQuery,
 ): Promise<ChatMessageListView> {
+  if (query.after !== undefined || query.around !== undefined) {
+    // 🔴 窓の読みは `listChatMessages`（API）だけが使う。画面の初回読みは従来どおり直近のページ。
+    throw new Error('readMessagePage は after / around を扱わない（readMessageWindow を使う）');
+  }
   const rows = (await db.message.findMany({
     // 🔴 「どのスレッドの会話か」だけ。`ownerPartnerCompanyId` の条件を書き足さない（C6 が決める）。
     where: { threadId },
@@ -534,13 +561,69 @@ export async function listChatMessages(
   ctx: AuthenticatedTenantCtx,
   threadId: string,
   query: ChatMessageListQuery,
-): Promise<ChatMessageListView> {
+): Promise<ChatMessageListView | ChatMessageWindowView> {
   return withTenant(ctx, async (db) => {
     // 🔴 スレッドが見えなければ会話を 0 件で返さず 404 にする ——「空の会話」と「見えない」を
     //    画面と API で区別させない（区別できると参加していないスレッドの存在が分かる）。
     requireFound(await findChatThreadRow(db, threadId));
+    if (query.after !== undefined || query.around !== undefined) {
+      return readMessageWindow(ctx, db, threadId, query);
+    }
     return readMessagePage(ctx, db, threadId, query);
   });
+}
+
+/**
+ * ✅ 2026-10-26（#166 の 4・8）: 基準の発言より後ろ（`after`）/ 前後（`around`）を読む。
+ * 🔴 基準の発言は**このスレッドの、自分から読める発言**でなければ 404（`messages` の RLS 越しに引く。
+ *    別スレッド・他社・不存在を区別しない）。並びは会話と同じ `(sent_at, id)`。
+ */
+async function readMessageWindow(
+  ctx: AuthenticatedTenantCtx,
+  db: Parameters<typeof readMessagePage>[1],
+  threadId: string,
+  query: ChatMessageListQuery,
+): Promise<ChatMessageWindowView> {
+  const anchorId = query.after ?? query.around;
+  if (anchorId === undefined) throw new Error('readMessageWindow には after か around が要る');
+  const anchor = requireFound(
+    (await db.message.findFirst({ where: { id: anchorId, threadId }, select: CHAT_MESSAGE_SELECT })) as ChatMessageRow | null,
+  );
+  const newer = { OR: [{ sentAt: { gt: anchor.sentAt } }, { sentAt: anchor.sentAt, id: { gt: anchor.id } }] };
+  const older = { OR: [{ sentAt: { lt: anchor.sentAt } }, { sentAt: anchor.sentAt, id: { lt: anchor.id } }] };
+  if (query.after !== undefined) {
+    const rows = (await db.message.findMany({
+      where: { threadId, ...newer },
+      select: CHAT_MESSAGE_SELECT,
+      orderBy: [{ sentAt: 'asc' }, { id: 'asc' }],
+      take: takeForCursorPage(query.limit),
+    })) as readonly ChatMessageRow[];
+    const page = rows.slice(0, query.limit);
+    return { items: await projectChatMessages(ctx, db, page), nextCursor: null, hasMoreAfter: rows.length > query.limit };
+  }
+  // `around`: 基準の前に半分、後ろに半分（基準を含めて最大 limit + 1 件）。
+  const half = Math.max(1, Math.floor(query.limit / 2));
+  const [before, after] = await Promise.all([
+    db.message.findMany({
+      where: { threadId, ...older },
+      select: CHAT_MESSAGE_SELECT,
+      orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
+      take: takeForCursorPage(half),
+    }) as Promise<readonly ChatMessageRow[]>,
+    db.message.findMany({
+      where: { threadId, ...newer },
+      select: CHAT_MESSAGE_SELECT,
+      orderBy: [{ sentAt: 'asc' }, { id: 'asc' }],
+      take: takeForCursorPage(half),
+    }) as Promise<readonly ChatMessageRow[]>,
+  ]);
+  const beforePage = buildCursorPage(before, half, (row) => row.id);
+  const rows = [...[...beforePage.items].reverse(), anchor, ...after.slice(0, half)];
+  return {
+    items: await projectChatMessages(ctx, db, rows),
+    nextCursor: beforePage.nextCursor,
+    hasMoreAfter: after.length > half,
+  };
 }
 
 /** 画面（`S-031`）が 1 リクエストで必要とするもの。 */
@@ -583,6 +666,18 @@ export type ChatScreenData = {
    *    DB 側も `app_dm_peer_read` が DM 以外・非メンバーに NULL を返す（二重）。
    */
   readonly peerReadMessageIds: Readonly<Record<string, string | null>>;
+  /**
+   * ✅ 2026-10-26: 開いている会話（左端と右の列）のアナウンス（1 部屋 1 件。無ければ `null`）。
+   * 🔴 RLS（その部屋が読める）だけが決める（`lib/chat/announcement-read.ts` ①）。開いていない部屋のキーは入れない。
+   */
+  readonly announcements: Readonly<Record<string, ChatAnnouncementView | null>>;
+  /**
+   * ✅ 2026-10-27（F-038 ⑭ / AC-16）: 一覧（木と DM・グループ）の部屋のうち、未読の中に自分宛ての `@名前` がある部屋。
+   * 🔴 「ある / ない」だけ（件数・発言の ID を持たない）。`input.tree` を渡したときだけ読む（渡さなければ空）。
+   */
+  readonly mentionUnreadIds: readonly string[];
+  /** ✅ 2026-10-27: 自分の表示名（会話で自分宛ての発言に左の線を引く）。読めなければ `null`。 */
+  readonly viewerName: string | null;
 };
 
 /** 右に並べた会話 1 本ぶん。 */
@@ -630,6 +725,16 @@ async function readChatScreenInTenant(
     const treeRead = input.tree === undefined ? null : await readThreadTree(ctx, db, input.tree);
     const tree = treeRead?.tree ?? null;
     const people = treeRead === null ? null : await readPeople(ctx, db, treeRead.companyKeyOf);
+    // ✅ 2026-10-27（F-038 ⑭）: 一覧に出す部屋（木 + DM・グループ）を 1 回で見る。🔴 部屋の ID は RLS で読めた一覧からだけ取る。
+    const viewerName = await readViewerDisplayName(ctx, db);
+    const listedIds =
+      tree === null
+        ? []
+        : [
+            ...tree.groups.flatMap((group) => [...(group.chat === null ? [] : [group.chat.id]), ...group.threads.map((item) => item.id)]),
+            ...(people?.rooms ?? []).map((room) => room.id),
+          ];
+    const mentionUnreadIds = [...(await readMentionUnreadThreadIds(ctx, db, listedIds, viewerName))];
     const threads: ChatThreadListView =
       tree === null ? await readThreadPage(ctx, db, input.threadsQuery) : { items: [], nextCursor: null };
     if (input.threadId === null) {
@@ -644,6 +749,9 @@ async function readChatScreenInTenant(
         threadPrefs: {},
         people,
         peerReadMessageIds: {},
+        announcements: {},
+        mentionUnreadIds,
+        viewerName,
       };
     }
     const thread = await readThreadDetail(ctx, db, input.threadId);
@@ -659,6 +767,9 @@ async function readChatScreenInTenant(
         threadPrefs: {},
         people,
         peerReadMessageIds: {},
+        announcements: {},
+        mentionUnreadIds,
+        viewerName,
       };
     }
     const messages = await readMessagePage(ctx, db, input.threadId, input.messagesQuery);
@@ -680,7 +791,24 @@ async function readChatScreenInTenant(
     const lastReadMessageIds = Object.fromEntries(openIds.map((id) => [id, positions.get(id)?.id ?? null]));
     const prefs = await readThreadPrefs(db, openIds);
     const threadPrefs = Object.fromEntries(openIds.map((id) => [id, prefs.get(id) ?? { pinned: false, muted: false }]));
-    return { threads, thread, messages, requestedThreadMissing: false, panes, tree, lastReadMessageIds, threadPrefs, people, peerReadMessageIds: {} };
+    // ✅ 2026-10-26: アナウンス。🔴 同じトランザクション（同じ RLS 文脈）で読む。
+    const announcementByThread = await readThreadAnnouncements(db, openIds);
+    const announcements = Object.fromEntries(openIds.map((id) => [id, announcementByThread.get(id) ?? null]));
+    return {
+      threads,
+      thread,
+      messages,
+      requestedThreadMissing: false,
+      panes,
+      tree,
+      lastReadMessageIds,
+      threadPrefs,
+      people,
+      peerReadMessageIds: {},
+      announcements,
+      mentionUnreadIds,
+      viewerName,
+    };
   });
 }
 

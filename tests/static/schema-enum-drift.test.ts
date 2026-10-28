@@ -81,6 +81,7 @@ import {
   WEBHOOK_PROVIDERS,
 } from '../../packages/db/src/schema-value-sets.js';
 import { CHAT_REACTIONS } from '../../apps/web/lib/chat/views.js';
+import { CHAT_ATTACHMENT_CONTENT_TYPES } from '../../packages/domain/src/storage/chat-attachment.js';
 import { USAGE_LIMIT_LEVELS } from '../../packages/domain/src/quota/limit-level.js';
 import { USAGE_LIMIT_METRICS } from '../../packages/domain/src/quota/limits.js';
 import { QUOTA_OVERRIDE_METRICS } from '../../packages/domain/src/quota/override.js';
@@ -431,6 +432,11 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
     it('messages_attachment_scan_status_check ⇔ packages/db SCAN_STATUSES（messages / skill_sheets と同じ値集合を共有）', () => {
       const values = extractCheckInValues(migrationSql, 'messages_attachment_scan_status_check');
       expectSameValueSet(values, SCAN_STATUSES);
+    });
+
+    it('✅ 2026-10-27: messages_attachment_content_type_check ⇔ @ses/domain CHAT_ATTACHMENT_CONTENT_TYPES（チャットのファイル）', () => {
+      const values = extractCheckInValues(migrationSql, 'messages_attachment_content_type_check');
+      expectSameValueSet(values, CHAT_ATTACHMENT_CONTENT_TYPES);
     });
 
     it('contracts_kind_check ⇔ packages/db CONTRACT_KINDS', () => {

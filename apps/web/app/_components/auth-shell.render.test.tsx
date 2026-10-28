@@ -64,6 +64,9 @@ describe('AuthShell', () => {
   it('ワードマークと本体を props から受け取る（この部品は文言を持たない）', () => {
     const markup = render('prose');
     expect(markup).toContain('SES Platform');
+    expect(markup).toContain('src="/brand-logo.png"');
+    expect(markup).toContain('alt="SES Platform"');
+    expect(markup).not.toContain('>SES Platform<');
     expect(markup).toContain('<h1>サインイン</h1>');
   });
 });

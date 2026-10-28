@@ -16,13 +16,16 @@
 //   ④ 🔴 **未読を作らない。** `messages` に既読の列が無い（`packages/db/prisma/schema.prisma` の
 //      `Message`）。実体の無い数を画面に出すと「見たのに消えない」を作る（サイドバーのバッジを
 //      置かなかったのと同じ判断）。**列を足すのはモデルの変更であり本タスクの範囲外。**
-//   ⑤ 🔴 **添付を持たない。** `CLAUDE.md` §3.4 が「ウイルススキャンが `CLEAN` になるまで共有 URL を
-//      発行しない」と定めており、スキャンの配線（`file_scan_results` / `CHAT_ATTACHMENT` のゲート）
-//      まで含めると別タスクになる。**口（`attachmentKey`）を型に持たせない** —— 持たせると
-//      「スキャン前のキーを返す」経路が生まれる。
+//   ⑤ 🔴 **添付のキーを持たない。** ✅ 2026-10-27（`F-038` 改訂 12 ⑫）: 社内だけの部屋の添付は
+//      `attachment`（種類・大きさ・検査の状態だけ）で表す。**オブジェクトキー・ファイル名・共有 URL を型に持たせない**
+//      —— 共有 URL は押すたびに #51q（`issueDownloadUrl`）が出す。🔴 `CLEAN` でない添付の発言は送った本人にしか
+//      届かない（RLS の RESTRICTIVE ポリシー + `isChatMessageVisibleToViewer`）。
 //
 // 🔴 純粋関数のみ（`@ses/db` / `@ses/i18n` / 現在時刻に依存しない）。クライアントの島が
 //    **型だけ**を読めるようにするためである（`tests/static/client-db-boundary.test.ts`）。
+import { chatAttachmentKindOf, type ChatAttachmentKind, type ScanStatus } from '@ses/domain';
+import { chatOwnText } from './quote';
+import { messageSnippet } from './thread-tree';
 
 /** `chat_threads.kind`（CHECK の 4 値。DM / GROUP は 2026-10-16・#128）。 */
 export const CHAT_THREAD_KINDS = ['PROJECT', 'COMPANY', 'DM', 'GROUP'] as const;
@@ -113,7 +116,88 @@ export type ChatMessageView = {
    * 読みの経路は必ず埋める。省略可なのは手で組むテスト用の値のため。
    */
   readonly attachedProject?: ChatAttachedProjectView | null;
+  /**
+   * ✅ 2026-10-27（`F-038` 改訂 12 ⑫）: 添えたファイル（社内だけの部屋）。無い・発言が消えた（削除・保持期限）なら `null`。
+   * 🔴 種類・大きさ・検査の状態だけ（キー・ファイル名・URL を載せない）。`CLEAN` でないものは送った本人にしか届かない。
+   * 読みの経路は必ず埋める。省略可なのは手で組むテスト用の値のため。
+   */
+  readonly attachment?: ChatAttachmentView | null;
 };
+
+/** ✅ 2026-10-27: 添えたファイル（`ChatMessageView.attachment`）。 */
+export type ChatAttachmentView = {
+  /** 出し方の分類（画像は縮めて出す / PDF は埋め込み / そのほかは札）。 */
+  readonly kind: ChatAttachmentKind;
+  readonly contentType: string;
+  readonly byteSize: number;
+  /** ウイルス検査の状態。🔴 `CLEAN` 以外が届くのは送った本人だけ。 */
+  readonly scanStatus: ScanStatus;
+};
+
+export const CHAT_ATTACHMENT_VIEW_KEYS = ['kind', 'contentType', 'byteSize', 'scanStatus'] as const;
+
+/**
+ * ✅ 2026-10-27（`docs/05` §6.5 #51r）: 部屋の「ファイル」の一覧の 1 行（`CLEAN` のものだけ・新しい順）。
+ * 🔴 キー・ファイル名・URL・送った人の利用者 ID を載せない。件数は返さない。
+ */
+export type ChatAttachmentListItem = {
+  readonly messageId: string;
+  readonly kind: ChatAttachmentKind;
+  readonly contentType: string;
+  readonly byteSize: number;
+  /** 送った人の表示名（`users` の C8 で読めなければ `null`）。 */
+  readonly senderName: string | null;
+  readonly sentAt: string;
+};
+
+export const CHAT_ATTACHMENT_LIST_ITEM_KEYS = ['messageId', 'kind', 'contentType', 'byteSize', 'senderName', 'sentAt'] as const;
+
+/**
+ * ✅ 2026-10-26（紺野の決定 2026-10-22）: 部屋のアナウンス（LINE のアナウンス。1 部屋 1 件。`chat_thread_announcements`）。
+ * 🔴 **読めるかは RLS が決める**（その部屋が読める人だけ。`lib/chat/announcement.ts` ①）。
+ * 🔴 **設定した人の利用者 ID を載せない**（名前だけ。`senderUserId` と同じ）。
+ */
+export type ChatAnnouncementView = {
+  /** 固定した発言（この部屋の発言。読み込み済みならその位置へ移る）。 */
+  readonly messageId: string;
+  /** 固定した発言の日時（ISO。読み込んでいないときに「いつの発言か」を示す）。 */
+  readonly messageSentAt: string;
+  /** 発言の冒頭。🔴 送った本人が消した・保持期限で本文が消えた発言は `null`（本文を出さない）。 */
+  readonly snippet: string | null;
+  /** 設定した人の表示名（`users` の C8。読めなければ `null`）。 */
+  readonly setByName: string | null;
+  /** 設定した日時（ISO）。 */
+  readonly setAt: string;
+};
+
+export const CHAT_ANNOUNCEMENT_VIEW_KEYS = ['messageId', 'messageSentAt', 'snippet', 'setByName', 'setAt'] as const;
+
+/** アナウンスの帯に出す本文の冒頭の長さ（文字数。1〜2 行に収まる程度）。 */
+export const CHAT_ANNOUNCEMENT_SNIPPET_LENGTH = 60;
+
+/** アナウンスの帯に出す本文の冒頭（改行・連続した空白は 1 つの空白にする）。🔴 本文が無ければ `null`。 */
+export function chatAnnouncementSnippet(body: string | null): string | null {
+  if (body === null) return null;
+  return messageSnippet(chatOwnText(body), '', CHAT_ANNOUNCEMENT_SNIPPET_LENGTH);
+}
+
+/** `chat_thread_announcements` の行と、固定した発言の行（RLS 越しに読めたもの）を写す。 */
+export function chatAnnouncementView(
+  row: { readonly messageId: string; readonly setAt: Date },
+  deps: {
+    readonly message: { readonly sentAt: Date; readonly body: string | null; readonly deletedAt: Date | null; readonly purgedAt: Date | null };
+    readonly setByName: string | null;
+  },
+): ChatAnnouncementView {
+  const removed = deps.message.deletedAt !== null || deps.message.purgedAt !== null;
+  return {
+    messageId: row.messageId,
+    messageSentAt: deps.message.sentAt.toISOString(),
+    snippet: removed ? null : chatAnnouncementSnippet(deps.message.body),
+    setByName: deps.setByName,
+    setAt: row.setAt.toISOString(),
+  };
+}
 
 /**
  * ✅ 2026-10-23: 案件カードの要件 1 件（`project_requirements`。読む人の RLS で読めたものだけ）。
@@ -231,6 +315,8 @@ export const CHAT_MESSAGE_VIEW_KEYS = [
   'deleted',
   'saved',
   'attachedProject',
+  // ✅ 2026-10-27: 添えたファイル（種類・大きさ・検査の状態だけ）。
+  'attachment',
 ] as const;
 
 /** ✅ 2026-10-23: 案件カード（読めたとき）のキー集合。🔴 分離テストが応答と突き合わせる。 */
@@ -327,6 +413,8 @@ export const CHAT_FORBIDDEN_RESPONSE_KEYS = [
   'ownerPartnerCompanyId',
   'senderPartnerCompanyId',
   'senderUserId',
+  // ✅ 2026-10-26: アナウンスを設定した人の利用者 ID（名前だけを返す）。
+  'setByUserId',
   'total',
 ] as const;
 
@@ -389,9 +477,52 @@ export type ChatMessageRow = {
   /** ✅ 2026-10-16: 編集・削除の日時（読みの経路は必ず埋める。手で組むテスト用に省略可）。 */
   readonly editedAt?: Date | null;
   readonly deletedAt?: Date | null;
+  /** ✅ 2026-10-26: 解約で本文を消した日時（読みの経路は必ず埋める。手で組むテスト用に省略可）。 */
+  readonly purgedAt?: Date | null;
   /** ✅ 2026-10-23: 貼った案件の ID（読みの経路は必ず埋める）。🔴 応答には載せない（カードの可否は `deps` が決める）。 */
   readonly attachedProjectId?: string | null;
+  /** ✅ 2026-10-27: 添えたファイルの種類・大きさ・検査の状態（読みの経路は必ず埋める）。🔴 キーは読まない。 */
+  readonly attachmentContentType?: string | null;
+  readonly attachmentByteSize?: bigint | number | null;
+  readonly attachmentScanStatus?: string | null;
 };
+
+/**
+ * ✅ 2026-10-27（AC-14）: この発言を読み手に返してよいか。🔴 `CLEAN` でない添付の発言は送った本人だけ。
+ *    本体は RLS の RESTRICTIVE ポリシー（migration 20261027010000）であり、これは写しの段の二重の守り。
+ */
+export function isChatMessageVisibleToViewer(
+  row: Pick<ChatMessageRow, 'senderUserId' | 'attachmentContentType' | 'attachmentScanStatus'>,
+  viewerUserId: string,
+): boolean {
+  if (row.attachmentContentType == null && row.attachmentScanStatus == null) return true;
+  return row.attachmentScanStatus === 'CLEAN' || row.senderUserId === viewerUserId;
+}
+
+/**
+ * ✅ 2026-10-27（レビュー）: `isChatMessageVisibleToViewer` と**同じ条件**を、発言を数える・冒頭を出す問い合わせの `where` に
+ * 足すための形（一覧の冒頭・未読の数・本文の検索）。後から行を落とすのではなく、数える前に除く（件数が漏れない）。
+ * 🔴 本体は RLS の RESTRICTIVE ポリシー（migration 20261027010000）であり、これはアプリ側の二重の守り。
+ *    添付の 4 列は「全部ある」か「全部ない」か（CHECK）なので、`attachmentKey` の有無は種類・状態の有無と同じ。
+ */
+export function chatMessageVisibleWhere(viewerUserId: string) {
+  return { OR: [{ attachmentKey: null }, { attachmentScanStatus: 'CLEAN' }, { senderUserId: viewerUserId }] };
+}
+
+/** ✅ 2026-10-27: 添えたファイルの写し（無い・発言が消えたなら `null`）。 */
+export function chatAttachmentView(
+  row: Pick<ChatMessageRow, 'body' | 'deletedAt' | 'purgedAt' | 'attachmentContentType' | 'attachmentByteSize' | 'attachmentScanStatus'>,
+): ChatAttachmentView | null {
+  if (row.attachmentContentType == null || row.attachmentByteSize == null || row.attachmentScanStatus == null) return null;
+  if (row.deletedAt != null || row.purgedAt != null) return null;
+  return {
+    // 🔴 受け付けない種類は DB の CHECK が入れさせないが、万一の値は「札」として出す（画像として埋め込まない）。
+    kind: chatAttachmentKindOf(row.attachmentContentType) ?? 'file',
+    contentType: row.attachmentContentType,
+    byteSize: Number(row.attachmentByteSize),
+    scanStatus: row.attachmentScanStatus as ScanStatus,
+  };
+}
 
 export type ChatMessageDeps = {
   /** 送信者の表示名（読めなければ `null`）。 */
@@ -449,11 +580,13 @@ export function chatMessageView(row: ChatMessageRow, deps: ChatMessageDeps): Cha
     //    🔴 真偽値だけを返し、送信者の利用者 ID は応答に載せない（`CHAT_FORBIDDEN_RESPONSE_KEYS` の `senderUserId`）。
     //    `mine` なら必ず `own`（自分は自社に属する）。
     mine: row.senderUserId === deps.viewerUserId,
-    body: row.body,
+    // 🔴 削除済み・消去済みの発言は、行に何が残っていても本文を返さない（#166 の 1。書き戻しが起きても届けない二重の守り）。
+    body: row.deletedAt != null || row.purgedAt != null ? null : row.body,
     reactions: deps.reactions ?? [],
     edited: row.editedAt != null && row.deletedAt == null,
     deleted: row.deletedAt != null,
     saved: deps.saved ?? false,
     attachedProject: chatAttachedProjectView(row, deps.attachedProject),
+    attachment: chatAttachmentView(row),
   };
 }

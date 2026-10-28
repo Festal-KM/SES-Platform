@@ -21,29 +21,30 @@ export type ChatRailProps = {
   readonly groups: readonly ChatThreadGroup[];
   readonly rooms: readonly ChatRoomListItem[];
   readonly unreadCounts: Readonly<Record<string, number>>;
+  /** ✅ 2026-10-27（F-038 ⑭）: 未読に自分宛ての `@` がある部屋。省略時は印を出さない。 */
+  readonly mentionUnreadIds?: readonly string[];
   readonly filter: ChatListFilter;
   readonly showContacts: boolean;
   /** ✅ 2026-10-22: 「保存済み」を出すか（保存できる人 = 投稿できる人だけ。閲覧専用には出さない）。 */
   readonly showSaved?: boolean;
 };
 
-/** 種類の印（アバターと同じ形・色の小さな四角）。 */
+/** 会社の印は列を畳んだときだけ残す。開いた列では社名で見分ける。 */
 type MarkKind = 'all' | 'unread' | 'dm' | 'group' | 'saved' | 'company' | 'project' | 'contacts';
-// ✅ 2026-10-20: 一覧のアバターと同じ塗りつぶし（`chat-thread-list.tsx` の AVATAR_KIND_CLASSES）。
 const MARK_CLASSES: Readonly<Record<MarkKind, string>> = {
-  all: 'rounded-md bg-fg-muted text-bg',
-  unread: 'rounded-md bg-info text-bg',
-  dm: 'rounded-full bg-brand text-brand-fg',
-  group: 'rounded-full bg-success text-bg',
-  saved: 'rounded-md bg-brand text-brand-fg',
-  company: 'rounded-md bg-fg text-bg',
-  project: 'rounded-md bg-warning text-bg',
-  contacts: 'rounded-full bg-success text-bg',
+  all: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
+  unread: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
+  dm: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
+  group: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
+  saved: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
+  company: 'hidden rounded-md bg-neutral-bg text-fg-muted md:in-[[data-collapsed=true]]:inline-flex',
+  project: 'inline-flex rounded-md bg-neutral-bg text-fg-muted',
+  contacts: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
 };
 
 function Mark({ kind, text }: { readonly kind: MarkKind; readonly text: string }) {
   return (
-    <span aria-hidden="true" className={cn('inline-flex size-6 shrink-0 items-center justify-center text-xs font-bold', MARK_CLASSES[kind])}>
+    <span aria-hidden="true" className={cn('h-6 w-6 shrink-0 items-center justify-center text-xs font-bold', MARK_CLASSES[kind])}>
       {text}
     </span>
   );
@@ -58,6 +59,7 @@ function RailLink({
   count,
   testKey,
   title,
+  mention = false,
 }: {
   readonly href: string;
   readonly active: boolean;
@@ -69,6 +71,8 @@ function RailLink({
   readonly testKey: string;
   /** 省略していない正式な名前（ポインタを置いたときに出す）。 */
   readonly title?: string;
+  /** ✅ 2026-10-27（F-038 ⑭）: 中の会話の未読に自分宛ての `@` がある。 */
+  readonly mention?: boolean;
 }) {
   return (
     <li className="shrink-0">
@@ -85,6 +89,16 @@ function RailLink({
       >
         <Mark kind={mark} text={markText} />
         <span className="min-w-0 flex-1 truncate md:in-[[data-collapsed=true]]:sr-only">{label}</span>
+        {mention ? (
+          <span
+            className="shrink-0 rounded-xs bg-brand-bg px-1 text-xs font-bold text-brand md:in-[[data-collapsed=true]]:hidden"
+            title={t('chat.mention.unread')}
+            data-testid={`chat-rail-mention-${testKey}`}
+          >
+            <span aria-hidden="true">{t('chat.mention.mark')}</span>
+            <span className="sr-only">{t('chat.mention.unread')}</span>
+          </span>
+        ) : null}
         {/* ✅ 2026-10-26: 開いている列では横に数字、畳んだ列（印だけ）では印の右上に赤丸で出す（見落とさせない）。 */}
         {count === undefined || count === 0 ? null : (
           <>
@@ -98,8 +112,9 @@ function RailLink({
 }
 
 
-export function ChatRail({ groups, rooms, unreadCounts, filter, showContacts, showSaved = false }: ChatRailProps) {
+export function ChatRail({ groups, rooms, unreadCounts, mentionUnreadIds = [], filter, showContacts, showSaved = false }: ChatRailProps) {
   const unreadOf = (id: string) => unreadCounts[id] ?? 0;
+  const mentioned = new Set(mentionUnreadIds);
   const items = groups.flatMap((group) => (group.chat === null ? group.threads : [group.chat, ...group.threads]));
   const unreadTotal = [...items.map((item) => item.id), ...rooms.map((room) => room.id)].filter((id) => unreadOf(id) > 0).length;
   const projects = items.filter((item) => item.kind === 'PROJECT');
@@ -112,10 +127,10 @@ export function ChatRail({ groups, rooms, unreadCounts, filter, showContacts, sh
   return (
     <nav aria-label={t('chat.rail.label')} className="flex flex-col p-2" data-testid="chat-rail">
       <ul className="m-0 flex list-none gap-1 overflow-x-auto p-0 md:flex-col md:overflow-visible">
-        <RailLink href={chatHref({})} active={is('all')} mark="all" markText={t('chat.rail.mark.all')} label={t('chat.rail.all')} count={unreadTotal} testKey="all" />
+        <RailLink href={chatHref({})} active={is('all')} mark="all" markText={t('chat.rail.mark.all')} label={t('chat.rail.all')} count={unreadTotal} mention={mentioned.size > 0} testKey="all" />
         <RailLink href={chatHref({ filter: { kind: 'unread' } })} active={is('unread')} mark="unread" markText={t('chat.rail.mark.unread')} label={t('chat.rail.unread')} count={unreadTotal} testKey="unread" />
-        <RailLink href={chatHref({ filter: { kind: 'dm' } })} active={is('dm')} mark="dm" markText={t('chat.rail.mark.dm')} label={t('chat.rail.dm')} testKey="dm" />
-        <RailLink href={chatHref({ filter: { kind: 'group' } })} active={is('group')} mark="group" markText={t('chat.rail.mark.group')} label={t('chat.rail.group')} testKey="group" />
+        <RailLink href={chatHref({ filter: { kind: 'dm' } })} active={is('dm')} mark="dm" markText={t('chat.rail.mark.dm')} label={t('chat.rail.dm')} mention={rooms.some((room) => room.kind === 'DM' && mentioned.has(room.id))} testKey="dm" />
+        <RailLink href={chatHref({ filter: { kind: 'group' } })} active={is('group')} mark="group" markText={t('chat.rail.mark.group')} label={t('chat.rail.group')} mention={rooms.some((room) => room.kind === 'GROUP' && mentioned.has(room.id))} testKey="group" />
         {showSaved ? (
           <RailLink href={chatHref({ filter: { kind: 'saved' } })} active={is('saved')} mark="saved" markText={t('chat.rail.mark.saved')} label={t('chat.rail.saved')} testKey="saved" />
         ) : null}
@@ -138,6 +153,7 @@ export function ChatRail({ groups, rooms, unreadCounts, filter, showContacts, sh
                   label={name.replace(/^株式会社/, '').replace(/株式会社$/, '') || name}
                   title={name}
                   count={unread}
+                  mention={ids.some((id) => mentioned.has(id)) || rooms.some((room) => room.companyKey === group.key && mentioned.has(room.id))}
                   testKey={`company-${group.key}`}
                 />
               );
@@ -157,6 +173,7 @@ export function ChatRail({ groups, rooms, unreadCounts, filter, showContacts, sh
                 markText="#"
                 label={item.project?.name ?? t('chat.thread.kind.PROJECT')}
                 count={unreadOf(item.id)}
+                mention={mentioned.has(item.id)}
                 testKey={`project-${item.id}`}
               />
             ))}

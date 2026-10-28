@@ -11,9 +11,10 @@ describe('PURGE_SPEC（docs/05 §9.7 / F-064 AC-3）', () => {
   });
 
   // ✅ 2026-10-22（チャットレーン）: `chat_saved_messages` を足した。消す列が無く（ID と時刻だけ）、参照する表も無い末端の表である。
-  it('🔴 rows: ALL を持つのは engineer_careers と chat_saved_messages だけである（行削除を安易に広げない）', () => {
+  // ✅ 2026-10-26（チャットレーン）: `chat_thread_announcements`（部屋のアナウンス）を足した。同じく ID と時刻だけの末端の表である。
+  it('🔴 rows: ALL を持つのは engineer_careers / chat_saved_messages / chat_thread_announcements だけである（行削除を安易に広げない）', () => {
     const rowDeletes = PURGE_SPEC.delete.filter(isPurgeRowsSpec).map((spec) => spec.table);
-    expect(rowDeletes).toEqual(['engineer_careers', 'chat_saved_messages']);
+    expect(rowDeletes).toEqual(['engineer_careers', 'chat_saved_messages', 'chat_thread_announcements']);
   });
 
   it('同じ表が delete と retain の両方に現れず、delete / retain の中でも重複しない', () => {

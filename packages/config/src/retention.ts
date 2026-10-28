@@ -53,6 +53,7 @@ export type PurgeColumnsSpec = {
  * 🔴 行の物理削除。次の 2 種類の表だけに使う。
  *   - `role` / `description` / `technologies` が NOT NULL で、空文字の行を残しても意味が無い表（`engineer_careers`）
  *   - ✅ 2026-10-22: 消す列が無く、どこからも参照されない末端の表（`chat_saved_messages`。本人の栞の行そのものが対象）
+ *   - ✅ 2026-10-26: 同じく末端の表（`chat_thread_announcements`。部屋のアナウンス = どの発言を固定したかの行そのものが対象）
  */
 export type PurgeRowsSpec = {
   readonly table: string;
@@ -146,13 +147,24 @@ export const PURGE_SPEC = {
     // ⚠️ 根拠文は匿名化済みの入力から生成される（§3.2）。個人情報を含まない設計だが、候補について述べた自由文であり既定〔削除〕。
     { table: 'match_candidates', columns: ['rationale'], provisional: 'ISSUE-67' },
     // --- チャット ---------------------------------------------------------------------------
-    { table: 'messages', columns: ['body', 'attachment_key'], objectKeyColumns: ['attachment_key'], purgedAtColumn: 'purged_at' },
+    // ✅ 2026-10-27（チャットのファイル）: 添付の 4 列は「全部ある」か「全部ない」か（CHECK `messages_attachment_set_check`。
+    //    migration 20261027010000）なので、種類・大きさ・検査の状態も一緒に消す（キーだけ消すと CHECK に当たって削除が巻き戻る）。
+    {
+      table: 'messages',
+      columns: ['body', 'attachment_key', 'attachment_scan_status', 'attachment_content_type', 'attachment_byte_size'],
+      objectKeyColumns: ['attachment_key'],
+      purgedAtColumn: 'purged_at',
+    },
     // ✅ 2026-10-19 チャットレーン: ひとこと状態は本人が書く自由文で、個人の事情（「通院のため」等）が書かれうる。
     //    発言の本文（messages.body）と同じく〔削除〕に置く。行は残しても空文字なので画面には出ない（読む側が空を「無し」と扱う）。
     { table: 'chat_user_statuses', columns: [{ name: 'text', erase: 'EMPTY_TEXT' }] },
     // ✅ 2026-10-22 チャットレーン（紺野の決定）: 保存済み（本人だけの栞）を〔削除〕に置く。消す列が無い（ID と時刻だけ）ので
     //    行ごと消す。🔴 この表を参照する表は無い（末端）ので、行削除で FK の連鎖は起きない（上の 🔴 の懸念に当たらない）。
     { table: 'chat_saved_messages', rows: 'ALL' },
+    // ✅ 2026-10-26 チャットレーン（Issue #166 の 2）: 部屋の構造（種類・メンバー・取引先）は残し、グループ名だけを消す。
+    //    グループ名は自由文で「山田さんの休職相談」のような個人の事情が書ける。DM・会社グループ・スレッドは名前を持たない。
+    //    削除スコープの SELECT / UPDATE は migration 20261026010000。
+    { table: 'chat_threads', columns: ['title'] },
     // ✅ 2026-10-22 チャットレーン: 自分の定型文は本人が書く自由文（取引先の担当者名・個人の事情が書かれうる）。
     //    ひとこと状態と同じく列を空文字にする（行は残っても空なので選択肢に出ない。読む側が空を「無し」と扱う）。
     {
@@ -162,6 +174,9 @@ export const PURGE_SPEC = {
         { name: 'body', erase: 'EMPTY_TEXT' },
       ],
     },
+    // ✅ 2026-10-26 チャットレーン（紺野の決定）: 部屋のアナウンス（どの発言を固定したか）を〔削除〕に置く。消す列が無い
+    //    （ID と時刻だけ）ので行ごと消す。🔴 この表を参照する表は無い（末端）ので、行削除で FK の連鎖は起きない。
+    { table: 'chat_thread_announcements', rows: 'ALL' },
     // --- ⑤ 契約 / ⑥ 稼働 ------------------------------------------------------------------
     { table: 'contract_documents', columns: ['object_key', 'merge_result', 'signers'], objectKeyColumns: ['object_key'] },
     { table: 'contract_templates', columns: ['object_key'], objectKeyColumns: ['object_key'] },
@@ -210,7 +225,6 @@ export const PURGE_SPEC = {
     { table: 'project_visibilities', reason: '公開範囲の記録（越境経路 1 の根拠）', policy: 'RETAIN_ALL' },
     { table: 'project_publish_requests', reason: '公開要求の記録', policy: 'RETAIN_ALL' },
     { table: 'engineer_shares', reason: '匿名共有の設定履歴（経路 4 の根拠）', policy: 'RETAIN_ALL' },
-    { table: 'chat_threads', reason: 'スレッドの構造。本文は messages 側で消す', policy: 'RETAIN_ALL' },
     { table: 'thread_participants', reason: '参加会社の記録（越境経路 3 の根拠）', policy: 'RETAIN_ALL' },
     { table: 'orders', reason: '発注・請求の記録', policy: 'RETAIN_ALL' },
     { table: 'assignments', reason: '稼働の記録（期間・状態）', policy: 'RETAIN_ALL' },

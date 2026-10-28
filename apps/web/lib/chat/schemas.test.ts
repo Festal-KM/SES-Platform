@@ -4,6 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { CHAT_MESSAGE_MAX_LENGTH, CHAT_MESSAGE_PAGE_SIZE, PAGE_SIZE_MAX } from '@ses/config';
 import { ISOLATION_KEYS } from '../api/isolation-keys';
 import {
+  CHAT_ATTACHMENT_TOKEN_MAX_LENGTH,
+  chatAttachmentDownloadBodySchema,
+  chatAttachmentUploadBodySchema,
+  chatAnnouncementBodySchema,
   chatMessageBodySchema,
   chatMessagePostBodySchema,
   chatProjectCandidateQuerySchema,
@@ -117,7 +121,8 @@ describe('ページング（#50）', () => {
 
   it('🔴 検索・絞り込みの口を持たない（実体の無いタブを受けない）', () => {
     expect(Object.keys(chatThreadListQuerySchema.shape).sort()).toEqual(['cursor', 'limit']);
-    expect(Object.keys(chatMessageListQuerySchema.shape).sort()).toEqual(['cursor', 'limit']);
+    // ✅ 2026-10-26（#166 の 4・8）: `after` / `around` は「どこから読むか」の位置で、検索・絞り込みではない。
+    expect(Object.keys(chatMessageListQuerySchema.shape).sort()).toEqual(['after', 'around', 'cursor', 'limit']);
   });
 });
 
@@ -134,11 +139,50 @@ describe('🔴 分離キーが 1 つも入っていない（`CLAUDE.md` §3.1 / 
     ['chatMessageListQuerySchema', Object.keys(chatMessageListQuerySchema.shape)],
     ['chatThreadParamsSchema', Object.keys(chatThreadParamsSchema.shape)],
     ['chatMessageBodySchema', Object.keys(chatMessageBodySchema.shape)],
+    ['chatAnnouncementBodySchema', Object.keys(chatAnnouncementBodySchema.shape)],
     ['chatMessagePostBodySchema', Object.keys(chatMessagePostBodySchema.shape)],
     ['chatProjectCandidateQuerySchema', Object.keys(chatProjectCandidateQuerySchema.shape)],
   ])('%s', (_label, keys) => {
     for (const forbidden of ISOLATION_KEYS) {
       expect(keys, forbidden).not.toContain(forbidden);
     }
+  });
+});
+
+// ✅ 2026-10-26: アナウンス（`PUT` / `DELETE /api/threads/{id}/announcement`）。
+describe('chatAnnouncementBodySchema', () => {
+  it('発言の ID（UUID）だけを受ける', () => {
+    expect(chatAnnouncementBodySchema.safeParse({ messageId: UUID }).success).toBe(true);
+    expect(chatAnnouncementBodySchema.safeParse({ messageId: 'x' }).success).toBe(false);
+    expect(chatAnnouncementBodySchema.safeParse({}).success).toBe(false);
+  });
+
+  it('🔴 ほかのキー（部屋・テナント・取引先・設定した人）を受けない（`.strict()`）', () => {
+    for (const extra of ['threadId', 'tenantId', 'partnerCompanyId', 'setByUserId']) {
+      expect(chatAnnouncementBodySchema.safeParse({ messageId: UUID, [extra]: UUID }).success, extra).toBe(false);
+    }
+  });
+});
+
+// ✅ 2026-10-27（`F-038` 改訂 12 ⑫）: ファイル（#51p / #51 / #51q）。
+describe('✅ 2026-10-27 ファイルの入力（#51p / #51 / #51q）', () => {
+  it('#51 は札だけで送れる（本文は空でよい）。キー（attachmentKey）は受けない', () => {
+    const parsed = chatMessagePostBodySchema.safeParse({ attachmentUploadToken: 'v1.a.b', attachmentKey: 't/x/y.pdf' });
+    expect(parsed.success && parsed.data).toEqual({ body: '', attachmentUploadToken: 'v1.a.b' });
+    expect(chatMessagePostBodySchema.safeParse({ attachmentUploadToken: 'x'.repeat(CHAT_ATTACHMENT_TOKEN_MAX_LENGTH + 1) }).success).toBe(false);
+  });
+
+  it('🔴 #51p は種類と大きさだけ（ファイル名・キー・部屋の取引先は 400）。許可した種類・1〜20 MiB だけ', () => {
+    expect(chatAttachmentUploadBodySchema.safeParse({ contentType: 'application/pdf', byteSize: 10 }).success).toBe(true);
+    expect(chatAttachmentUploadBodySchema.safeParse({ contentType: 'text/html', byteSize: 10 }).success).toBe(false);
+    expect(chatAttachmentUploadBodySchema.safeParse({ contentType: 'image/png', byteSize: 0 }).success).toBe(false);
+    expect(chatAttachmentUploadBodySchema.safeParse({ contentType: 'image/png', byteSize: 20 * 1024 * 1024 + 1 }).success).toBe(false);
+    expect(chatAttachmentUploadBodySchema.safeParse({ contentType: 'image/png', byteSize: 10, fileName: '山田.png' }).success).toBe(false);
+    expect(chatAttachmentUploadBodySchema.safeParse({ contentType: 'image/png', byteSize: 10, objectKey: 't/x' }).success).toBe(false);
+  });
+
+  it('#51q は開き方（inline / attachment）だけ', () => {
+    expect(chatAttachmentDownloadBodySchema.safeParse({ disposition: 'inline' }).success).toBe(true);
+    expect(chatAttachmentDownloadBodySchema.safeParse({ disposition: 'other' }).success).toBe(false);
   });
 });

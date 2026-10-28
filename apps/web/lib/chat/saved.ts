@@ -13,6 +13,7 @@
 import { withTenant, type AuthenticatedTenantCtx } from '@ses/db';
 import { requireFound } from '../api/errors';
 import { findChatThreadRow } from './read';
+import { chatOwnText } from './quote';
 import { messageSnippet } from './thread-tree';
 
 type TenantDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
@@ -65,7 +66,7 @@ export async function readSavedList(db: Pick<TenantDb, 'chatSavedMessage' | 'mes
       threadId: message.threadId,
       sentAt: message.sentAt.toISOString(),
       savedAt: row.createdAt.toISOString(),
-      snippet: message.body === null ? null : messageSnippet(message.body, '', SAVED_SNIPPET_RADIUS),
+      snippet: message.body === null ? null : messageSnippet(chatOwnText(message.body), '', SAVED_SNIPPET_RADIUS),
     });
   }
   return { items, truncated };

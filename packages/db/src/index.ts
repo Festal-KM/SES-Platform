@@ -534,6 +534,13 @@ export {
   accountSkillSheetStorage,
   readStorageBytesUsed,
   releaseSkillSheetStorage,
+  // ✅ 2026-10-27: チャットの添付の送信（#51）の中で、テナントのストレージを直列にして読み・加算する（同じトランザクション）。
+  //    減算は本人の削除（下）と解約の削除（tenant-purge.ts の内部）。
+  lockTenantStorageForChatSend,
+  accountChatAttachmentStorageInSend,
+  // ✅ 2026-10-27（決定 A）: 本人の発言の削除で添付と計上を外す（論理削除と同じトランザクション）。
+  releaseChatAttachmentOnDelete,
+  type ReleasedChatAttachment,
 } from './storage-usage.js';
 export type { SkillSheetStorageInput, StorageAccountingOutcome } from './storage-usage.js';
 // 🔴 T-10-02: 計測の突き合わせ・連続性の検査・検算・月次集計（docs/05 §9.8 / §5.9 / `F-026 AC-3`〜`AC-5`）。
@@ -641,7 +648,7 @@ export { GateFactsUnavailableError, loadGateInput, UnsupportedGateTargetError } 
 export type { GateTargetLookup } from './gate-target.js';
 // 🔴 T-05-05: ウイルススキャン結果の記録と適用（docs/05 §8.5 / §9.6 / `BR-26`）。
 //    `CLEAN` へ戻す遷移が存在しない経路であり、呼び出し元は `apps/worker` のジョブだけである。
-export { applyFileScanResult, listStalledScanTargets } from './file-scan.js';
+export { applyFileScanResult, listChatAttachmentKeysInUse, listStalledScanTargets } from './file-scan.js';
 export type { FileScanResultInput, ScanApplyOutcome, StalledScanTarget } from './file-scan.js';
 // 🔴 T-05-08: 隔離の周知先の引き当て（`docs/02` `F-011` 処理④）。所有側（分類 1 / 2）を
 //    間違えると `sandbox` で取引先へ実メールが飛ぶため、呼び出し元をジョブ 1 ファイルに固定する。

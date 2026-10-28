@@ -312,8 +312,12 @@ describe('🔴 ④: 自社 / 相手の弁別は `data-own` と面の色だけ（
     const onlyOwn = own.filter((token) => !other.includes(token));
     const onlyOther = other.filter((token) => !own.includes(token));
     // 🔴 差は「面の色」1 語ずつ。寸法・角丸・寄せ・余白の差が 1 語でもあれば落ちる。
-    expect(onlyOwn).toEqual(['bg-brand-bg']);
-    expect(onlyOther).toEqual(['bg-bg-subtle']);
+    // ✅ 2026-10-27（紺野「色分けとか、みづらい」）: 相手は「白に濃い枠」にした（自社の薄い青と、ひと目で分かる差）。
+    //    差は依然として面（塗り・枠）の語だけ。寸法・角丸・寄せ・余白の差は 1 語も許さない。
+    // ✅ 2026-10-27（紺野「まだ区別しにくい」）: 自分の発言は濃い青に白い文字。相手は白に灰色の枠（同僚は薄い青に青い枠）。
+    //    差は依然として面（塗り・枠・その上の文字色）の語だけ。寸法・角丸・寄せ・余白の差は 1 語も許さない。
+    expect([...onlyOwn].sort()).toEqual(['bg-brand', 'text-brand-fg']);
+    expect([...onlyOther].sort()).toEqual(['bg-bg', 'border', 'border-border-strong', 'text-fg']);
     // 🔴 行（`<li>`）の側には色が 1 語も無い（面を 2 重に持たない）。
     for (const id of [MESSAGE_OWN.id, MESSAGE_OTHER.id]) {
       for (const token of classTokensOf(html, `chat-message-${id}`)) {
@@ -338,7 +342,7 @@ describe('🔴 ④: 自社 / 相手の弁別は `data-own` と面の色だけ（
     // 🔴 **画面のソースに `max-w-` のリテラルが無い**（幅の上限は `packages/ui` の定数が持つ。
     //    `tests/static/ui-screen-width.test.ts` (c) と同じ規律であり、ここでは会話の
     //    ファイルだけを名指しで見る）。
-    const source = readFileSync(new URL('./chat-conversation.tsx', import.meta.url), 'utf8');
+    const source = readFileSync(new URL('./chat-message-item.tsx', import.meta.url), 'utf8');
     // 🔴 クラスとして書かれた `max-w-<値>` が 1 つも無いことを見る（コメント中の `max-w-*` や
     //    `` `max-w-` `` は値を伴わないので当たらない）。
     expect(source.match(/max-w-[\w.]+/g) ?? []).toEqual([]);
@@ -417,9 +421,30 @@ describe('⑥: 日付の区切り（定義書 §3.12。2026-10-13 追加）', ()
 
   it('🔴 円形（`rounded-full`）を使わない（§7.9: 円はアバターとカウンタのみ）', () => {
     const html = renderConversation();
-    const separator = /<li[^>]*data-testid="chat-day-separator-[^"]*"[^>]*>(.*?)<\/li>/s.exec(html);
+    const separator = /<div[^>]*data-testid="chat-day-separator-[^"]*"[^>]*>(.*?)<\/div>/s.exec(html);
     expect(separator).not.toBeNull();
     expect((separator as RegExpExecArray)[1]).not.toContain('rounded-full');
+  });
+
+  it('日付はその日の発言の前だけに表示し、本文に重ねない', () => {
+    const nextDay = { ...MESSAGE_OTHER, id: 'next-day', sentAt: '2026-10-01T03:00:00.000Z' };
+    const html = renderConversation({ initialMessages: [MESSAGE_OWN, nextDay] });
+    const groups = [...html.matchAll(/<li[^>]*data-chat-day="([^"]+)"[^>]*>(.*?)<\/ol><\/li>/gs)];
+    expect(groups).toHaveLength(2);
+    expect(groups[0]?.[2]).toContain(`data-testid="chat-message-${MESSAGE_OWN.id}"`);
+    expect(groups[0]?.[2]).not.toContain('chat-message-next-day');
+    expect(groups[1]?.[2]).toContain('data-testid="chat-message-next-day"');
+    for (const day of ['2026-09-30', '2026-10-01']) {
+      // ✅ 2026-10-27: 日付は箱ではなく線と文字（吹き出しと見間違えない）。貼り付けない（本文に重ねない）。
+      expect(classTokensOf(html, `chat-day-separator-${day}`)).not.toContain('sticky');
+      expect(classTokensOf(html, `chat-day-separator-${day}`)).not.toContain('bg-bg-subtle');
+    }
+  });
+
+  it('検索の操作は縮めず折り返さず、スマホのタップ高さを保つ', () => {
+    const html = renderThreadList();
+    expect(classTokensOf(html, 'chat-threads-q')).toEqual(expect.arrayContaining(['min-w-0', 'flex-1']));
+    expect(classTokensOf(html, 'chat-threads-search-submit')).toEqual(expect.arrayContaining(['min-h-11', 'shrink-0', 'whitespace-nowrap']));
   });
 
   it('発言が無ければ区切りも出ない', () => {
@@ -640,12 +665,13 @@ describe('⑪: 会社ごとの木・検索・並べ替え（2026-10-14、チャ�
     expect(html).toContain(`chat-thread-row-${CHAT_A}`);
     expect(html).toContain(`chat-thread-row-${THREAD_PROJECT}`);
     expect(classTokensOf(html, `chat-thread-row-${THREAD_PROJECT}`)).not.toContain('pl-6');
-    // ✅ 2026-10-20: 種類はアバターの塗り（案件 = 橙の「#」、会社 = 墨色の角丸）で分ける。会社・案件の行に札を付けない。
+    // ✅ 2026-10-20: 種類は無彩色のアバター（案件 = 「#」、会社 = 頭文字）で分ける。会社・案件の行に札を付けない。
     const projectRow = new RegExp(`<li data-testid="chat-thread-row-${THREAD_PROJECT}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
     const companyRow = new RegExp(`<li data-testid="chat-thread-row-${CHAT_A}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
-    expect(projectRow).toContain('bg-warning');
+    expect(projectRow).toContain('bg-neutral-bg');
+    expect(projectRow).not.toContain('bg-warning');
     expect(projectRow).toContain('>#<');
-    expect(companyRow).toContain('bg-fg');
+    expect(companyRow).toContain('bg-neutral-bg');
     expect(projectRow).not.toContain(t('chat.tag.external'));
     expect(companyRow).not.toContain(t('chat.tag.external'));
     // 「チャット / スレッド」の文字は出さない（見た目で分ける）。
@@ -835,6 +861,24 @@ describe('⑲: 会話の書き出し（2026-10-16、チャットレーン）', (
   });
 });
 
+// ✅ 2026-10-26（Codex のレビュー・#162）: 🔴 画面に古いアナウンスを残さない。
+//    状態の移り変わりは静的な描画では確かめられないので、作りの要（部屋ごとの作り直し・404 で消す・世代の番号）をソースで固定する。
+describe('🔴 アナウンスの帯を古いまま残さない（2026-10-26）', () => {
+  it('会話は部屋ごとに作り直す（前の部屋の帯を次の部屋に持ち越さない）', () => {
+    const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
+    expect(page).toMatch(/<ChatConversation\s+(?:\/\/[^\n]*\n\s*)*key=\{selected\.id\}/);
+    expect(page).toMatch(/<ChatConversation\s+key=\{pane\.thread\.id\}/);
+  });
+
+  it('読み直しで 404 なら帯を消し、操作より前に始まった読み直しの応答は捨てる', () => {
+    const source = readFileSync(new URL('./use-chat-messages.ts', import.meta.url), 'utf8');
+    expect(source).toContain('next.status === 404');
+    expect(source).toMatch(/if \(next\.status === 404\) \{\s*setAnnouncement\(null\)/);
+    expect(source).toContain('announcementGeneration.current += 1');
+    expect(source).toContain('generation !== announcementGeneration.current');
+  });
+});
+
 // 並べた会話では PC でも操作を畳み、名前に幅を残す。
 describe('並べた会話の見出しとスクロール', () => {
   it('並べたときの操作は md でも自動展開しない', () => {
@@ -854,5 +898,49 @@ describe('会話の幅の調節', () => {
     expect(html).toContain('aria-valuemin="320"');
     expect(html).toContain('aria-valuemax="1600"');
     expect(renderToStaticMarkup(<ChatResizablePane enabled={false} storageKey="primary" resizeLabel={t('chat.pane.resize')} className="flex">{null}</ChatResizablePane>)).not.toContain('role="separator"');
+  });
+});
+
+
+describe('入力枠の操作（改訂 43）', () => {
+  it('入力・下段の印・送信を同じ枠に収め、表示範囲の説明を枠の下に残す', () => {
+    const html = renderConversation();
+    const box = html.slice(html.indexOf('data-testid="chat-compose-box"'), html.indexOf(t('chat.compose.hint')));
+    for (const id of ['body', 'format-toggle', 'mention', 'slash-toggle', 'template-toggle', 'submit']) {
+      expect(box).toContain(`data-testid="chat-compose-${id}"`);
+    }
+    expect(classTokensOf(html, 'chat-compose-box')).toEqual(expect.arrayContaining(['focus-within:ring-2', 'focus-within:ring-brand']));
+    expect(classTokensOf(html, 'chat-compose-body')).toContain('focus-visible:ring-0');
+    expect(box).toContain('rows="1"');
+    expect(box).not.toContain('data-testid="chat-compose-tab-write"');
+    expect(box).toContain('h-11 w-11');
+  });
+
+  it('会話名があるときだけ、名前を含む入力案内を出す', () => {
+    expect(renderConversation({ title: { title: '架空の会話', subtitle: null } })).toContain(
+      `placeholder="架空の会話${t('chat.compose.placeholderSuffix')}"`,
+    );
+    expect(renderConversation()).toContain(`placeholder="${t('chat.compose.placeholder')}"`);
+  });
+});
+
+
+describe('一覧の会社名と本文の抜粋', () => {
+  it('会社名と抜粋が両方ある案件だけ区切りを出す', () => {
+    const withoutSnippet = renderThreadList();
+    expect(withoutSnippet).not.toContain(' ・ ');
+    expect(withoutSnippet).toContain('架空パートナー A');
+    const withSnippet = renderThreadList({ lastSnippets: { [THREAD_PROJECT]: '面談の候補日です' } });
+    expect(withSnippet).toContain('架空パートナー A ・ 面談の候補日です');
+  });
+
+  it('会社の行は抜粋が無ければ空白で高さを足さず、名前を中央に置く', () => {
+    const html = renderThreadList();
+    expect(html).not.toContain(' ');
+    expect(classTokensOf(html, `chat-thread-link-${THREAD_COMPANY}`)).toContain('items-center');
+    const withSnippet = renderThreadList({ lastSnippets: { [THREAD_COMPANY]: '候補者をご紹介します' } });
+    expect(withSnippet).toContain('候補者をご紹介します');
+    expect(withSnippet).not.toContain(' ・ ');
+    expect(html).toContain(`data-testid="chat-thread-counterparty-${THREAD_COMPANY}"`);
   });
 });

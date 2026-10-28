@@ -39,11 +39,14 @@ import { canPostChatMessage } from '../../../lib/chat/policy';
 import { conversationLayoutFor, conversationTitleFor } from '../../../lib/chat/layout';
 import { canAddPane, withPaneClosed, type ChatPaneState } from '../../../lib/chat/panes';
 import { readChatScreen } from '../../../lib/chat/read';
+import { listChatAttachments, readAttachableThreadIds } from '../../../lib/chat/attachments';
 import { CHAT_PATH, chatHref, chatScreenQuerySchema, parseChatFilter } from '../../../lib/chat/screen-query';
 import { ChatResizablePane } from './chat-resizable-pane';
 import { ChatRail } from './chat-rail';
 import { ChatRailToggle } from './chat-rail-toggle';
 import { ChatToastHost } from './chat-toast-host';
+import { ChatAutoRefresh } from './chat-auto-refresh';
+import { ChatViewportHeight } from './chat-viewport-height';
 import { CHAT_THREAD_SORT_DEFAULT } from '../../../lib/chat/thread-tree';
 import { readMyChatUserStatus } from '../../../lib/chat/user-status';
 import { readMySavedList } from '../../../lib/chat/saved';
@@ -53,7 +56,7 @@ import { PageHeading } from '../_shell/page-heading';
 import { ChatStatusSection } from './chat-status-section';
 import { ChatConversation } from './chat-conversation';
 import { ChatPaneDropZone } from './chat-pane-drop-zone';
-import { chatConversationMessages, chatPaneDropMessages } from './chat-props';
+import { chatAttachmentLabels, chatConversationMessages, chatPaneDropMessages } from './chat-props';
 import { ChatThreadList } from './chat-thread-list';
 import { ChatThreadPanel } from './chat-thread-panel';
 
@@ -99,14 +102,22 @@ export default async function ChatPage({
     panes: selected === null ? [] : data.panes.map((pane) => pane.requestedThreadId),
   };
   const tiled = data.panes.length > 0;
+  const infoOpen = query.info === '1';
   const conversationMessages = chatConversationMessages();
   const canPost = canPostChatMessage(ctx.role);
+  // ✅ 2026-10-27（改訂 44）: 開いている部屋のうちファイルを添えられる部屋（取引先がいない部屋）。印は投稿できる人にだけ出す。
+  const attachableIds = await readAttachableThreadIds(ctx, [
+    ...(selected === null ? [] : [selected.id]),
+    ...data.panes.flatMap((pane) => (pane.thread === null ? [] : [pane.thread.id])),
+  ]);
+  // ✅ 2026-10-27: 右の欄の「ファイル」（開いているときだけ読む。`CLEAN` だけ・新しい順）。
+  const panelFiles =
+    selected !== null && !tiled && infoOpen && attachableIds.has(selected.id) ? await listChatAttachments(ctx, selected.id, {}) : null;
   // ✅ 2026-10-19（#128 §7.1 ①）: 自分のひとこと状態（入口の初期値）。閲覧専用には入口を描かないので読まない。
   const myStatus = canPost ? await readMyChatUserStatus(ctx) : '';
   // ✅ 2026-10-14: 会話を開く・閉じる URL に一覧の検索語と並べ方を引き継ぐ（開くたびに検索が消えない）。
   // ✅ 2026-10-19（v2）: 左の列の絞り込み（`f=`）。旧「未読のみ」（`unread=1`）は「未読」の絞り込みとして読む。
   const filter = query.f === undefined && query.unread === '1' ? parseChatFilter('unread') : parseChatFilter(query.f);
-  const infoOpen = query.info === '1';
   // ✅ 2026-10-22（紺野）: 自分の定型文（入力欄の選択肢と管理画面）と、保存済み（左の列で選んだときだけ読む）。
   //    閲覧専用は書けないので読まない。🔴 どちらも本人の行だけ（RLS）。
   const ownTemplates = canPost ? await readMyChatTemplates(ctx) : [];
@@ -132,10 +143,10 @@ export default async function ChatPage({
   };
 
   return (
-    // ✅ 2026-10-22（紺野「全部スクロールじゃなくて、ウィンドウ内だけスクロールできるように」）: `md` 以上は画面の高さに収め、
-    //    一覧・会話・左の列が**それぞれの枠の中だけで**スクロールする（`CHAT_SCREEN_HEIGHT_CLASS`）。`md` 未満は従来どおり。
-    //    ✅ 同日（紺野「上に無駄なスペース使いすぎ」）: 上下の余白を 20px → 12px に詰める（会話に高さを回す）。
-    <main className={cn('py-3 md:flex md:flex-col', CHAT_SCREEN_HEIGHT_CLASS)}>
+    // スマホは上部の帯と下部ナビの実寸を引き、履歴だけをスクロールさせる。
+    // 共通の高さ定数は変更せず、PC は従来の計算を使う。
+    <main data-chat-screen className={cn('flex h-[var(--chat-mobile-height,100dvh)] flex-col py-3', CHAT_SCREEN_HEIGHT_CLASS)}>
+      <ChatViewportHeight />
       {/* 🔴 ✅ **2026-10-13: `main-min` から既定（`lg` で並置）に変えた。** `main-min` は
           「主カラムが 1320px に届くまで副カラムを下へ落とす」挙動であり、**基準の 1672px でも
           関連情報が会話の下に回り込んでいた**（実機の実測）。デザインシステム v1.0 §3.12 は
@@ -144,10 +155,16 @@ export default async function ChatPage({
           決まらず、会話の幅も足りなくなる）。対象と相手は各会話の見出しに出ている。 */}
       <PageBody
         widthClass="split"
-        className="md:min-h-0 md:flex-1"
+        className="min-h-0 flex-1 [&>div]:min-h-0"
         // ✅ 2026-10-19（v2）: 右の情報欄は既定で閉じる（左に絞り込みの列が増えたので、会話の幅を確保する）。
         //    会話の見出しの「情報」で開く（`info=1`）。
-        aside={selected === null || tiled || !infoOpen ? undefined : <ChatThreadPanel thread={selected} canPost={canPost} />}
+        aside={selected === null || tiled || !infoOpen ? undefined : <ChatThreadPanel
+              thread={selected}
+              canPost={canPost}
+              {...(panelFiles === null
+                ? {}
+                : { files: { items: panelFiles.items, nextCursor: panelFiles.nextCursor, labels: chatAttachmentLabels(), canOpen: canPost } })}
+            />}
       >
         {/* 見出し・説明・器を縦に積み、器（Card）が残りの高さを全部使う。 */}
         <div className="flex h-full min-h-0 flex-col">
@@ -159,6 +176,8 @@ export default async function ChatPage({
         </div>
         {/* ✅ 2026-10-20（紺野「トースト」）: 操作の結果を右下に出す（行き先つき・自動で消えない）。 */}
         <ChatToastHost kindLabel={t('chat.toast.kind')} dismissLabel={t('chat.toast.dismiss')} />
+        {/* ✅ 2026-10-26（#164 の 3）: 一覧・左の列・右の欄を 60 秒ごとに描き直す（読めなくなったものを残さない）。 */}
+        <ChatAutoRefresh />
         {/* 🔴 不存在・他社・他テナントで同じ文言（`docs/05` §4.8） */}
         {data.requestedThreadMissing ? (
           <Alert variant="warning" className="mb-4" data-testid="chat-thread-missing">
@@ -218,6 +237,7 @@ export default async function ChatPage({
               groups={tree.groups}
               rooms={data.people?.rooms ?? []}
               unreadCounts={{ ...tree.unreadCounts, ...(data.people?.unreadCounts ?? {}) }}
+              mentionUnreadIds={data.mentionUnreadIds}
               filter={filter}
               showContacts={data.people !== null}
               showSaved={canPost}
@@ -231,7 +251,7 @@ export default async function ChatPage({
           <div
             className={
               selected === null
-                ? 'w-full bg-bg md:w-96 md:shrink-0 md:overflow-y-auto overscroll-contain md:border-r md:border-border'
+                ? 'min-h-0 w-full flex-1 overflow-y-auto bg-bg md:w-96 md:flex-none md:shrink-0 overscroll-contain md:border-r md:border-border'
                 : 'hidden bg-bg md:block md:w-96 md:shrink-0 md:overflow-y-auto overscroll-contain md:border-r md:border-border'
             }
           >
@@ -242,6 +262,7 @@ export default async function ChatPage({
               saved={saved}
               templates={ownTemplates}
               unreadCounts={tree.unreadCounts}
+              mentionUnreadIds={data.mentionUnreadIds}
               pinnedIds={tree.pinnedIds}
               mutedIds={tree.mutedIds}
               people={data.people}
@@ -271,9 +292,13 @@ export default async function ChatPage({
               </p>
             ) : (
               <ChatConversation
+                // ✅ 2026-10-26（Codex のレビュー）: 🔴 部屋ごとに作り直す。同じ部品を使い回すと、前の部屋のアナウンス・発言・
+                //    入力の状態が、新しい部屋の取得が終わるまで残る（他の部屋のものを一瞬でも見せない）。
+                key={selected.id}
                 layout={conversationLayoutFor(selected.kind)}
                 title={conversationTitleFor(selected)}
                 threadId={selected.id}
+                threadKind={selected.kind}
                 initialMessages={data.messages.items}
                 initialNextCursor={data.messages.nextCursor}
                 ownTemplates={ownTemplates}
@@ -282,7 +307,10 @@ export default async function ChatPage({
                 // ✅ 2026-10-19（#128）: 相手の既読は DM だけ（グループ・会社グループ・スレッドには渡さない）。
                 {...(selected.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[selected.id] ?? null } : {})}
                 mentionNames={mentionNamesOf(selected)}
+                announcement={data.announcements[selected.id] ?? null}
+                selfName={data.viewerName}
                 canPost={canPost}
+                canAttach={canPost && attachableIds.has(selected.id)}
                 messages={conversationMessages}
                 {...(tiled ? { closeHref: chatHref({ ...withPaneClosed(paneState, selected.id), ...listQuery }) } : {})}
                 {...(tiled
@@ -319,9 +347,11 @@ export default async function ChatPage({
                 </div>
               ) : (
                 <ChatConversation
+                  key={pane.thread.id}
                   layout={conversationLayoutFor(pane.thread.kind)}
                   title={conversationTitleFor(pane.thread)}
                   threadId={pane.thread.id}
+                  threadKind={pane.thread.kind}
                   initialMessages={pane.messages.items}
                   initialNextCursor={pane.messages.nextCursor}
                   ownTemplates={ownTemplates}
@@ -329,7 +359,10 @@ export default async function ChatPage({
                   prefs={data.threadPrefs[pane.thread.id] ?? { pinned: false, muted: false }}
                   {...(pane.thread.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[pane.thread.id] ?? null } : {})}
                   mentionNames={mentionNamesOf(pane.thread)}
+                  announcement={data.announcements[pane.thread.id] ?? null}
+                  selfName={data.viewerName}
                   canPost={canPost}
+                  canAttach={canPost && attachableIds.has(pane.thread.id)}
                   messages={conversationMessages}
                   closeHref={chatHref({ ...withPaneClosed(paneState, pane.thread.id), ...listQuery })}
                 />

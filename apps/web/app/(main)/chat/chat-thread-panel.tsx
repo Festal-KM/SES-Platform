@@ -7,8 +7,8 @@
 //   ① 🔴 **ホストの商流を 1 項目も出さない** —— 単価・エンド企業名・粗利・上流契約（`BR-67`）。
 //      出すのは **対象（案件名）/ 相手 / 参加会社**の 3 つだけである。
 //   ② 🔴 **他社の示唆を出さない** —— 他パートナーの社名・他社の提案の存在・件数（`F-038 AC-1`）。
-//   ③ 🔴 **タスク / ファイル（添付）のタブを作らない** —— `S-033`（タスク）は Phase 2 で未実装、
-//      添付はスキャンの配線が無い（`lib/chat/views.ts` の ⑤）。**押して何も起きないタブを置かない。**
+//   ③ 🔴 **タスクのタブを作らない** —— `S-033`（タスク）は Phase 2 で未実装。**押して何も起きないタブを置かない。**
+//      ✅ 2026-10-27（改訂 44）: 社内だけの部屋には「ファイル」の節を出す（`CLEAN` のものだけ。`chat-attachment.tsx`）。
 //   ④ 🔴 **参加会社は `thread_participants` の RLS（C5）が返した行だけ**を並べる。
 //      取引先の文脈ではホストの行が見えないため 1 行になる（`lib/chat/read.ts` の
 //      `readParticipants` の ⚠️）。**見えない行を補わない。**
@@ -28,12 +28,21 @@ import {
 } from '@ses/ui';
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 import type { ChatThreadDetailView } from '../../../lib/chat/views';
+import type { ChatAttachmentListItem } from '../../../lib/chat/views';
+import { ChatAttachmentFiles, type ChatAttachmentLabels } from './chat-attachment';
 import { ChatOpenDmButton } from './chat-open-dm-button';
 
 export type ChatThreadPanelProps = {
   readonly thread: ChatThreadDetailView;
   /** ✅ 2026-10-19（#128）: 投稿できる人にだけ「DM を開く」を出す（閲覧専用には描かない）。 */
   readonly canPost?: boolean;
+  /** ✅ 2026-10-27: 「ファイル」の節（社内だけの部屋のときだけ渡す。省略時は描かない）。 */
+  readonly files?: {
+    readonly items: readonly ChatAttachmentListItem[];
+    readonly nextCursor: string | null;
+    readonly labels: ChatAttachmentLabels;
+    readonly canOpen: boolean;
+  };
 };
 
 /** Key-Value の 1 行（30px）。🔴 キーの列は 124px 固定（値の左端が縦に通る）。 */
@@ -51,9 +60,23 @@ function statusLine(userId: string, status: string | null | undefined) {
   );
 }
 
-export function ChatThreadPanel({ thread, canPost = false }: ChatThreadPanelProps) {
+export function ChatThreadPanel({ thread, canPost = false, files }: ChatThreadPanelProps) {
+  const filesSection =
+    files === undefined ? null : (
+      <ChatAttachmentFiles
+        threadId={thread.id}
+        initialItems={files.items}
+        initialNextCursor={files.nextCursor}
+        labels={files.labels}
+        canOpen={files.canOpen}
+        unknownName={t('chat.thread.unknownName')}
+      />
+    );
   // ✅ 2026-10-19（#128）: DM・グループは「誰が読めるか」（メンバー）を出す。会社の段（参加会社）は出さない。
   if (thread.members !== undefined) {
+    // ✅ 2026-10-26（#166 の気づき）: 取引先の人は、自社（ホスト）の人とだけ DM を作れる（取引先どうしは API が 400）。
+    //    🔴 押しても失敗する導線を置かない。読み手が取引先なら、取引先の同僚には「DM を開く」を出さない。
+    const viewerIsHost = thread.members.find((member) => member.self)?.isHost ?? true;
     return (
       <Card data-testid="chat-panel">
         <CardHeader>
@@ -69,7 +92,7 @@ export function ChatThreadPanel({ thread, canPost = false }: ChatThreadPanelProp
               const name = member.name ?? t('chat.thread.unknownName');
               return (
                 <li key={member.userId} data-testid={`chat-panel-member-${member.userId}`}>
-                  {canPost && !member.self ? (
+                  {canPost && !member.self && (viewerIsHost || member.isHost) ? (
                     <ChatOpenDmButton userId={member.userId} label={`${name} ${t('chat.people.openDm')}`} failedLabel={t('chat.people.openDmFailed')}>
                       <span className="flex min-w-0 flex-col items-start">
                         <span className="truncate text-body text-fg">{name}</span>
@@ -88,6 +111,7 @@ export function ChatThreadPanel({ thread, canPost = false }: ChatThreadPanelProp
               );
             })}
           </ul>
+          {filesSection}
         </CardContent>
       </Card>
     );
@@ -156,6 +180,7 @@ export function ChatThreadPanel({ thread, canPost = false }: ChatThreadPanelProp
             </dd>
           </div>
         </dl>
+        {filesSection}
       </CardContent>
     </Card>
   );

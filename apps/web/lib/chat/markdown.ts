@@ -8,6 +8,7 @@
 //   ③ **部品を外から足さない**（依存の追加は人間の承認事項）。対応する書き方は書式ボタンが入れるものだけに絞る。
 //   ④ 純粋関数（I/O なし）。入力欄の書式ボタンも、ここの `applyChatFormat` で文字列を組む。
 import { splitMessageText } from './message-text';
+import { splitChatQuote } from './quote';
 
 export type ChatInline =
   | { readonly kind: 'text'; readonly value: string }
@@ -21,7 +22,11 @@ export type ChatBlock =
   | { readonly kind: 'paragraph'; readonly lines: readonly (readonly ChatInline[])[] }
   | { readonly kind: 'list'; readonly ordered: boolean; readonly items: readonly (readonly ChatInline[])[] }
   | { readonly kind: 'quote'; readonly lines: readonly (readonly ChatInline[])[] }
-  | { readonly kind: 'code'; readonly value: string };
+  | { readonly kind: 'code'; readonly value: string }
+  /**
+   * ✅ 2026-10-27（F-038 ⑬）: 発言の引用（`quote.ts` の形）。🔴 本文の 1 行目にあるときだけ。冒頭は書式を解かず文字のまま描く。
+   */
+  | { readonly kind: 'messageQuote'; readonly messageId: string; readonly name: string; readonly lines: readonly string[] };
 
 const SAFE_URL = /^https?:\/\/[^\s<>"']+$/;
 const BULLET = /^\s*[-*・]\s+(.*)$/;
@@ -31,8 +36,10 @@ const FENCE = /^```/;
 
 /** 本文を塊に分ける。 */
 export function parseChatMarkdown(text: string, mentionNames: readonly string[] = []): readonly ChatBlock[] {
-  const lines = text.replace(/\r\n?/g, '\n').split('\n');
-  const blocks: ChatBlock[] = [];
+  // ✅ 2026-10-27: 引用の見出しは本文の 1 行目だけ（`quote.ts` ②）。残りを従来どおり読む。
+  const { quote, rest } = splitChatQuote(text.replace(/\r\n?/g, '\n'));
+  const lines = rest.split('\n');
+  const blocks: ChatBlock[] = quote === null ? [] : [{ kind: 'messageQuote', messageId: quote.messageId, name: quote.name, lines: quote.lines }];
   const inline = (line: string) => parseChatInline(line, mentionNames);
   let index = 0;
   while (index < lines.length) {

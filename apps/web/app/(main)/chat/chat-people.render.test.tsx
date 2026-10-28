@@ -10,6 +10,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { t } from '@ses/i18n';
+import { ChatFavorites } from './chat-people-section';
 import type { ChatPeopleData } from '../../../lib/chat/people';
 import type { ChatThreadDetailView } from '../../../lib/chat/views';
 
@@ -79,6 +80,8 @@ describe('🔴 ① 閲覧専用には「DM を開く」を描かない', () => {
       createElement(ChatThreadList, { groups: [], selectedThreadId: null, nextCursor: null, people: PEOPLE, canPost: true, filter: { kind: 'contacts' } }),
     );
     expect(contacts).toContain('data-testid="chat-contacts"');
+    expect(contacts).not.toContain('data-testid="chat-favorites"');
+    expect(contacts).toMatch(/<\/form><div[^>]*><div[^>]*data-testid="chat-contacts"><h3[^>]*>連絡先<\/h3>/);
     expect(contacts).toContain(`data-testid="chat-contact-link-${HOST_PERSON}"`);
     expect(contacts).toContain(`data-testid="chat-contact-link-${PARTNER_PERSON}"`);
     expect(contacts).toContain(`f=person.${PARTNER_PERSON}`);
@@ -99,6 +102,9 @@ describe('③ お気に入り・未読・メンバー', () => {
     expect(html).toContain('よろしくお願いします');
     expect(html).toContain(`data-testid="chat-room-${ROOM_GROUP}"`);
     expect(html).toContain(`data-testid="chat-favorite-${ROOM_DM}"`);
+    // ✅ 2026-10-27: お気に入りは見出しで開閉できる節（紺野「スペース広すぎる。トグル＋すっきり」）。
+    expect(html).toContain('<div data-testid="chat-favorites">');
+    expect(html).toContain('data-testid="chat-rail-section-toggle-favorites"');
     expect(html).not.toContain(`data-testid="chat-favorite-${ROOM_GROUP}"`);
     expect(html).toContain(`data-testid="chat-room-unread-${ROOM_DM}"`);
   });
@@ -106,6 +112,8 @@ describe('③ お気に入り・未読・メンバー', () => {
   it('お気に入りが無いときは案内を出し、「＋ 新しい会話」は常にある', () => {
     const html = renderList(true, { ...PEOPLE, rooms: [], pinnedIds: [] });
     expect(html).toContain('data-testid="chat-favorites-empty"');
+    expect(html).toMatch(/<section class="flex items-baseline gap-2 px-3 py-2" data-testid="chat-favorites">/);
+    expect(html).not.toContain('data-testid="chat-threads-pinned"');
     expect(html).toContain('data-testid="chat-new-conversation"');
   });
 
@@ -154,10 +162,11 @@ describe('✅ v2: 左の列から「会社から＞」「人から＞」辿る',
     expect(renderWith({ kind: 'group' })).not.toContain(`data-testid="chat-room-${ROOM_DM}"`);
     expect(renderWith({ kind: 'dm' })).not.toContain(`data-testid="chat-room-${ROOM_GROUP}"`);
   });
-  it('種類はアバターの形と色で分ける（グループは緑、取引先との部屋には「外部」）', () => {
+  it('種類は無彩色のアバターで示す（取引先との部屋には「外部」）', () => {
     const html = renderWith({ kind: 'all' });
     const group = new RegExp(`<li data-testid="chat-room-${ROOM_GROUP}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
-    expect(group).toContain('bg-success');
+    expect(group).toContain('bg-neutral-bg');
+    expect(group).not.toContain('bg-success');
     expect(group).toContain(t('chat.tag.external'));
   });
 });
@@ -176,5 +185,74 @@ describe('✅ グループを作る（連絡先の入口 → 「新しいグル�
     expect(view(true, 'newgroup')).toContain('data-testid="chat-new-group"');
     expect(view(true, 'newgroup')).toContain(`data-testid="chat-new-group-member-${PARTNER_PERSON}"`);
     expect(view(false, 'newgroup')).not.toContain('chat-new-group');
+  });
+});
+
+describe('✅ 2026-10-26（#166 の 7）上限で読み切れなかった DM・グループと連絡先は、黙って消さず案内を出す', () => {
+  function render(filter: Parameters<typeof ChatThreadList>[0]['filter'], people: ChatPeopleData): string {
+    return renderToStaticMarkup(
+      createElement(ChatThreadList, { groups: [], selectedThreadId: null, nextCursor: null, people, canPost: true, filter }),
+    );
+  }
+
+  it('DM・グループの絞り込みで、切れていれば案内を出し、切れていなければ出さない', () => {
+    expect(render({ kind: 'dm' }, { ...PEOPLE, roomsTruncated: true })).toContain('data-testid="chat-rooms-truncated"');
+    expect(render({ kind: 'group' }, { ...PEOPLE, roomsTruncated: true })).toContain(t('chat.people.roomsTruncated'));
+    expect(render({ kind: 'dm' }, PEOPLE)).not.toContain('chat-rooms-truncated');
+  });
+
+  it('連絡先は、切れていれば案内を出す', () => {
+    expect(render({ kind: 'contacts' }, { ...PEOPLE, contactsTruncated: true })).toContain('data-testid="chat-contacts-truncated"');
+    expect(render({ kind: 'contacts' }, PEOPLE)).not.toContain('chat-contacts-truncated');
+  });
+});
+
+describe('✅ 2026-10-26（#166 の気づき）取引先の人には、取引先の同僚への「DM を開く」を出さない', () => {
+  const room = (selfIsHost: boolean): ChatThreadDetailView => ({
+    id: ROOM_GROUP, kind: 'GROUP', project: null, counterpartyName: null, participants: [],
+    members: [
+      { userId: SELF, name: '本人', companyName: selfIsHost ? '自社' : '株式会社ダミー', self: true, isHost: selfIsHost },
+      { userId: HOST_PERSON, name: '見本 太郎', companyName: '自社', self: false, isHost: true },
+      { userId: PARTNER_PERSON, name: '仮名 花子', companyName: '株式会社ダミー', self: false, isHost: false },
+    ],
+  } as ChatThreadDetailView);
+
+  it('読み手が取引先: ホストの人には出し、取引先の同僚には出さない', () => {
+    const html = renderToStaticMarkup(createElement(ChatThreadPanel, { thread: room(false), canPost: true }));
+    expect(html).toContain(`chat-open-dm-${HOST_PERSON}`);
+    expect(html).not.toContain(`chat-open-dm-${PARTNER_PERSON}`);
+    expect(html).toContain('仮名 花子');
+  });
+
+  it('読み手がホスト: 全員に出す（自分を除く）', () => {
+    const html = renderToStaticMarkup(createElement(ChatThreadPanel, { thread: room(true), canPost: true }));
+    expect(html).toContain(`chat-open-dm-${HOST_PERSON}`);
+    expect(html).toContain(`chat-open-dm-${PARTNER_PERSON}`);
+    expect(html).not.toContain(`chat-open-dm-${SELF}`);
+  });
+});
+
+
+describe('検索とお気に入りの幅', () => {
+  it('新規操作は縮めず折り返さない', () => {
+    const html = renderList(true);
+    const link = /<a[^>]*class="([^"]*)"[^>]*data-testid="chat-new-conversation"/.exec(html);
+    expect(link?.[1].split(' ')).toEqual(expect.arrayContaining(['shrink-0', 'whitespace-nowrap', 'min-h-11']));
+  });
+});
+
+
+describe('お気に入りの名前の識別', () => {
+  it('✅ 2026-10-27: 小さなアイコン＋名前 1 行の札を詰めて並べる（長い名前は札の中で省略し、名前は title で読める）', () => {
+    const name = '株式会社ダミーチャーリー 営業窓口';
+    const html = renderToStaticMarkup(createElement(ChatFavorites, {
+      favorites: [{ id: ROOM_DM, name, avatarClass: '', initials: 'ダ' }],
+      unreadCounts: {}, mutedIds: new Set<string>(), selectedThreadId: null,
+    }));
+    expect(html).toContain(name);
+    expect(html).toContain(`title="${name}"`);
+    expect(html).toContain('flex list-none flex-wrap gap-1');
+    expect(html).not.toContain('overflow-x-auto');
+    expect(html).not.toContain('grid-cols-');
   });
 });

@@ -10,6 +10,9 @@
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
 import { AuthShell } from '../../_components/auth-shell';
+import { roleAccountOptions } from '../../../lib/auth/role-account-options';
+
+export const dynamic = 'force-dynamic';
 import {
   AdminSignInForm,
   type AdminSignInFormMessages,
@@ -70,7 +73,7 @@ export default async function AdminSignInPage({
           `text-sm` → `text-body`〔14px。実寸同じ〕/ `text-slate-*` → `text-fg`）。 */}
       <h1 className="mb-2 text-title font-bold text-fg">{t('admin.signin.title')}</h1>
       <p className="mb-4 text-body text-fg">{t('admin.signin.lead')}</p>
-      <AdminSignInForm messages={messages} initialStage={initialStageOf(step)} />
+      <AdminSignInForm messages={messages} initialStage={initialStageOf(step)} roleAccounts={roleAccountOptions('platform')} />
     </AuthShell>
   );
 }

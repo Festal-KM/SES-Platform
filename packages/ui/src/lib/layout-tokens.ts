@@ -147,6 +147,12 @@ export const CHAT_SCREEN_HEIGHT_CLASS = 'md:h-[calc(100dvh-var(--app-banner-h,0p
  *    幅の上限は「読める行長」の規約であり、画面ごとに決め直すものではない。
  */
 export const CHAT_BUBBLE_MAX_WIDTH_CLASS = 'max-w-140';
+/**
+ * ✅ 2026-10-27（`docs/04` §S-031 改訂 44）: 会話の中に出す添付のプレビュー。画像は縦 240px まで縮め（幅は吹き出しの上限まで）、
+ * PDF の埋め込みは高さ 320px。🔴 `packages/ui` に置く（寸法を画面で決め直さない）。
+ */
+export const CHAT_ATTACHMENT_IMAGE_CLASS = 'max-h-60 w-auto max-w-full';
+export const CHAT_ATTACHMENT_PDF_CLASS = 'h-80 w-full';
 /** 右の関連情報パネルの Key-Value 行（30）とキーの列（124）。 */
 export const PANEL_KV_ROW_HEIGHT_CLASS = 'min-h-7.5';
 export const PANEL_KEY_WIDTH_CLASS = 'w-31';

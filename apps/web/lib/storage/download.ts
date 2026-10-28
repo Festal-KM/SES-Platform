@@ -71,6 +71,14 @@ type TenantDbArg = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
  */
 export type DownloadShareScope =
   | { readonly kind: 'OWNER_SCOPE' }
+  /**
+   * ✅ 2026-10-27（`CLAUDE.md` §3.3 改訂。#182）: 🔴 **チャットの添付を、取引先がいる部屋（越境経路 3）で渡す**。
+   *    チャット添付はゲートの対象から外した（注意書き・ウイルス検査・ファイル名を持たない・監査ログで扱う）ので、
+   *    ゲートの PASS を求めない。`CLEAN` の判定と監査の記録はほかと同じくこの関数が行う。
+   *    🔴 使ってよいのは `apps/web/lib/chat/attachments.ts` だけ（`tests/static/chat-room-share-scope.test.ts` が固定する）。
+   *    スキルシート・契約書・返却データなどほかの実体に使うと §3.3 のゲートを迂回することになる。
+   */
+  | { readonly kind: 'CHAT_ROOM' }
   | {
       readonly kind: 'EXTERNAL';
       /** ゲート結果の所在（`ReviewGate.targetType` / `targetId`）。 */
@@ -193,6 +201,7 @@ export async function issueDownloadUrl(
     //    **記録より前**に弾く（②と同じ理由。発行されなかった操作を「ダウンロードした」として残さない）。
     //    🔴 「ゲートが無いなら通す」にしない —— 検査していないものを外へ出さないことが
     //    このゲートの存在理由であり、未実行と PASS を同じ扱いにすると `BR-15` が空回りする。
+    //    ✅ 2026-10-27: `CHAT_ROOM`（チャットの添付を取引先がいる部屋で渡す）はゲートを求めない（`CLAUDE.md` §3.3 改訂。#182）。
     if (found.share.kind === 'EXTERNAL') {
       const passed = await findPassedReviewGate(db, {
         targetType: found.share.gateTargetType,

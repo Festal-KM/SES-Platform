@@ -6,8 +6,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   asChatThreadKind,
-  chatAttachedProjectView,
+  chatAnnouncementSnippet,
+  chatAnnouncementView,
   chatMessageView,
+  CHAT_ANNOUNCEMENT_SNIPPET_LENGTH,
+  CHAT_ANNOUNCEMENT_VIEW_KEYS,
+  chatAttachedProjectView,
+  chatAttachmentView,
+  CHAT_ATTACHMENT_VIEW_KEYS,
+  isChatMessageVisibleToViewer,
   CHAT_HIDDEN_PROJECT_CARD_KEYS,
   CHAT_PROJECT_REQUIREMENT_KEYS,
   CHAT_VISIBLE_PROJECT_CARD_KEYS,
@@ -103,6 +110,14 @@ describe('chatMessageView（会話の 1 件）', () => {
     for (const forbidden of CHAT_FORBIDDEN_RESPONSE_KEYS) {
       expect(Object.keys(view), forbidden).not.toContain(forbidden);
     }
+  });
+
+  it('🔴 #166 の 1: 削除済み・消去済みの行は、本文が残っていても `body` を返さない', () => {
+    const deps = { senderName: null, senderCompanyName: null, viewerPartnerCompanyId: null, viewerUserId: '01930000-0000-7000-8000-0000000000e9' };
+    const at = new Date('2026-10-26T00:00:00.000Z');
+    expect(chatMessageView({ ...MESSAGE_ROW, body: '書き戻された本文', deletedAt: at }, deps).body).toBeNull();
+    expect(chatMessageView({ ...MESSAGE_ROW, body: '書き戻された本文', purgedAt: at }, deps).body).toBeNull();
+    expect(chatMessageView({ ...MESSAGE_ROW, body: '生きている本文' }, deps).body).toBe('生きている本文');
   });
 
   it('🔴 `own` は会社で決まる（利用者単位にしない。スレッドには 2 社しか居ない）', () => {
@@ -261,6 +276,7 @@ describe('🔴 禁止キーの一覧そのものの対照（検査が空振り�
       ...CHAT_PROJECT_REQUIREMENT_KEYS,
       ...CHAT_PARTICIPANT_VIEW_KEYS,
       ...CHAT_THREAD_DETAIL_VIEW_KEYS,
+      ...CHAT_ANNOUNCEMENT_VIEW_KEYS,
     ]);
     expect([...CHAT_FORBIDDEN_RESPONSE_KEYS].filter((key) => allowed.has(key))).toEqual([]);
   });
@@ -290,5 +306,77 @@ describe('summarizeReactions（2026-10-16）', () => {
     const { summarizeReactions } = await import('./views');
     const json = JSON.stringify([...summarizeReactions([{ messageId: 'm', userId: 'secret-user', reaction: 'OK' }], 'me')]);
     expect(json).not.toContain('secret-user');
+  });
+});
+
+// ✅ 2026-10-26（紺野の決定 2026-10-22）: 部屋のアナウンス（1 部屋 1 件）。
+describe('chatAnnouncementView（アナウンスの帯）', () => {
+  const ROW = { messageId: MESSAGE_ROW.id, setAt: new Date('2026-10-26T01:00:00.000Z') };
+  const LIVE = { sentAt: MESSAGE_ROW.sentAt, body: MESSAGE_ROW.body, deletedAt: null, purgedAt: null };
+
+  it('キー集合が凍結どおりで、設定した人の利用者 ID・禁止キーを持たない', () => {
+    const view = chatAnnouncementView(ROW, { message: LIVE, setByName: '鈴木 花子' });
+    expect(Object.keys(view).sort()).toEqual([...CHAT_ANNOUNCEMENT_VIEW_KEYS].sort());
+    for (const forbidden of CHAT_FORBIDDEN_RESPONSE_KEYS) {
+      expect(Object.keys(view), forbidden).not.toContain(forbidden);
+    }
+    expect(view).toEqual({
+      messageId: MESSAGE_ROW.id,
+      messageSentAt: '2026-10-01T02:30:00.000Z',
+      snippet: '来週の面談の候補日をお送りします。',
+      setByName: '鈴木 花子',
+      setAt: '2026-10-26T01:00:00.000Z',
+    });
+  });
+
+  it('🔴 送った本人が消した・保持期限で消えた発言は本文を出さない（snippet は null）', () => {
+    const deleted = chatAnnouncementView(ROW, { message: { ...LIVE, body: null, deletedAt: new Date() }, setByName: null });
+    expect(deleted.snippet).toBeNull();
+    // 本文が残っていても、消えた印が立っていれば出さない（二重）。
+    expect(chatAnnouncementView(ROW, { message: { ...LIVE, purgedAt: new Date() }, setByName: null }).snippet).toBeNull();
+    expect(chatAnnouncementView(ROW, { message: { ...LIVE, deletedAt: new Date() }, setByName: null }).snippet).toBeNull();
+  });
+
+  it('設定した人の名前が読めなければ null のまま（既定値で埋めない）', () => {
+    expect(chatAnnouncementView(ROW, { message: LIVE, setByName: null }).setByName).toBeNull();
+  });
+
+  it('本文の冒頭は改行をつぶし、長ければ切って「…」を付ける', () => {
+    expect(chatAnnouncementSnippet('1 行目\n\n2 行目')).toBe('1 行目 2 行目');
+    const long = 'あ'.repeat(CHAT_ANNOUNCEMENT_SNIPPET_LENGTH + 10);
+    expect(chatAnnouncementSnippet(long)).toBe(`${'あ'.repeat(CHAT_ANNOUNCEMENT_SNIPPET_LENGTH)}…`);
+    expect(chatAnnouncementSnippet(null)).toBeNull();
+  });
+});
+
+// ✅ 2026-10-27（`F-038` 改訂 12 ⑫ / AC-14）: 添えたファイルの写し。
+describe('添えたファイル（chatAttachmentView / isChatMessageVisibleToViewer）', () => {
+  const VIEWER = '01930000-0000-7000-8000-0000000000e9';
+  const WITH_FILE: ChatMessageRow = {
+    ...MESSAGE_ROW,
+    attachmentContentType: 'application/pdf',
+    attachmentByteSize: 2048n,
+    attachmentScanStatus: 'CLEAN',
+  };
+
+  it('種類・大きさ・検査の状態だけを出す（キー・ファイル名・URL のキーを持たない）', () => {
+    const view = chatMessageView(WITH_FILE, { senderName: null, senderCompanyName: null, viewerPartnerCompanyId: null, viewerUserId: VIEWER });
+    expect(view.attachment).toEqual({ kind: 'pdf', contentType: 'application/pdf', byteSize: 2048, scanStatus: 'CLEAN' });
+    expect(Object.keys(view.attachment ?? {}).sort()).toEqual([...CHAT_ATTACHMENT_VIEW_KEYS].sort());
+  });
+
+  it('添付の無い発言・消えた発言は null', () => {
+    expect(chatAttachmentView(MESSAGE_ROW)).toBeNull();
+    expect(chatAttachmentView({ ...WITH_FILE, deletedAt: new Date() })).toBeNull();
+    expect(chatAttachmentView({ ...WITH_FILE, purgedAt: new Date() })).toBeNull();
+  });
+
+  it('🔴 CLEAN でない添付の発言は送った本人にだけ返す。CLEAN・添付なしは誰にでも', () => {
+    const scanning = { ...WITH_FILE, attachmentScanStatus: 'SCANNING' };
+    expect(isChatMessageVisibleToViewer(scanning, VIEWER)).toBe(false);
+    expect(isChatMessageVisibleToViewer(scanning, MESSAGE_ROW.senderUserId)).toBe(true);
+    expect(isChatMessageVisibleToViewer({ ...WITH_FILE, attachmentScanStatus: 'INFECTED' }, VIEWER)).toBe(false);
+    expect(isChatMessageVisibleToViewer(WITH_FILE, VIEWER)).toBe(true);
+    expect(isChatMessageVisibleToViewer(MESSAGE_ROW, VIEWER)).toBe(true);
   });
 });

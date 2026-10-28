@@ -1,5 +1,7 @@
 # 03. 技術選定書 — SES Platform
 
+> 2026-10-28・宮田の指示: AWS開発環境は `https://dev-es.bizorch.com` をブラウザで直接開く。PCは編集とブラウザだけにし、依存導入・ビルド・アプリ・DB・workerはAWSで動かす。公開するのはHTTPSのALBで、Nextの開発サーバーは公開しない。`APP_ENV=development` の送信モックを維持し、画面確認用成果物は `NODE_ENV=production` でビルドする。添付は自環境のAWS S3とIAMロールを使用する。既存ローカル開発のS3互換設定は維持する。
+
 > **位置づけ**: 本書は「何を使って作るか」と「外部依存の仕様を一次情報で確定させた結果」を定義する。
 > **一次資料は `CLAUDE.md`**。**§2「技術スタック（確定事項）」は覆さない。** 本書はそれに理由・競合比較・既知の懸念を肉付けし、未決定領域を補完し、**`CLAUDE.md` §9「未確定事項」を裏取りして確定させる**。
 > 上流: `docs/01-business-requirements.md`（**2026-09-01 改訂済み**。`BR-01`〜`BR-73` / `R-1`〜`R-11` / `Q-1`〜`Q-20`）、`docs/02-functional-requirements.md`（`F-001`〜`F-064` / `UC-01`〜`UC-24`）。
@@ -404,6 +406,8 @@
 ⚠️ **この既定は `docs/02` に対する要求の追加である。** `F-001` の処理・受け入れ基準（独自ドメイン検証の前提条件化）と `F-007` / `F-022` / `F-041` / `F-047` の外部 API 依存欄（未検証時の挙動）に反映が要る。🔴 **`Q-T-7` は 2026-09-01 に承認済みであり、`CLAUDE.md` §8.7 に従って `docs/02` を更新する**（`pm` 申し送り 10。**上流の `CLAUDE.md` §9-3 / §5 は改訂済み**）。
 
 #### 3.2.8 🔴 `sandbox` 環境での二重防御と、宛先の判定基準（決定済み（2026-09-01）、[Issue #9](https://github.com/Festal-KM/SES-Platform/issues/9) / [#10](https://github.com/Festal-KM/SES-Platform/issues/10)）
+
+**2026-10-26 追補（宮田の明示指示）:** AWSの開発・営業デモ・本番は同一アカウント内の別環境とする。この3環境に限り `AWS_ISOLATION_MODE=resource` を明示指定できる。開発・デモはSESサンドボックスのアカウント単位制限に依存せず、環境別アプリロールの `Deny ses:* / sns:Publish`、モックへの切替、環境別リソースの起動時照合で実送信と本番資源へのアクセスを拒否する。既定の `account` モードと `sandbox`／`staging` のアカウント分離は維持する。既存の本番ID・ARNの一律拒否に関する記載は、`account` モードの規律として引き続き適用する。具体的な命名と運用手順は [DEPLOY-AWS.md](./DEPLOY-AWS.md)。
 
 🔴 **`sandbox` のモックの射程は「宛先が誰か」で分ける**（`CLAUDE.md` §11.1）。**判定基準は次の 2 段で確定している。**
 
@@ -1218,7 +1222,7 @@ Claude の PDF サポートは技術的には xlsx を除く多くの文書を�
 
 🔴 **`development` の MinIO はバケットの「作成 + バージョニング有効化」まで初期化する**（T-05-06。`docker-compose.yml` の `minio-init` が `mc mb` → `mc version enable` を 1 度だけ実行する）。
 
-🔴 **実 S3（`sandbox` / `staging` / `production`）のバケットには CORS（`PutBucketCors`）が必須**（T-05-06 / T-05-10 の e2e-tester 所見。`docs/05` §14.2）。スキルシートは**ブラウザから直接 PUT** するため（`docs/03` `program-design` 申し送り 23）、`Content-Type` を伴う非単純リクエストとしてプリフライト（OPTIONS）を受ける。**S3 は既定で CORS を一切許可しない**ので、未設定だと `S-008` の画面からのアップロードだけが必ず失敗する（サーバ側のテストは全て green のまま）。設定は環境構築（**SP-12 T-12-09**）で行い、`AllowedMethod: PUT` / `AllowedHeader: content-type, content-length` / `AllowedOrigin` は**そのアプリの origin だけ**（🔴 `*` にしない）。⚠️ **`development` の MinIO は既定で全 origin を許可する**（`api.cors_allow_origin` の既定が `*`。実測で確認）ため設定不要である —— **ローカルで動くことは `staging` で動く保証にならない**。⚠️ MinIO は `PutBucketCors` を実装していない（`mc cors set` は `not implemented` で失敗する。実測）ので、ローカルで絞りたい場合はサーバ設定 `api.cors_allow_origin` を使う。`ObjectStore.head()` は `VersionId` が空なら**例外**にする（`FileScanResult` の重複排除キー `UNIQUE(object_key, object_version_id)` が版 ID を要求するため。`docs/05` §14.1）ので、バージョニングの無いバケットでは**アップロードの確定（#19）が必ず失敗する**。「空文字で代替」は全オブジェクトの重複排除キーが衝突する壊れ方になるため採らない。
+🔴 **実 S3（`sandbox` / `staging` / `production`）のバケットには CORS（`PutBucketCors`）が必須**（T-05-06 / T-05-10 の e2e-tester 所見。`docs/05` §14.2）。スキルシートは**ブラウザから直接 PUT** するため（`docs/03` `program-design` 申し送り 23）、`Content-Type` を伴う非単純リクエストとしてプリフライト（OPTIONS）を受ける。**S3 は既定で CORS を一切許可しない**ので、未設定だと `S-008` の画面からのアップロードだけが必ず失敗する（サーバ側のテストは全て green のまま）。設定は環境構築（**SP-12 T-12-09**）で行い、`AllowedMethod: PUT` / `AllowedHeader: content-type, content-length`（✅ 2026-10-27: チャットの添付のために **`if-none-match`** も。作るだけの書き込み〔`docs/05` §3.7.1〕）/ `AllowedOrigin` は**そのアプリの origin だけ**（🔴 `*` にしない）。⚠️ **`development` の MinIO は既定で全 origin を許可する**（`api.cors_allow_origin` の既定が `*`。実測で確認）ため設定不要である —— **ローカルで動くことは `staging` で動く保証にならない**。⚠️ MinIO は `PutBucketCors` を実装していない（`mc cors set` は `not implemented` で失敗する。実測）ので、ローカルで絞りたい場合はサーバ設定 `api.cors_allow_origin` を使う。`ObjectStore.head()` は `VersionId` が空なら**例外**にする（`FileScanResult` の重複排除キー `UNIQUE(object_key, object_version_id)` が版 ID を要求するため。`docs/05` §14.1）ので、バージョニングの無いバケットでは**アップロードの確定（#19）が必ず失敗する**。「空文字で代替」は全オブジェクトの重複排除キーが衝突する壊れ方になるため採らない。
 
 🔴 **非本番であることの常時表示（`F-028` / NFR-ENV-9）**: **`APP_ENV !== 'production'` のときにバナーを出す**のではなく、**`APP_ENV` を判別可能な合併型として受け取り、`production` 以外のすべての枝でバナー要素を返すことを型で強制する**（`switch` の網羅性検査。§2.1 の TypeScript `strict`）。理由: 環境が増えるたびに `if (env === 'demo' || env === 'sandbox')` を書き足す構造だと、**新しい環境を足したときに表示が漏れる**（漏れても画面は正常に見えるため気づけない）。**バナーはレイアウトの最上位（主平面 `/` と管理平面 `/admin` の両方）に置き、モバイルビューポートでも消さない**（`F-028 AC-1` / `CLAUDE.md` §13.3）。
 

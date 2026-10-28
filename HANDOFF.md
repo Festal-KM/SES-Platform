@@ -1,5 +1,19 @@
 # HANDOFF.md — 作業の引き継ぎ
 
+## 2026-10-28 ロール別ログインと運営コンソールの追加依頼
+
+進行中: AWS開発・デモに各テナントの6ロール各2名と運営2ロール各2名の合成アカウントを追加し、ログイン画面から選べるようにする。AWS開発だけは通常確認用の合成IDで2FAを省略し、別IDのOWNER/ADMINで実際の2FAを検証する。一般利用者・本番の認証と、運営者の別認証・2FA必須は維持する。ログインの文字の製品名を既存ロゴにし、装飾を抑えて整える。同じ依頼の追加として、運営コンソールで開発・デモ・本番それぞれのテナント、アカウント、APIキーの管理を実装する。まずロール別ログインを仕上げ、次に運営コンソールへ進む。APIキーは値を表示せず、権限を分けた登録・更新と設定状況の確認を行う。デモのAWS配備とGit自動配備も引き続き未完。
+
+## 2026-10-28 開発画面はAWSのURLを直接開く
+
+宮田から再確認: PCは編集・ブラウザのみ。localhostのSSM転送を画面確認の標準にせず、`https://dev-es.bizorch.com/signin` を直接開く。AWS開発ALBと認証済み証明書を使い、VMへの3000番はALBからだけ許可する。AWSでビルドしたNext成果物を `APP_ENV=development` の送信モックで動かす。添付は自環境AWS S3へ直接接続する。公開URLの実機検証は作業中。旧localhost手順を利用者向けに案内しない。営業デモのデータは新規の架空データでよいと宮田から回答済み。
+
+## 2026-10-28 AWS開発アプリの実機確認
+
+PCでアプリを起動せず、AWS開発VMでNext dev・worker・PostgreSQL・Redis・S3互換・ClamAVを起動。ソース転送でcredentials.tsを除外していた不具合を修正。SSM経由で `/signin` 200、テスト営業の認証200とセッション発行、認証後の `/projects` と `/api/projects` 200を確認。日常の起動・同期・接続・停止は `docs/DEPLOY-AWS.md` 冒頭。別端末では各自のAWS認証・Session Manager pluginが必要。共有VMのソースを複数人で同時に上書きしない。
+
+AWSデモ・本番とGit CI/CDは引き続き構築中。RailwayはAWS完成後に停止してよいと宮田から承認済みだが、実機確認・旧データの引き継ぎ要否・バックアップ・配備復旧・利用者の新URL確認が済むまでは維持する。DB等の削除はしない。OpenAIキーは将来用の保管のみ。
+
 🔴 **作業を始める前に、このファイルを最初に読む。** `CLAUDE.md` が一次資料（仕様・ハードルール）で、このファイルは**いま何が未完で、何に気をつけるか**を記録する。
 
 > **最終更新**: 2026-10-03 / HEAD = `aa71a50` / ブランチ = `main` / 🔴 **CI 緑**（run [`36976938729`](https://github.com/Festal-KM/SES-Platform/actions/runs/36976938729)。`T-22-05` 以降で**全スイートが実際に実行された最初の run**）
@@ -229,6 +243,19 @@ OneDriveは追加の人間指示で既定OFFへ変更済み：HKCU RunのOneDriv
 | 🔴 **この画面に初めてクライアントの島を作った** | `app/(main)/projects/skill-filter-select.tsx`。**語で候補を絞るのは CSS だけでは書けない**（入力の値で兄弟要素を選ぶセレクタが無い）。🔴 **JS が無くても絞り込みは死なない** —— 開閉は素の `<details>`、選択肢は素のチェックボックス、送信は親の `<form method="get">` である |
 | ⚠️ **バッジの意味が変わった** | 旧: 「いま効いている条件」（URL）。新: **「これから送る条件」（チェック）**。受領モックが「チェック = バッジ」だったため。🔴 これに伴い `×` は**リンクから button** になり、`projectSkillRemoveHref` を**削除**した |
 | 🔴 **`focus({ preventScroll: true })`** | ポップアップを開いて検索欄に焦点を置くと、既定の `focus()` は**そこまでページをスクロールする**。絞り込みの帯は画面の上端にあるので、**開いただけで一覧が上へ飛ぶ**。Playwright が「要素が安定しない」と判定するほど動いていた |
+### 2026-10-26：AWSの3環境への移行（基盤作成、アプリ公開は未完）
+
+人間の指示で開発（開発時だけ起動、停止中もデータ保持）／営業デモ（常時利用可能、合成データのみ）／本番（常時稼働）の3環境を作る。追加の明示回答により、3環境ともAWSアカウント117425831827、東京リージョンを使用する。ドメインは未定。Railwayの更新は省略する。
+
+`infra/aws/foundation.mjs` と `scripts/aws-foundation.mjs` で、環境別のVPC・公開／非公開サブネット・S3・KMS・ECR・ログ・空のECSクラスター・アプリ／起動用IAMロールを定義。3つの `ses-platform-<環境>-foundation` スタックを作成した。保存先と鍵は削除／置換でも保持し、スタックの削除保護も有効。既存のSNS等の別プロジェクトには触れていない。NAT・ALB・DB・Redis・Web／workerはまだ作っていない。KMSキー等の基盤維持費は発生する。
+
+開発の作業用VMも `ses-platform-development-workspace` で作成（i-0bc41c9e860ebe14c）。t3.large・暗号化gp3 80GiB・Amazon Linux 2023・Docker/Git、着信ポートなし、SSM Online確認。`scripts/aws-development.mjs start|stop|status` はこの1台だけを照合して操作する。startで8時間の期限を設定し、15分周期のLambdaが期限到来時にこの1台だけを停止する。停止Lambdaの実機呼出でstopped=true、CLIで再起動後に作業フォルダの検証ファイル保持とDocker activeを確認。initは既存VMのAMIを維持して自動置換を避け、ネットワーク変更も拒否する。アプリ・DB・ソースは未配備。Session Manager pluginはローカル未導入（AWSコンソールなら接続可能）。停止中もディスク保存費は残る。
+
+**同一アカウントという新しい人間の判断は既存の設計との差分である。** `packages/config/src/schema.ts` に明示指定の `AWS_ISOLATION_MODE=resource` を追加。既定の `account` は従来の本番ID／ARN拒否を維持する。resourceは承認された3環境だけで、共通アカウント・環境別S3/KMS/SNS/SES設定・DBのホストとロール・TLS Redisを照合する。開発だけループバック接続を認め、デモ／本番のS3固定キーと独自endpoint、アプリのseed特権接続を拒否する。本番のモック禁止・非本番の本番APIキー拒否は共通。configの7ファイル188件とパッケージビルド通過。docs/03・05にも承認された差分を記録。偽の本番IDで回避しない。実際のDB／Redisと秘密値の設定、起動確認はまだで、基盤作成をもってアプリのデプロイ完了と報告しない。
+
+手順・後続の構成案は `docs/DEPLOY-AWS.md`。基盤・開発VMの定義はNode標準の9テストが通過（外部依存なし）。作成済みIAMの検査は `node scripts/aws-verify-isolation.mjs` の23件が通過（ポリシーシミュレーター。実データや秘密値を取得しない）。3基盤スタックはUPDATE_COMPLETE・削除保護あり。静的1490件を検証（初回2件が時間切れとなり、その2ファイル17件を再実行して通過）。AWS向けのCIは `.github/workflows/aws-foundation.yml` で認証情報なしに構文・定義・環境分離を検査する。AWSへの自動デプロイは追加していない。
+
+案件管理の改修は別ブランチ `feat/projects-management-refresh`、PR #172。AWS作業は最新origin/mainから切った別ブランチ `feat/aws-environments` に置く。PR #172は558c520時点でCIのNextビルドが既存usageのrenderテストのTS2859で失敗しており、まだmainに反映していない。今回のAWS作業では案件・チャット・DBのアプリ実装を変更していない。
 
 ### ✅ 2026-10-16 の作業（すべてデモに反映済み）
 
@@ -246,10 +273,12 @@ OneDriveは追加の人間指示で既定OFFへ変更済み：HKCU RunのOneDriv
 | | 内容 |
 |---|---|
 | ✅ main に入った | #144 スケルトン・削除の確認・トースト / #145 スマホのスワイプ・絞り込み / #146 グループ作成の作り直し / #147 ひとこと状態を全部の会話で名前の横に / #148 vite 8.2.4（全ブランチの Security audit が落ちていた）/ #149 入力欄を GitHub のコメント欄の形に（書式・プレビュー・@名前。Markdown は自前の `lib/chat/markdown.ts`、HTML を通さない）/ #150 会話は枠の中だけでスクロール・未読の位置から開く・未読は赤丸・見出しを読み上げ用だけに / #151 **要返信を外し「保存済み」と「自分の定型文」**（表 2 つ） |
+| ⏳ PR `chat/data-races`（2026-10-26。#166 の 1・2・5） | ① 編集・削除を条件付きの更新にした（削除と重なっても消した本文が戻らない）② 解約でグループ名（`chat_threads.title`）も消す（migration `20261026010000` はポリシーを足すだけ。**宮田さんの確認待ち**）③ 既読を進める更新を DB の条件で比べる（同時の要求で後退しない）。分離テスト `chat-data-races.test.ts`（新）・`tenant-purge.test.ts` |
 | ⏳ PR | #154 スマホ版の作り直し（Lark 寄せ）・入力欄を普段は細く / 左の列の見出しの開閉（この節を足した PR）/ #153 スキル辞書に AI・セキュリティ 8 項目（**折笠さんの判断待ち**） |
 | 🔴 **デモに未反映** | このデモは**マージしても自動では反映されない**（§2.3 の `railway up`）。さらに **2026-10-21 に Railway でセキュリティ事故**（環境変数が盗まれた可能性）があり、ビルドが止まっていた。**鍵の入れ替えと反映は [#152](https://github.com/Festal-KM/SES-Platform/issues/152) で判断待ち**。反映すると #151 の migration 2 本（表を足すだけ）が `railway-predeploy.mjs` で当たる。⚠️ この開発機には `railway` が入っていない —— `npx -y @railway/cli login` → `link` → `up --service web` / `--service worker` |
 | 🔴 `CLAUDE.md` §4.1 | #151 で `ChatSavedMessage` / `ChatMessageTemplate` の 2 行を足した。紺野は承認済み（#151 のコメント）。**宮田さんの事後確認が要る**（#151 は宮田さんの OK の前にマージされた） |
 | 決まったこと（作る予定） | 案件は**チャットに投げ入れる**（「/」メニュー・送り先を選ぶ。案件スレッドは残して上に概要カード）/ LINE のアナウンス（メンバーなら誰でも・1 部屋 1 件）/ リアクションに**絵文字 12 種 + 既存の言葉 4 種**（🔴 UI_GUIDELINES §1「絵文字を使わない」の例外になる = 宮田さんと合意が要る。DB の CHECK も広げる）/ 名前は「保存済み」 |
+| ⏳ アナウンス（PR） | 2026-10-26: LINE のアナウンスを実装（新しい表 `chat_thread_announcements` = 1 部屋 1 件・読み = 部屋が読める人だけ・設定 = その部屋の消えていない発言だけ / API `GET`・`PUT`・`DELETE /api/threads/{id}/announcement` / 会話の見出しの下の帯）。🔴 `CLAUDE.md` §4.1 に `ChatThreadAnnouncement` を足した = 紺野・宮田の承認待ち。マージ後にデモへ反映すると migration 1 本（表を足すだけ）が当たる |
 | 後で | ひとこと状態のカレンダー連動（カレンダーに予定のデータが入ってから。予定の中身は出さず時間だけ）/ ファイル添付（#108）/ アプリ化（ホーム画面に追加する PWA が第一候補）/ スレッド返信・リアクションした人の名前・状態の期限 |
 | 🔴 教訓 | ① 見た目は**部品を一時テストで HTML に描き出し、本物の CSS（`@tailwindcss/postcss`）を当てて Playwright で撮る**と、デモに出す前に確かめられる ② 使わなくなった値を消すときは `tests/isolation` も grep する（#151 で CI の型エラーを出した）③ 同じファイルを触る PR を並べると、マージのたびにぶつかる —— 1 本ずつ入れて、そのつど main を取り込む |
 
@@ -383,6 +412,7 @@ OneDriveは追加の人間指示で既定OFFへ変更済み：HKCU RunのOneDriv
 | 🔴 **CI が赤のとき `skipped` を見る** | `gh run view <id> --json jobs --jq '.jobs[].steps[] | "\(.number). \(.name) → \(.conclusion)"'`。**早いステップの赤は後続を全部 `skipped` にする**（§6-11 で 5 コミット分のテストが消えた）。`pnpm audit` は独立ジョブ（`Security audit`）に出したが、**`ci` ジョブ内の build / lint / typecheck は依然として直列**であり、build が落ちればテストは走らない。🔴 **「失敗 1 件」と出ていても、その後ろで何件の検査が消えたかは別に数える** |
 | 🔴 **`tailwind.css` の `@source '../../../packages/ui/src'` を消さない** | 消すと `@ses/ui` のスタイルが**テストは緑のまま見た目だけ**消える（実測の記録が同ファイルにある） |
 | **分離テストは専用の config** | `npx vitest run -c vitest.isolation.config.ts <file>`（既定の `vitest.config.ts` は `tests/isolation/**` を除外している） |
+| ✅ 2026-10-27 **分離テストが Node v22.11 で import 時に落ちることがある**（`undici` の zstd） | レビュー環境（Node v22.11）で `undici` の zstd 関連の import で失敗した報告がある。CI は **Node 24**（`.github/workflows/ci.yml`）。ローカルでは **Node 22.20 以上**（このリポジトリの作業では `~/.npm/_npx/…/node/bin` の v22.20.0 を `PATH` の先頭に置いて実行し、通っている）か Node 24 で回す。落ちたら Node の版を先に疑う |
 | **テストの基準値**（2026-10-02。run `36976938729` の実測） | `tests/static/` **1327** / `apps/web` **2602** / `packages` 2393 / `packages/i18n` 25 / **ユニット合計 393 ファイル 6779 件** / **分離 94 ファイル 2236 件** / **E2E 14 spec 67 ケース** |
 | 🔴 **E2E は「71 ケース」ではない** | 本ファイルと `SP-22` の文中にあった **71 は誤り**。`T-22-05` 直前の緑 run（`36630709885`）も **67**、`grep -cE "^\s*test\("` の宣言合計も **67** で一致する。**ケースが失われたのではなく、記録していた数が間違っていた**（2026-10-02 に実測で確認）。🔴 **基準値は「前に書いた数」ではなく「直近の緑 run の実測」を正とする** |
 
@@ -407,6 +437,8 @@ OneDriveは追加の人間指示で既定OFFへ変更済み：HKCU RunのOneDriv
 - 🔴 **ロール別の出し分けは DOM から取り除く。** グレーアウト（`disabled` / `aria-disabled` / `opacity`）で残すのは分離の後退（`BR-44`）。
 - 🔴 **ホームに氏名を出さない。** 60 秒ポーリングで `engineer.view` の監査ログが毎分積まれる（`BR-27`）。
 - 🔴 **`Drawer` に台帳のエンジニア詳細とスキルシートを含めない。** 一覧をスクロールするだけで監査ログが膨張する。
+- ✅ **2026-10-27 チャットの添付は取引先がいる部屋でも送れる**（`CLAUDE.md` §3.3 改訂。紺野の決定・宮田の承認。#182）。取引先の部屋への添付を拒んでいたトリガ `messages_internal_only_attachment` は migration `20261027040000_chat_attachments_partner_rooms` で外した（マージ済みの `20261027010000` / `20261027030000` は書き換えていない）。🔴 共有 URL の分類 **`CHAT_ROOM`（ゲートを求めない）はチャットの添付専用**であり、使ってよいのは `apps/web/lib/chat/attachments.ts` だけ（型と分岐は `lib/storage/download.ts`）。`tests/static/chat-room-share-scope.test.ts` が固定する —— ほかの実体（スキルシート・契約書・返却データ）が名乗ると §3.3 のゲートを迂回できる。読めるかは従来どおり RLS（越境経路 3）、`CLEAN` でない添付は送った本人だけ。
+- ⏳ **2026-10-27 チャットの引用して返信・自分宛ての @ の印（軽い版。DB を変えない。PR 前のブランチ `chat/quote-mention`）**。引用は本文の頭の決まった形の文字列（`apps/web/lib/chat/quote.ts`。見出しは本文の 1 行目だけ）、@ の印は `readChatScreen` の `mentionUnreadIds`（「ある / ない」だけ）。🔴 本文の照合は `@ses/db` の `freeWordFilter` で候補を絞り `lib/chat/mention.ts` で確かめる（`search-sql-single-path.test.ts` が `contains` の直書きを落とす）。🔴 分離テスト `chat-mentions.test.ts` は**実時刻で送る**（過去の時刻で送ると、シードの発言の既読位置より前に並んで未読にならない）。
 
 ### 3.4 安全網（刷新の土台。壊すと刷新そのものが成り立たない）
 

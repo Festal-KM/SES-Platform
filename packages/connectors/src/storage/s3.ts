@@ -15,6 +15,8 @@ import {
   type ObjectHead,
   type ObjectStore,
   type PresignGetOptions,
+  type PresignPutOptions,
+  type StoredObjectSummary,
   type TenantStorageMeasurement,
 } from '../interfaces.js';
 import type { PresignedUrl } from '../types.js';
@@ -65,8 +67,9 @@ export class S3ObjectStore implements ObjectStore {
    *    迂回できない。
    * 🔴 有効期限は短い（既定 5 分。docs/03 §3.6）。
    */
-  async presignPut(key: string, contentType: string, maxBytes: number): Promise<PresignedUrl> {
+  async presignPut(key: string, contentType: string, maxBytes: number, options?: PresignPutOptions): Promise<PresignedUrl> {
     this.assertKey(key);
+    const createOnly = options?.createOnly === true;
     this.calls += 1;
     const expiresIn = this.options.presignedUrlTtlSeconds;
     const url = await this.options.api.presignPut({
@@ -76,6 +79,7 @@ export class S3ObjectStore implements ObjectStore {
       ContentLength: maxBytes,
       ...(this.options.kmsKeyId === undefined ? {} : { SSEKMSKeyId: this.options.kmsKeyId }),
       ExpiresInSeconds: expiresIn,
+      ...(createOnly ? { IfNoneMatch: '*' as const } : {}),
     });
     return {
       url,
@@ -85,6 +89,7 @@ export class S3ObjectStore implements ObjectStore {
       headers: {
         'content-type': contentType,
         'content-length': String(maxBytes),
+        ...(createOnly ? { 'if-none-match': '*' } : {}),
         ...(this.options.kmsKeyId === undefined
           ? {}
           : {
@@ -186,6 +191,30 @@ export class S3ObjectStore implements ObjectStore {
       continuationToken = page.NextContinuationToken;
     } while (continuationToken !== undefined);
     return { byteSize, objectCount };
+  }
+
+  async listTenantObjects(tenantId: string, kindSegment: string): Promise<readonly StoredObjectSummary[]> {
+    if (!/^[a-z0-9-]{1,32}$/.test(kindSegment)) throw new Error('listTenantObjects: 用途のセグメントが不正です。');
+    const prefix = `${buildTenantObjectPrefix(tenantId)}${kindSegment}/`;
+    const found: StoredObjectSummary[] = [];
+    let continuationToken: string | undefined;
+    do {
+      this.calls += 1;
+      const page = await this.options.api.listObjects({
+        Bucket: this.options.bucket,
+        Prefix: prefix,
+        ...(continuationToken === undefined ? {} : { ContinuationToken: continuationToken }),
+      });
+      for (const item of page.Contents) {
+        if (!item.Key.startsWith(prefix)) continue;
+        found.push({ key: item.Key, byteSize: item.Size, lastModified: item.LastModified ?? null });
+      }
+      if (page.NextContinuationToken !== undefined && page.NextContinuationToken === continuationToken) {
+        throw new Error('S3 の ListObjectsV2 が同じ ContinuationToken を返し続けています（走査を打ち切ります）。');
+      }
+      continuationToken = page.NextContinuationToken;
+    } while (continuationToken !== undefined);
+    return found;
   }
 
   callCount(): number {

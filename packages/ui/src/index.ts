@@ -373,6 +373,8 @@ export { AUTH_CARD_WIDTH_CLASSES, QR_FIGURE_CLASSES } from './lib/fixed-width-cl
 //    px を書き直さない（`tests/static/layout-tokens.test.ts`）。
 export {
   CHAT_BUBBLE_MAX_WIDTH_CLASS,
+  CHAT_ATTACHMENT_IMAGE_CLASS,
+  CHAT_ATTACHMENT_PDF_CLASS,
   CHAT_COMPOSER_HEIGHT_CLASS,
   CHAT_SCREEN_HEIGHT_CLASS,
   CHAT_THREAD_LIST_WIDTH_CLASS,
@@ -406,6 +408,8 @@ export {
   SIDEBAR_WIDTH_PX,
   TITLE_BLOCK_MIN_HEIGHT_CLASS,
 } from './lib/layout-tokens.js';
+// ✅ 2026-10-27: チャットの入力欄の枠（`S-031` だけ）。
+export { CHAT_COMPOSER_FOCUS_CLASSES, CHAT_COMPOSER_INPUT_FOCUS_CLASSES } from './lib/chat-composer-classes.js';
 // 🔴 一覧の行の操作（146 × 32）と行の hover の 1 実装（面と状態は部品側が持つ）。
 // ✅✅ 2026-10-16: 複数選択を**ポップアップで選び、選んだものはバッジで見せる**ための 3 定数
 //    （人間の明示指示。`S-010` のスキル条件が使う）。🔴 **画面側で面・高さ・重なりを組まない。**
@@ -460,3 +464,5 @@ export {
   POPOVER_SEGMENT_ITEM_CLASSES,
   POPOVER_SEGMENT_ITEM_SELECTED_CLASSES,
 } from './lib/overlay-classes.js';
+export { ROW_ACTION_LINK_CLASSES, ROW_HOVER_CLASSES } from './lib/control-classes.js';
+export { BrandLogo } from './components/sidebar.js';

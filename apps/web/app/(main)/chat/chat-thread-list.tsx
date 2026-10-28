@@ -24,7 +24,7 @@ import {
   CHAT_THREAD_ROW_HEIGHT_CLASS,
   EmptyState,
   Input,
-  PRIMARY_LINK_CLASSES,
+  Icon,
   ROW_HOVER_CLASSES,
   SECONDARY_LINK_CLASSES,
   cn,
@@ -64,17 +64,12 @@ const KIND_MESSAGE_KEYS = {
   GROUP: 'chat.thread.kind.GROUP',
 } as const satisfies Readonly<Record<ChatThreadKind, `chat.thread.kind.${ChatThreadKind}`>>;
 
-/**
- * 🔴 種類ごとのアバターの形と色。お気に入り・左の列も同じ。
- * ✅ 2026-10-20（紺野「色もなんか一緒」）: 薄い地（`*-bg`）だと一覧の灰色に溶けるので、**塗りつぶし**にした。
- *    人 = 青の丸 / グループ = 緑の丸 / 取引先の会社 = 墨色の角丸（🔴 サイドバーの紺はサイドバー専用。`ui-shadow-and-size.test.ts`）/ 案件 = 橙の角丸に「#」。
- *    使う色は既存のトークンだけ（新しい色を足さない）。
- */
+/** 種類は形と文字で見分け、現在地・未読に色の強調を残す。 */
 export const AVATAR_KIND_CLASSES: Readonly<Record<ChatThreadKind, string>> = {
-  DM: 'bg-brand text-brand-fg',
-  GROUP: 'bg-success text-bg',
-  COMPANY: 'rounded-md bg-fg text-bg',
-  PROJECT: 'rounded-md bg-warning text-bg',
+  DM: 'bg-neutral-bg text-fg',
+  GROUP: 'bg-neutral-bg text-fg',
+  COMPANY: 'rounded-md bg-neutral-bg text-fg',
+  PROJECT: 'rounded-md bg-neutral-bg text-fg',
 };
 
 const TAG_CLASSES = 'shrink-0 rounded-xs px-1 text-xs';
@@ -93,6 +88,8 @@ export type ChatThreadListProps = {
   readonly pinnedIds?: readonly string[];
   readonly mutedIds?: readonly string[];
   readonly unreadCounts?: Readonly<Record<string, number>>;
+  /** ✅ 2026-10-27（F-038 ⑭）: 未読の中に自分宛ての `@` がある部屋（「ある / ない」だけ）。 */
+  readonly mentionUnreadIds?: readonly string[];
   /** 旧「未読のみ」（`unread=1`）。v2 では左の列の「未読」（`f=unread`）と同じ扱い。 */
   readonly unreadOnly?: boolean;
   readonly people?: ChatPeopleData | null;
@@ -170,6 +167,7 @@ type RowContext = {
   readonly listQuery: { readonly q: string | null; readonly sort: ChatThreadSort; readonly filter: ChatListFilter };
   readonly unreadCounts: Readonly<Record<string, number>>;
   readonly mutedIds: ReadonlySet<string>;
+  readonly mentionIds: ReadonlySet<string>;
   /** ✅ 2026-10-20: スワイプで出すピン留めの今の状態。 */
   readonly pinnedIds: ReadonlySet<string>;
   readonly lastSnippets: Readonly<Record<string, string>>;
@@ -220,10 +218,12 @@ function Row({ view, context }: { readonly view: RowView; readonly context: RowC
         besideHref === null || openBesideLabel === undefined ? null : (
           <Link
             href={besideHref}
-            className={cn(SECONDARY_LINK_CLASSES, 'flex shrink-0 items-center whitespace-nowrap px-2 text-xs')}
+            aria-label={openBesideLabel}
+            title={openBesideLabel}
+            className={cn(SECONDARY_LINK_CLASSES, 'flex min-h-11 min-w-11 shrink-0 items-center justify-center px-2 text-xs')}
             data-testid={`chat-thread-open-beside-${view.id}`}
           >
-            {openBesideLabel}
+            <Icon name="chat-open-beside" /><span className="sr-only">{openBesideLabel}</span>
           </Link>
         )
       }
@@ -266,14 +266,26 @@ function Row({ view, context }: { readonly view: RowView; readonly context: RowC
           </span>
           <span className="flex items-center gap-1">
             <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">
-              {view.subtitlePrefix === null ? null : `${view.subtitlePrefix} ・ `}
-              {snippet === '' ? (view.subtitlePrefix === null ? ' ' : '') : snippet}
+              {view.subtitlePrefix}
+              {view.subtitlePrefix && snippet ? ' ・ ' : null}
+              {snippet}
             </span>
             {view.counterpartyName === null ? null : (
               <span className="sr-only" data-testid={`chat-thread-counterparty-${view.id}`}>
                 {view.counterpartyName}
               </span>
             )}
+            {/* ✅ 2026-10-27（F-038 ⑭）: 未読に自分宛ての `@` がある。🔴 ミュート中も出す（件数は出さない）。 */}
+            {context.mentionIds.has(view.id) ? (
+              <span
+                className={cn(TAG_CLASSES, 'bg-brand-bg font-bold text-brand')}
+                title={t('chat.mention.unread')}
+                data-testid={room ? `chat-room-mention-${view.id}` : `chat-thread-mention-${view.id}`}
+              >
+                <span aria-hidden="true">{t('chat.mention.mark')}</span>
+                <span className="sr-only">{t('chat.mention.unread')}</span>
+              </span>
+            ) : null}
             <ChatDraftMark threadId={view.id} label={t('chat.thread.draft')} />
           </span>
         </span>
@@ -446,6 +458,7 @@ export function ChatThreadList({
   truncated = false,
   messageHits = [],
   unreadCounts = {},
+  mentionUnreadIds = [],
   unreadOnly = false,
   pinnedIds = [],
   mutedIds = [],
@@ -470,6 +483,7 @@ export function ChatThreadList({
     listQuery: { q, sort, filter },
     unreadCounts: allUnread,
     mutedIds: allMuted,
+    mentionIds: new Set(mentionUnreadIds),
     pinnedIds: new Set([...pinnedIds, ...(people?.pinnedIds ?? [])]),
     lastSnippets: { ...lastSnippets, ...(people?.lastSnippets ?? {}) },
     now,
@@ -497,7 +511,7 @@ export function ChatThreadList({
   return (
     <div className="flex min-h-0 flex-col" data-testid="chat-threads">
       {/* 🔴 `method="get"` —— 条件が URL になり、再読込・戻るで同じ一覧に戻る。開いている会話と絞り込みは引き継ぐ。 */}
-      <form method="get" action={CHAT_PATH} className="flex items-center gap-2 p-3" data-testid="chat-threads-search">
+      <form method="get" action={CHAT_PATH} className="flex shrink-0 items-center gap-2 px-3 py-2" data-testid="chat-threads-search">
         {paneState.thread === null ? null : <input type="hidden" name={CHAT_THREAD_PARAM} value={paneState.thread} />}
         {paneState.thread === null
           ? null
@@ -513,14 +527,15 @@ export function ChatThreadList({
           defaultValue={q ?? ''}
           placeholder={t('chat.threads.search.placeholder')}
           data-testid="chat-threads-q"
+          className="min-w-0 flex-1"
         />
-        <Button type="submit" variant="secondary" size="sm" data-testid="chat-threads-search-submit">
+        <Button type="submit" variant="secondary" size="sm" className="min-h-11 shrink-0 whitespace-nowrap md:min-h-8" data-testid="chat-threads-search-submit">
           {t('chat.threads.search.submit')}
         </Button>
         {canPost && people !== null ? (
           <Link
             href={chatHref({ filter: { kind: 'contacts' } })}
-            className={cn(PRIMARY_LINK_CLASSES, 'h-8 px-3 text-cell')}
+            className={cn(SECONDARY_LINK_CLASSES, 'min-h-11 shrink-0 whitespace-nowrap px-3 text-cell md:min-h-8')}
             data-testid="chat-new-conversation"
           >
             {t('chat.people.newConversationShort')}
@@ -650,6 +665,12 @@ export function ChatThreadList({
               ))}
             </ul>
           )}
+          {/* ✅ 2026-10-26（#166 の 7）: DM・グループを上限で読み切れなかったら、その旨を出す（黙って消さない）。 */}
+          {people?.roomsTruncated === true && (filter.kind === 'dm' || filter.kind === 'group' || filter.kind === 'person') ? (
+            <p className="m-0 px-3 py-2 text-xs text-fg-muted" data-testid="chat-rooms-truncated">
+              {t('chat.people.roomsTruncated')}
+            </p>
+          ) : null}
           {/* ✅ 2026-10-14: 本文の検索で当たった発言（読めた発言だけ。前後の抜粋）。押すとその会話を開く。 */}
           {messageHits.length === 0 ? null : (
             <section data-testid="chat-threads-message-hits">

@@ -113,7 +113,8 @@ describe('#2 全表にポリシーが 1 つ以上ある（docs/05 §4.7 #2）', 
     // 🔴 2026-10-19 チャットレーンで `chat_user_statuses` を 1 表足した（ひとこと状態。書き = 本人 / 読み = users の C8 に連動 / migration 20261019020000）。
     // 🔴 2026-10-22 チャットレーンで `chat_saved_messages`（保存済み。読み = 本人の行 かつ 発言が読める / migration 20261022010000）と
     //    `chat_message_templates`（自分の定型文。C7 SELF / migration 20261022020000）の 2 表を足した。
-    expect(tables).toHaveLength(62);
+    // 🔴 2026-10-26 チャットレーンで `chat_thread_announcements`（部屋のアナウンス。読み = 部屋が読める / migration 20261026010000）を足した。
+    expect(tables).toHaveLength(63);
 
     const policies = await readPolicies(db);
     const withPolicy = new Set(policies.map((policy) => policy.table));
@@ -441,7 +442,8 @@ describe('#10 probe ロールの最小権限（docs/05 §4.7 #10 / §4.4.1 / §8
    */
   it('🔴 app_scan_probe の権限は skill_sheets のスキャン関連の列 + engineers の 3 列だけである', () => {
     // 実測は下の it（非同期）で行う。ここは期待値の宣言そのものをレビュー可能にするための対照。
-    expect(SCAN_PROBE_EXPECTED_GRANTS).toHaveLength(13);
+    // ✅ 2026-10-27: 13 → 26（チャットの添付。chat_threads 5 行 + messages 8 行）。
+    expect(SCAN_PROBE_EXPECTED_GRANTS).toHaveLength(26);
   });
 
   it('🔴 app_scan_probe の列単位 GRANT が期待どおり（増えたら必ず落ちる）', async () => {
@@ -455,12 +457,13 @@ describe('#10 probe ロールの最小権限（docs/05 §4.7 #10 / §4.4.1 / §8
     expect(rows).toEqual(SCAN_PROBE_EXPECTED_GRANTS);
   });
 
-  it('🔴 app_scan_probe に skill_sheets / engineers 以外のテーブルの GRANT が 1 つも無い', async () => {
+  it('🔴 app_scan_probe に skill_sheets / engineers / messages / chat_threads 以外のテーブルの GRANT が 1 つも無い', async () => {
     const rows = await migrator.$queryRaw<Array<{ table_name: string }>>`
       SELECT DISTINCT table_name FROM information_schema.role_column_grants
       WHERE grantee = 'app_scan_probe'
       ORDER BY table_name`;
-    expect(rows).toEqual([{ table_name: 'engineers' }, { table_name: 'skill_sheets' }]);
+    // ✅ 2026-10-27: チャットの添付（messages / chat_threads）を足した。
+    expect(rows).toEqual([{ table_name: 'chat_threads' }, { table_name: 'engineers' }, { table_name: 'messages' }, { table_name: 'skill_sheets' }]);
   });
 
   it('🔴 app_scan_probe は NOLOGIN であり、スキーマの CREATE 権限を持たない', async () => {
@@ -567,9 +570,26 @@ const GATE_PROBE_EXPECTED_GRANTS = [
  * ことを意味する。
  */
 const SCAN_PROBE_EXPECTED_GRANTS = [
+  // ✅ 2026-10-27（チャットのファイル。migration 20261027010000 判断事項 4）: 発言の UPDATE は継承トリガが親の部屋を読む
+  //    （3 列）。`CLEAN` になったときに部屋の最終更新を進める（last_message_at）。本文・名前・メンバーには届かない。
+  { table_name: 'chat_threads', column_name: 'id', privilege_type: 'SELECT' },
+  { table_name: 'chat_threads', column_name: 'last_message_at', privilege_type: 'SELECT' },
+  { table_name: 'chat_threads', column_name: 'last_message_at', privilege_type: 'UPDATE' },
+  { table_name: 'chat_threads', column_name: 'partner_company_id', privilege_type: 'SELECT' },
+  { table_name: 'chat_threads', column_name: 'tenant_id', privilege_type: 'SELECT' },
   { table_name: 'engineers', column_name: 'id', privilege_type: 'SELECT' },
   { table_name: 'engineers', column_name: 'owner_partner_company_id', privilege_type: 'SELECT' },
   { table_name: 'engineers', column_name: 'tenant_id', privilege_type: 'SELECT' },
+  // ✅ 2026-10-27: チャットの添付の検査に要る列だけ（本文 body・送った人・取引先の列は含めない）。
+  { table_name: 'messages', column_name: 'attachment_key', privilege_type: 'SELECT' },
+  { table_name: 'messages', column_name: 'attachment_scan_status', privilege_type: 'SELECT' },
+  { table_name: 'messages', column_name: 'attachment_scan_status', privilege_type: 'UPDATE' },
+  { table_name: 'messages', column_name: 'id', privilege_type: 'SELECT' },
+  { table_name: 'messages', column_name: 'sent_at', privilege_type: 'SELECT' },
+  // ✅ 2026-10-27（レビュー。migration 20261027030000）: CLEAN になった発言を公開した時点の位置へ置き直す（app_apply_scan_status）。
+  { table_name: 'messages', column_name: 'sent_at', privilege_type: 'UPDATE' },
+  { table_name: 'messages', column_name: 'tenant_id', privilege_type: 'SELECT' },
+  { table_name: 'messages', column_name: 'thread_id', privilege_type: 'SELECT' },
   { table_name: 'skill_sheets', column_name: 'id', privilege_type: 'SELECT' },
   { table_name: 'skill_sheets', column_name: 'is_latest', privilege_type: 'SELECT' },
   { table_name: 'skill_sheets', column_name: 'is_latest', privilege_type: 'UPDATE' },

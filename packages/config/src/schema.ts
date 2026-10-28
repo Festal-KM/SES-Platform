@@ -4,7 +4,7 @@
 //
 // 🔴 規則（docs/05 §13.4 / docs/03 §6.10）:
 //   1. production でモック実装が型として選べない（'mock' がその枝の union に無い）
-//   2. 非本番で本番の識別子（AWS アカウント ID 一致 / sk_live_ / DocuSign 本番 URL 等）を検出したら失敗
+//   2. 非本番で本番の識別子を検出したら失敗。同一アカウントを明示指定する場合もリソースの混在を拒否する。
 //   3. 実行時（development を含む全環境）に MIGRATION_DATABASE_URL が設定されていたら失敗
 //      （T-01-05 でロールが実在するようになったため development 例外を解除した。docs/05 §4.2 / §13.4 規則 3）
 //   4. 検証エラーは「どの変数が、なぜ不正か」を全件列挙する（1 件目で止めない）
@@ -117,6 +117,8 @@ const commonShape = {
   AWS_REGION: z.string().min(1).default('ap-northeast-1'),
   AWS_ACCOUNT_ID: z.string().regex(/^\d{12}$/),
   AWS_ACCOUNT_ID_EXPECTED_PRODUCTION: z.string().regex(/^\d{12}$/),
+  // 2026-10-26: 同一アカウントの3環境を明示承認。未設定なら従来のアカウント分離を維持する。
+  AWS_ISOLATION_MODE: z.enum(['account', 'resource']).default('account'),
   SES_DEFAULT_FROM_ADDRESS: z.string().email(),
   SES_CONFIGURATION_SET: z.string().max(64),
   /**
@@ -280,9 +282,9 @@ const envUnion = z.discriminatedUnion('APP_ENV', [
       CLAMAV_PORT: z.coerce.number().int().positive(),
       SMTP_HOST: z.string().min(1),
       SMTP_PORT: z.coerce.number().int().positive(),
-      S3_ENDPOINT: z.string().url(),
-      S3_ACCESS_KEY_ID: z.string().min(1),
-      S3_SECRET_ACCESS_KEY: z.string().min(1),
+      S3_ENDPOINT: z.string().url().optional(),
+      S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+      S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
       MAIL_PROVIDER_DAILY_QUOTA: z.coerce.number().int().positive().default(200),
     }),
 
@@ -351,6 +353,72 @@ function addIssue(ctx: IssueSink, variable: string, message: string): void {
   ctx.addIssue({ code: 'custom', path: [variable], message });
 }
 
+/** 同一アカウントでは、別環境の接続先を設定した段階で起動を拒否する。IAMの拒否も併用する。 */
+function checkResourceIsolation(data: EnvUnionData, ctx: IssueSink): void {
+  if (!['development', 'demo', 'production'].includes(data.APP_ENV)) {
+    addIssue(ctx, 'AWS_ISOLATION_MODE', 'resource は開発・営業デモ・本番の3環境だけで使用できます');
+  }
+  if (data.AWS_ACCOUNT_ID !== data.AWS_ACCOUNT_ID_EXPECTED_PRODUCTION) {
+    addIssue(ctx, 'AWS_ACCOUNT_ID', 'resource では承認された共通アカウントと本番の期待値が一致する必要があります');
+  }
+  const prefix = `ses-platform-${data.APP_ENV}`;
+  const arnSuffix = `${data.AWS_REGION}:${data.AWS_ACCOUNT_ID}`;
+  const expected: readonly [string, string | undefined, string][] = [
+    ['S3_REGION', data.S3_REGION, data.AWS_REGION],
+    ['S3_BUCKET', data.S3_BUCKET, `${prefix}-files-${data.AWS_ACCOUNT_ID}-${data.AWS_REGION}`],
+    ['S3_KMS_KEY_ID', data.S3_KMS_KEY_ID, `arn:aws:kms:${arnSuffix}:alias/${prefix}-storage`],
+    ['SES_EVENT_TOPIC_ARN', data.SES_EVENT_TOPIC_ARN, `arn:aws:sns:${arnSuffix}:${prefix}-events`],
+    ['SES_CONFIGURATION_SET', data.SES_CONFIGURATION_SET, prefix],
+  ];
+  for (const [variable, value, target] of expected) {
+    if (value !== target) addIssue(ctx, variable, '現在の環境専用リソースと一致する必要があります');
+  }
+  function parsedUrl(value: string): { protocol: string; username: string; hostname: string } | undefined {
+    // configはNode・DOMの型に依存しない。ZodのURL検査に加えて、認証部・ホストの曖昧な表記を拒否する。
+    const match = /^([a-z][a-z0-9+.-]*:)\/\/(?:(?<user>[^:/@?#\s]+)(?::[^@/?#\s]*)?@)?(?<host>\[[0-9a-f:]+\]|[a-z0-9.-]+)(?::[0-9]+)?(?:\/[^\s]*)?$/i.exec(value);
+    if (!match?.groups) return undefined;
+    return { protocol: match[1].toLowerCase(), username: match.groups.user ?? '', hostname: match.groups.host.toLowerCase() };
+  }
+  const isLoopback = (host: string): boolean => ['localhost', '127.0.0.1', '[::1]'].includes(host);
+  for (const [variable, role] of [
+    ['DATABASE_URL', 'app_tenant'], ['PLATFORM_DATABASE_URL', 'app_platform'],
+    ['PLATFORM_WRITE_DATABASE_URL', 'app_platform_write'],
+  ] as const) {
+    const url = parsedUrl(data[variable]);
+    const ownRds = url?.hostname.startsWith(`${prefix}-db.`) && url.hostname.endsWith(`.${data.AWS_REGION}.rds.amazonaws.com`);
+    if (!url || !['postgresql:', 'postgres:'].includes(url.protocol) || url.username !== role ||
+      !(ownRds || (data.APP_ENV === 'development' && isLoopback(url.hostname)))) {
+      addIssue(ctx, variable, '現在の環境専用DBと用途別ロールを指定してください（開発だけループバック接続も可）');
+    }
+  }
+  const redis = parsedUrl(data.REDIS_URL);
+  const ownRedis = redis && [
+    `${prefix}-cache.`, `master.${prefix}-cache.`,
+  ].some((start) => redis.hostname.startsWith(start)) && redis.hostname.endsWith('.cache.amazonaws.com') && redis.protocol === 'rediss:';
+  if (!redis || !(ownRedis || (data.APP_ENV === 'development' && isLoopback(redis.hostname) && ['redis:', 'rediss:'].includes(redis.protocol)))) {
+    addIssue(ctx, 'REDIS_URL', '現在の環境専用RedisのTLS接続を指定してください（開発だけループバック接続も可）');
+  }
+  // 別環境のDBを再seedする特権接続を、このモードのアプリには載せない。
+  if (data.SEED_DATABASE_URL !== undefined) addIssue(ctx, 'SEED_DATABASE_URL', 'resource では投入用の別タスクでのみ指定してください');
+  if (data.APP_ENV !== 'development') {
+    for (const variable of ['S3_ENDPOINT', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const) {
+      if (data[variable] !== undefined) addIssue(ctx, variable, 'resource の営業デモ・本番ではAWS S3とIAMロールを使用してください');
+    }
+    if (!data.APP_URL.startsWith('https://')) addIssue(ctx, 'APP_URL', 'クラウドの営業デモ・本番にはHTTPSが必要です');
+  } else {
+    const endpoint = data.S3_ENDPOINT === undefined ? undefined : parsedUrl(data.S3_ENDPOINT);
+    if (data.S3_ENDPOINT !== undefined && (!endpoint || !['http:', 'https:'].includes(endpoint.protocol) || !isLoopback(endpoint.hostname))) {
+      addIssue(ctx, 'S3_ENDPOINT', '開発のS3互換サービスはループバックのHTTP／HTTPS接続に限定します');
+    }
+    if (data.S3_ENDPOINT === undefined) {
+      for (const variable of ['S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const) {
+        if (data[variable] !== undefined) addIssue(ctx, variable, 'AWS開発のS3接続はIAMロールを使用してください');
+      }
+      if (!data.APP_URL.startsWith('https://')) addIssue(ctx, 'APP_URL', 'AWS開発画面にはHTTPSが必要です');
+    }
+  }
+}
+
 /**
  * discriminatedUnion の各ブランチだけでは表現できない、フィールド間の相互制約。
  * docs/05 §13.4 の `assertNonProdHasNoProdSecrets` に相当する（NFR-ENV-4 が中心）。
@@ -358,20 +426,27 @@ function addIssue(ctx: IssueSink, variable: string, message: string): void {
  */
 function crossFieldChecks(data: EnvUnionData, ctx: IssueSink): void {
   const isProduction = data.APP_ENV === 'production';
+  const resourceIsolation = data.AWS_ISOLATION_MODE === 'resource';
+  if (resourceIsolation) checkResourceIsolation(data, ctx);
+  if (data.APP_ENV === 'development' && (!resourceIsolation || data.S3_ENDPOINT !== undefined)) {
+    for (const variable of ['S3_ENDPOINT', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const) {
+      if (data[variable] === undefined) addIssue(ctx, variable, 'ローカルのS3互換サービスの接続設定が必要です');
+    }
+  }
 
   if (isProduction && !data.APP_URL.startsWith('https://')) {
     addIssue(ctx, 'APP_URL', 'production では https:// で始まる必要があります');
   }
 
   // NFR-ENV-4: 非本番に本番の識別子が紛れ込んでいないか
-  if (!isProduction && data.AWS_ACCOUNT_ID === data.AWS_ACCOUNT_ID_EXPECTED_PRODUCTION) {
+  if (!resourceIsolation && !isProduction && data.AWS_ACCOUNT_ID === data.AWS_ACCOUNT_ID_EXPECTED_PRODUCTION) {
     addIssue(ctx, 'AWS_ACCOUNT_ID', '本番の AWS アカウント ID（AWS_ACCOUNT_ID_EXPECTED_PRODUCTION）と一致しています');
   }
   // 🔴 T-12-04（NFR-ENV-4 の網羅）: ARN に埋め込まれたアカウント ID も「本番の識別子」である。
   //    `AWS_ACCOUNT_ID` が非本番の値でも、`SES_EVENT_TOPIC_ARN`（バウンス通知の受け口）/ `S3_KMS_KEY_ID`（原本の暗号鍵）
   //    だけが本番からコピーされていると、非本番のプロセスが本番のリソースを指す。判定できる区分はここで止める
   //    （判定できない区分 = `ANTHROPIC_API_KEY` は docs/05 §17.4 に「判定不能」と記録している）。
-  if (!isProduction) {
+  if (!resourceIsolation && !isProduction) {
     for (const variable of ['SES_EVENT_TOPIC_ARN', 'S3_KMS_KEY_ID'] as const) {
       const value = data[variable];
       if (value !== undefined && arnAccountId(value) === data.AWS_ACCOUNT_ID_EXPECTED_PRODUCTION) {

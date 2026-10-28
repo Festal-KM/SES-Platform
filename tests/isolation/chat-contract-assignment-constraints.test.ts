@@ -269,18 +269,44 @@ describe('T-02-04: docs/05 §3.7 の新 9 表 + 当事者列', () => {
         ).rejects.toThrow(/messages_attachment_scan_status_check/);
       });
 
-      it('対照: 許容値（CLEAN）と未指定（null）はどちらも成立する', async () => {
-        const withScan = await owner.message.create({
+      // ✅ 2026-10-27（チャットのファイル。migration 20261027010000）: 添付の 4 列は「全部ある」か「全部ない」か
+      //    （messages_attachment_set_check）、取引先がいる部屋には添付を書けない（トリガ）。許容値（CLEAN）が
+      //    成立することは、社内だけの部屋で `tests/isolation/chat-attachments.test.ts` が確かめる。
+      it('✅ 2026-10-27: 状態だけ（キー・種類・大きさが無い）は messages_attachment_set_check で拒否される', async () => {
+        await expect(
+          owner.message.create({
+            data: {
+              tenantId: TENANT_A,
+              ownerPartnerCompanyId: PARTNER_A1,
+              threadId,
+              senderUserId: randomUUID(),
+              body: 'x',
+              attachmentScanStatus: 'CLEAN',
+            },
+          }),
+        ).rejects.toThrow(/messages_attachment_set_check/);
+      });
+
+      // ✅ 2026-10-27（`CLAUDE.md` §3.3 改訂。#182）: 取引先がいる部屋のトリガは migration 20261027040000 で外した。
+      it('✅ 2026-10-27: 取引先がいる部屋でも 4 列そろった添付は書ける（#182。トリガ messages_internal_only_attachment を外した）', async () => {
+        const created = await owner.message.create({
           data: {
             tenantId: TENANT_A,
             ownerPartnerCompanyId: PARTNER_A1,
             threadId,
             senderUserId: randomUUID(),
             body: 'x',
-            attachmentScanStatus: 'CLEAN',
+            attachmentKey: `t/${TENANT_A}/chat/${threadId}/${randomUUID()}/${randomUUID()}.pdf`,
+            attachmentScanStatus: 'SCANNING',
+            attachmentContentType: 'application/pdf',
+            attachmentByteSize: 10n,
           },
         });
-        expect(withScan.attachmentScanStatus).toBe('CLEAN');
+        expect(created.attachmentScanStatus).toBe('SCANNING');
+        expect(created.ownerPartnerCompanyId).toBe(PARTNER_A1);
+      });
+
+      it('対照: 未指定（null）は成立する', async () => {
 
         const withoutScan = await owner.message.create({
           data: {

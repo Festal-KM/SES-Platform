@@ -9,6 +9,9 @@ import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
 import { AuthShell } from '../../../_components/auth-shell';
 import { SignInForm, type SignInFormMessages, type SignInStage } from './signin-form';
+import { roleAccountOptions } from '../../../../lib/auth/role-account-options';
+
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: t('auth.signin.title'),
@@ -60,7 +63,7 @@ export default async function SignInPage({
     //    「中央寄せにしない」とした理由が当てはまらない。`app/_components/auth-shell.tsx` 冒頭）。
     <AuthShell wordmark={t('product.name')} logoAlt={t('product.name')} widthClass="prose">
       <h1 className="mb-4 text-title font-bold text-fg">{t('auth.signin.title')}</h1>
-      <SignInForm messages={messages} initialStage={initialStageOf(step)} />
+      <SignInForm messages={messages} initialStage={initialStageOf(step)} roleAccounts={roleAccountOptions('tenant')} />
     </AuthShell>
   );
 }

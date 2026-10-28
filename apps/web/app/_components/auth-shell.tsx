@@ -65,8 +65,7 @@
 // 🔴 **`PageWidthClass` に 4 つ目を足していない** —— 「中央寄せのカード」を幅クラスへ昇格させる
 //    のは `docs/04` §7.1 の改訂（= 人間の判断。`CLAUDE.md` §8.6）であり、ここでは先取りしない。
 import type { ReactNode } from 'react';
-import Image from 'next/image';
-import { AUTH_CARD_WIDTH_CLASSES, PageBody, cn, type PageWidthClass } from '@ses/ui';
+import { AUTH_CARD_WIDTH_CLASSES, BrandLogo, PageBody, cn, type PageWidthClass } from '@ses/ui';
 
 export type AuthShellProps = {
   /** ワードマーク（`t('product.name')`）。🔴 文言はここで解決しない。 */
@@ -86,20 +85,9 @@ export type AuthShellProps = {
 
 export function AuthShell({ wordmark, logoAlt, widthClass = 'prose', children }: AuthShellProps) {
   return (
-    <main className="flex min-h-dvh justify-center px-4 py-6">
+    <main className="flex min-h-dvh justify-center px-4 py-12">
       <PageBody widthClass={widthClass} className={cn(AUTH_CARD_WIDTH_CLASSES, 'px-0')}>
-        {logoAlt === undefined ? (
-          <p className="mb-8 text-lg font-bold">{wordmark}</p>
-        ) : (
-          <Image
-            className="mb-8 h-12 w-auto"
-            src="/brand-logo.png"
-            alt={logoAlt}
-            width={257}
-            height={80}
-            priority
-          />
-        )}
+        <div className="mb-8">{typeof wordmark === 'string' ? <BrandLogo src="/brand-logo.png" alt={logoAlt ?? wordmark} context="authentication" /> : wordmark}</div>
         {children}
       </PageBody>
     </main>
