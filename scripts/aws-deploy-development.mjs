@@ -8,7 +8,9 @@ import { createHash } from 'node:crypto';
 import { DEVELOPMENT_BUCKET, DEVELOPMENT_INSTANCE, DEVELOPMENT_DOCUMENT } from '../infra/aws/cicd.mjs';
 import { includeCiSource } from './aws/ci-source.mjs';
 import { assertAccount, aws, withJsonFile } from './aws/common.mjs';
-const root = resolve(import.meta.dirname, '..');
+const root = process.env.DEPLOY_SOURCE_DIRECTORY
+  ? resolve(process.env.DEPLOY_SOURCE_DIRECTORY)
+  : resolve(import.meta.dirname, '..');
 const run = (cmd, args) => {
   const result = spawnSync(cmd, args, { cwd: root, encoding: 'utf8', windowsHide: true });
   if (result.status !== 0) throw new Error(`${cmd}に失敗しました`);

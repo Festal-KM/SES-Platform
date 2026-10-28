@@ -67,7 +67,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: main
+          path: delivery
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
           ref: ${{ needs.verify.outputs.commit }}
+          path: source
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -83,4 +89,5 @@ jobs:
       - name: AWSでビルドして反映
         env:
           DEPLOY_COMMIT: ${{ needs.verify.outputs.commit }}
-        run: node scripts/aws-deploy-development.mjs "$DEPLOY_COMMIT"
+          DEPLOY_SOURCE_DIRECTORY: ${{ github.workspace }}/source
+        run: node delivery/scripts/aws-deploy-development.mjs "$DEPLOY_COMMIT"
