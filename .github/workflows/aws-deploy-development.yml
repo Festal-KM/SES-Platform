@@ -1,0 +1,93 @@
+name: AWS開発環境へ反映
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'CIが成功したmainの完全なコミットSHA（空欄は最新main）'
+        required: false
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: aws-development-delivery
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.verify.outputs.commit }}
+    steps:
+      - name: mainとCIの成功を照合
+        id: verify
+        uses: actions/github-script@v7
+        env:
+          REQUESTED_COMMIT: ${{ inputs.commit }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const main = await github.rest.repos.getBranch({ owner, repo, branch: 'main' });
+            const sha = context.eventName === 'workflow_run'
+              ? context.payload.workflow_run.head_sha
+              : process.env.REQUESTED_COMMIT || main.data.commit.sha;
+            if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error('完全なSHAを指定してください');
+            // 古いCIが遅れて成功しても、新しいmainを上書きしない。
+            if (context.eventName === 'workflow_run' && sha !== main.data.commit.sha) {
+              core.notice('後続のmainが存在するため、この自動反映は省略します');
+              return;
+            }
+            const compare = await github.rest.repos.compareCommits({ owner, repo, base: sha, head: main.data.commit.sha });
+            if (!['ahead', 'identical'].includes(compare.data.status)) throw new Error('mainのコミットではありません');
+            const runs = await github.rest.actions.listWorkflowRuns({ owner, repo, workflow_id: 'ci.yml', head_sha: sha, event: 'push', branch: 'main', per_page: 100 });
+            if (!runs.data.workflow_runs.some(run => run.conclusion === 'success' && run.head_repository.full_name === context.payload.repository.full_name)) {
+              throw new Error('同じコミットのmain向けCIが成功していません');
+            }
+            core.setOutput('commit', sha);
+  deploy:
+    needs: verify
+    if: needs.verify.outputs.commit != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    environment:
+      name: development
+      url: https://dev-es.bizorch.com/signin
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: delivery
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: 開発専用の一時認証
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
+        with:
+          role-to-assume: arn:aws:iam::117425831827:role/ses-platform-development-github
+          aws-region: ap-northeast-1
+          allowed-account-ids: '117425831827'
+          role-duration-seconds: 7200
+      - name: AWSでビルドして反映
+        env:
+          DEPLOY_COMMIT: ${{ needs.verify.outputs.commit }}
+          DEPLOY_SOURCE_DIRECTORY: ${{ github.workspace }}/source
+        run: node delivery/scripts/aws-deploy-development.mjs "$DEPLOY_COMMIT"
