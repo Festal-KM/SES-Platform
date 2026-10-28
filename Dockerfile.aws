@@ -19,7 +19,7 @@ COPY packages/ui/package.json ./packages/ui/
 COPY prompts/package.json ./prompts/
 RUN --mount=type=cache,target=/pnpm/store pnpm install --frozen-lockfile --prod=false --store-dir=/pnpm/store
 COPY . .
-RUN pnpm -r --workspace-concurrency=1 run build
+RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm -r --workspace-concurrency=1 run build
 
 FROM node:24-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client openssl ca-certificates && rm -rf /var/lib/apt/lists/*
