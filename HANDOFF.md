@@ -1,5 +1,11 @@
 # HANDOFF.md — 作業の引き継ぎ
 
+## 2026-10-28 AWS引き継ぎ手順
+
+別端末・AI向けに [docs/AWS-AGENT-RUNBOOK.md](docs/AWS-AGENT-RUNBOOK.md) を追加。AWSでアプリを動かし、PCでは編集・画面確認をする。AWS移行・CI/CDはまだ構築中。開発EC2のコンテナは起動しているが `/signin` のHTTP確認はタイムアウトしており、利用可能と扱わない。同期・配備実装は `feat/aws-deployment-pipeline` で進行中。既存の作業変更は本書のPRに混ぜていない。
+
+ドメインはCloudflare管理の `bizorch.com`。本番Secrets ManagerへのAnthropic・Sentry・OpenAIキー登録を確認済み。OpenAIは保管のみ。宮田からAWS完成後のRailway停止は承認済み。停止前にAWS実機検証・データ引き継ぎ要否・バックアップ・配備復旧手順・新URL利用を確認する。DB等の削除は行わない。
+
 🔴 **作業を始める前に、このファイルを最初に読む。** `CLAUDE.md` が一次資料（仕様・ハードルール）で、このファイルは**いま何が未完で、何に気をつけるか**を記録する。
 
 > **最終更新**: 2026-10-03 / HEAD = `aa71a50` / ブランチ = `main` / 🔴 **CI 緑**（run [`36976938729`](https://github.com/Festal-KM/SES-Platform/actions/runs/36976938729)。`T-22-05` 以降で**全スイートが実際に実行された最初の run**）
