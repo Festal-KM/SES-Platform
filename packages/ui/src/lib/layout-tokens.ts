@@ -52,11 +52,12 @@ export const ENV_BANNER_HEIGHT_CLASS = 'md:h-10';
 /** 🔴 `<body>` に置く CSS 変数の名前（置く側と引く側で 1 文字も違ってはならない）。 */
 export const ENV_BANNER_HEIGHT_VAR = '--app-banner-h';
 
-/** Top Header。🔴 全画面で同じ高さ。 */
+/** Top Header。デスクトップは56px、狭い画面は複数行の内容に合わせる。 */
 export const HEADER_HEIGHT_PX = 56;
 export const HEADER_HEIGHT_CLASS = 'h-14';
-/** 環境バナー直下に固定する共通ヘッダー。 */
-export const HEADER_STICKY_CLASSES = 'sticky top-[var(--app-banner-h,0px)] z-10 shrink-0';
+export const HEADER_ROW_HEIGHT_CLASSES = 'min-h-14 md:h-14';
+/** デスクトップは環境バナー直下に固定する。モバイルは多段ヘッダーで本文を覆わない。 */
+export const HEADER_STICKY_CLASSES = 'md:sticky md:top-[var(--app-banner-h,0px)] md:z-10 shrink-0';
 
 /** Top Header のグローバル検索。基準幅（1672）で 726px。狭い画面では縮む。 */
 export const HEADER_SEARCH_MAX_WIDTH_CLASS = 'max-w-181.5';
