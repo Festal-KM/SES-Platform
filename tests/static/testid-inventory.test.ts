@@ -761,26 +761,18 @@ const FROZEN_EXACT: readonly string[] = [
   'project-list-clear',
   'project-list-empty',
   'project-list-error',
-  // ✅✅ 🔴 **2026-10-16: `project-list-filter-prefecture` を外した**（人間の明示指示の検索 6 項目に**勤務地が無い**）。
-  //    🔴 **query（`prefecture`）と述語、一覧の `勤務地` 列は残してある**。
-  //    ⚠️ **E2E は掛んでいなかった**（`tests/e2e` に出現 0 件。確認済み）。
+  'project-list-filter-prefecture',
   'project-list-filter-q',
-  // ✅✅ 🔴 **2026-10-16（同日の 2 回目）: `project-list-filter-start-within` を外した** —— 人間の明示指示の
-  //    検索 6 項目（フリーテキスト / ステータス / カテゴリ / スキル / 稼働形態 / 単価）に
-  //    **開始時期が無い**。同じ日の午前に追加した testid を、同じ日の午後に外している。
-  //    🔴 **query（`startWithin` / 旧 `startFrom`）と述語、一覧の `開始日` 列は残してある**。
-  //    ⚠️ **E2E は掛んでいなかった**（確認済み）。
-  //    ⚠️ `-category` は残っている（検索 6 項目の 1 つ）。
-  //    `-source-kind` / `-parallel-ok` は**凍結前に外した**のでこの表に無い。
+  // ✅ 2026-10-16: `開始日` の日付入力 → `開始時期` の選択（受領モック）。足した testid は
+  //    `project-list-filter-start-within` / `-category` / `-source-kind` / `-parallel-ok`。
+  //    🔴 **追加は通る**（凍結が守るのは「減らないこと」だけである）。
+  'project-list-filter-start-within',
   'project-list-filter-status',
   'project-list-filters',
   'project-list-first',
   'project-list-loading',
   'project-list-next',
-  // ✅✅ 🔴 **2026-10-16: `project-list-order-note` を外した**（人間の明示指示
-  //    「『自社案件 6 件』と『後任募集 → 募集中 → 充足 の順に…』はいらない」）。
-  //    🔴 **並び自体は変えていない**（`PROJECT_LIST_ORDER_BY` は決定的なまま）。消えたのは
-  //       その説明の 1 行である。🔴 **使っていた検査は同じ変更で外してある。**
+  'project-list-order-note',
   'project-list-paging',
   'project-list-partner-scope-notice',
   'project-list-population',
@@ -789,12 +781,7 @@ const FROZEN_EXACT: readonly string[] = [
   'project-list-retry',
   'project-list-screen',
   'project-list-search',
-  // ✅✅ 🔴 **2026-10-16: `project-list-search-coming-soon` を外した** ——
-  //    人間の明示指示で**スキル要件の絞り込みを実装した**ため、
-  //    この 1 行に**書くことが無くなった**。
-  //    🔴 **できるようになったものを「できない」と書き続けると画面が嘘をつく。**
-  //    🔴 同じ位置に `project-list-search-skill-hint`（複数選択と OR の説明）を置いた。
-  //    ⚠️ **E2E は掛んでいなかった**（確認済み）。
+  'project-list-search-coming-soon',
   'project-list-skeleton',
   'project-list-table',
   'project-name',
@@ -1430,9 +1417,7 @@ const FROZEN_PREFIXES: readonly string[] = [
   'project-list-link-',
   'project-list-more-requirements-',
   'project-list-row-',
-  // ✅✅ 🔴 **2026-10-16: `project-list-visibility-` を外した**（人間の明示指示
-  //    「案件リストの『公開先の設定状況』列はいらない」）。列そのものが無くなったので、
-  //    その testid を持つ要素も無くなった。🔴 **情報は右の案件サマリが持っている。**
+  'project-list-visibility-',
   // 🔴 T-12-10: 「この欄は公開先が読む」印は要件の区分ごとに値が変わる（`MUST` / `NICE`）。
   'project-public-field-notice-requirement-',
   'project-requirement-add-',

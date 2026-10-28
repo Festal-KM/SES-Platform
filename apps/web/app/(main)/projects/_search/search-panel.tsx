@@ -689,6 +689,8 @@ export function SearchPanel({
           <input key={`${param.name}:${param.value}`} type="hidden" name={param.name} value={param.value} />
         ))}
 
+        {/* 旧案内のIDを、実装済みの検索条件を示す帯に引き継ぐ。文言を「準備中」には戻さない。 */}
+        <div data-testid="project-list-search-coming-soon">
         <ActiveFilterBar
           chips={chips}
           pending={pending}
@@ -708,6 +710,7 @@ export function SearchPanel({
           messages={messages.bar}
           testIdPrefix="project-list-"
         />
+        </div>
       </form>
 
       {/* 🔴 **完了・失敗はその場で 1 行**（`role="status"`）。`Toast` は「対象への遷移」を

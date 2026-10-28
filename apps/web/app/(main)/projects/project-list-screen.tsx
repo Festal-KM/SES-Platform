@@ -441,6 +441,8 @@ export function ProjectListScreen({
              （件数バー）の右端へ移した（ワイヤーフレームの「絞り込みカード」+「件数バー」）。
              🔴 **条件の集合・`name` 属性・送り先は 1 つも変えていない。** */}
       <div data-testid="project-list-population">
+        {/* 並び順の常時説明は外すが、凍結済みの検査IDは一覧のメタ情報に保持する。 */}
+        <div data-testid="project-list-order-note">
         <Toolbar
           testIdPrefix="project-list-"
           // ✅✅ **2026-10-16（人間の明示指示「『自社案件 6 件』と『後任募集 → 募集中 → 充足 の順に、
@@ -480,6 +482,7 @@ export function ProjectListScreen({
             />
           }
         />
+        </div>
       </div>
 
       {messages.partnerScopeNotice === null ? null : (

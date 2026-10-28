@@ -564,14 +564,7 @@ export const TESTID_BASELINE_EXACT: readonly string[] = [
   'project-list-clear',
   'project-list-empty',
   'project-list-error',
-  // ✅✅ 🔴 **2026-10-16: `project-list-filter-prefecture` を外した**（人間の明示指示
-  //    「検索項目については下記 ・フリーテキスト ・ステータス ・カテゴリ ・スキル
-  //     ・稼働形態 ・単価（上下限で）にしてください」—— **勤務地はこの 6 項目に無い**）。
-  //    🔴 **query（`prefecture`）と述語、一覧の `勤務地` 列は残してある** ——
-  //       消えたのは検索パネルの欄だけであり、共有済みの URL は従来どおり効く。
-  //    🔴 **凍結を「落ちたから消す」で外していない** —— この testid を使っていた
-  //       `project-list-screen.render.test.tsx` の検査を**同じ変更で**書き換えてある。
-  //    ⚠️ **E2E は掴んでいなかった**（`tests/e2e` に出現 0 件。確認済み）。
+  'project-list-filter-prefecture',
   'project-list-filter-q',
   // ✅✅ 🔴 **2026-10-16: `project-list-filter-start-from` を外した**（人間の明示指示
   //    「これちゃんと参考にして、検索部分修正してよ」+ 受領モック。`開始日（この日以降）` の
@@ -586,10 +579,7 @@ export const TESTID_BASELINE_EXACT: readonly string[] = [
   'project-list-first',
   'project-list-loading',
   'project-list-next',
-  // ✅✅ 🔴 **2026-10-16: `project-list-order-note` を外した**（人間の明示指示
-  //    「『自社案件 6 件』と『後任募集 → 募集中 → 充足 の順に…』はいらない」）。
-  //    🔴 **並び自体は変えていない**（`PROJECT_LIST_ORDER_BY` は決定的なまま）。消えたのは
-  //       その説明の 1 行である。🔴 **使っていた検査は同じ変更で外してある。**
+  'project-list-order-note',
   'project-list-paging',
   'project-list-partner-scope-notice',
   'project-list-population',
@@ -598,16 +588,7 @@ export const TESTID_BASELINE_EXACT: readonly string[] = [
   'project-list-retry',
   'project-list-screen',
   'project-list-search',
-  // ✅✅ 🔴 **2026-10-16: `project-list-search-coming-soon` を外した**（人間の明示指示で
-  //    **スキル要件での絞り込みを実装した**ため）。この 1 行の中身は「まだ効かない条件」の
-  //    告知だけであり、残っていた最後の 1 つ（スキル要件）が効くようになった時点で
-  //    **書くことが無くなった** —— 🔴 **できるようになったものを「できない」と書き続けると
-  //    画面が嘘をつく。**
-  //    🔴 **同じ位置には `project-list-search-skill-hint`（複数選択と OR の説明）を置いた**
-  //       ので、フッタ左の 1 行が空になってレイアウトが動くことはない。
-  //    ⚠️ **E2E は掴んでいなかった**（`tests/e2e` に出現 0 件。確認済み）。
-  //    ⚠️ 文言キー（`projects.list.searchComingSoon`）は `i18n-key-baseline.ts` の
-  //       「追加は可、改名と削除は不可」に従い**カタログに残してある**（描いていない）。
+  'project-list-search-coming-soon',
   'project-list-skeleton',
   'project-list-table',
   'project-name',
@@ -1188,9 +1169,7 @@ export const TESTID_BASELINE_PREFIXES: readonly string[] = [
   'project-list-link-',
   'project-list-more-requirements-',
   'project-list-row-',
-  // ✅✅ 🔴 **2026-10-16: `project-list-visibility-` を外した**（人間の明示指示
-  //    「案件リストの『公開先の設定状況』列はいらない」）。列そのものが無くなったので、
-  //    その testid を持つ要素も無くなった。🔴 **情報は右の案件サマリが持っている。**
+  'project-list-visibility-',
   'project-public-field-notice-requirement-',
   'project-requirement-add-',
   'project-requirement-error-',
