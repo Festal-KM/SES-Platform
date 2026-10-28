@@ -19,7 +19,7 @@ for name in previous.keys() - current.keys():
         raise ValueError('Invalid source cleanup path')
     if path.is_file(): path.unlink()
 changed = [name for name, digest in current.items() if previous.get(name) != digest]
-print('yes' if not previous or any(name.startswith(('packages/', 'apps/worker/')) or name in ['package.json', 'pnpm-lock.yaml', 'scripts/aws-development-initialize.mjs'] for name in changed) else 'no')
+print('yes' if not previous or any(name.startswith(('packages/', 'apps/worker/', 'prompts/')) or name in ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'scripts/aws-development-initialize.mjs'] for name in changed) else 'no')
 PY
 )
 if [ ! -x /usr/local/lib/docker/cli-plugins/docker-compose ]; then
