@@ -233,7 +233,9 @@ describe('🔴 actionAvailability の境界（型テスト）', () => {
 
   it('🔴 `enabled === false` のとき `reasonKey` は非 null（理由の無い不能を型で禁じる）', () => {
     type Denied = Extract<ActionQueueActionAvailability, { enabled: false }>;
-    expectTypeOf<Denied['reasonKey']>().toEqualTypeOf<MessageKey>();
+    // 数千の文言キーをVitestの深い型比較へ渡すと二乗に展開されるため、双方の差集合が空かで同じ集合を検査する。
+    expectTypeOf<Exclude<Denied['reasonKey'], MessageKey>>().toEqualTypeOf<never>();
+    expectTypeOf<Exclude<MessageKey, Denied['reasonKey']>>().toEqualTypeOf<never>();
     type Allowed = Extract<ActionQueueActionAvailability, { enabled: true }>;
     expectTypeOf<Allowed['reasonKey']>().toEqualTypeOf<null>();
   });
