@@ -64,7 +64,12 @@ try {
 } finally {
   if (temporary) {
     const target = resolve(temporary);
-    if (dirname(target) !== resolve(tmpdir()) || !basename(target).startsWith('ses-dev-sync-')) throw new Error('一時ディレクトリの削除先を確認できません');
-    rmSync(target, { recursive: true, force: true });
+    if (dirname(target) !== resolve(tmpdir()) || !basename(target).startsWith('ses-dev-sync-')) {
+      console.error('一時ディレクトリの削除先を確認できないため、削除を中止しました');
+      process.exitCode = 1;
+    } else {
+      try { rmSync(target, { recursive: true, force: true }); }
+      catch { console.error('ソース梱包用の一時ディレクトリを削除できませんでした'); process.exitCode = 1; }
+    }
   }
 }
