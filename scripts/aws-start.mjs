@@ -10,8 +10,9 @@ if (role !== 'migrate') {
   }
 }
 if (role === 'verify') {
-  const { loadAppEnv } = await import('../packages/config/dist/index.js');
-  loadAppEnv(process.env);
+  const { loadAppEnv, formatStartupFailureLine } = await import('../packages/config/dist/index.js');
+  try { loadAppEnv(process.env); }
+  catch (error) { console.error(formatStartupFailureLine(error)); process.exit(1); }
   console.log('実行環境の設定検査が完了しました');
   process.exit(0);
 }

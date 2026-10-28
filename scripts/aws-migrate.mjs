@@ -7,7 +7,10 @@ const root = resolve(import.meta.dirname, '..');
 function execute(command, args, env, input) {
   const result = spawnSync(command, args, { cwd: root, env, input, encoding: 'utf8' });
   // DBのエラーには秘密値が混ざるため、そのままログへ転送しない。
-  if (result.error || result.status !== 0) throw new Error('DB初期化またはmigrationに失敗しました。管理者がDBの状態を確認してください');
+  if (result.error || result.status !== 0) {
+    const code = /(?:ERROR|FATAL):\s+([0-9A-Z]{5})\b/.exec(result.stderr ?? '')?.[1];
+    throw new Error(`DB初期化またはmigrationに失敗しました（${command}${code ? ` / SQLSTATE ${code}` : ''}）。管理者がDBの状態を確認してください`);
+  }
   return result.stdout;
 }
 try {
@@ -22,11 +25,14 @@ try {
   const header = ['\\getenv app_migrator_password APP_MIGRATOR_PASSWORD', '\\getenv app_tenant_password APP_TENANT_PASSWORD', '\\getenv app_platform_password APP_PLATFORM_PASSWORD', '\\getenv app_platform_write_password APP_PLATFORM_WRITE_PASSWORD'].join('\n');
   // RDS管理者はSUPERUSERではない。所有者を変更する前に、作成したロールへの所属を付ける。
   const roles = readFileSync(resolve(root, 'packages/db/prisma/sql/000_roles.sql'), 'utf8').replace('ALTER SCHEMA public OWNER TO app_migrator;', "SELECT format('GRANT app_migrator TO %I', current_user)\\gexec\nALTER SCHEMA public OWNER TO app_migrator;");
-  execute('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1'], admin, `${header}\n${roles}`);
+  console.log('DBロールを確認します');
+  execute('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=sqlstate'], admin, `${header}\n${roles}`);
   connection.username = 'app_migrator'; connection.password = process.env.APP_MIGRATOR_PASSWORD;
   const migration = { ...process.env, DATABASE_URL: connection.toString() };
+  console.log('migrationを適用します');
   execute('pnpm', ['--filter', '@ses/db', 'run', 'migrate:deploy'], migration);
   if (seed.length) {
+    console.log('全停止下でデモの合成データを確認します');
     // このモードはアプリを全停止した管理者の初回投入専用。通常配備からは呼ばない。
     const owner = { ...admin, PGUSER: 'app_migrator', PGPASSWORD: process.env.APP_MIGRATOR_PASSWORD };
     const force = (enabled) => execute('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1'], owner,
