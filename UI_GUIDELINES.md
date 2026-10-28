@@ -202,6 +202,10 @@ import { Dialog, Tabs, Tooltip } from '@ses/ui/client';           // 状態を�
 | **ホーム** | `PageGreeting` `KpiCard` `KpiCardRow` `SectionHeader` `RailCard` `Timeline` `RankedList` | 🔴 **`KpiCard` はホーム 2 画面のみ**（一覧画面に置くと CI が落ちる） |
 | **その他** | `Icon` `Avatar` `GlobalSearchBox` `EnvironmentBanner` | |
 
+### 6.2.1 補助操作のアイコンとツールチップ（2026-10-23・人間の指示）
+
+補助操作は `IconButton` と `Tooltip` を基本にし、ホバーとキーボードフォーカスで操作名を表示する。アイコンだけの場合も `aria-label` に同じ操作名を必ず渡す。保存・上書き・開閉・検索・条件クリアは共通 `Icon` の写像から選ぶ。実行確定や破棄の確認ダイアログは、対象・結果を読めるテキストを維持する。保存条件一覧の適用は独立したボタンを置かず、行クリックと条件名のキーボード操作で行う。三点メニューからは行の適用を発火させない。
+
 ### 6.3 使用例
 
 **一覧画面**

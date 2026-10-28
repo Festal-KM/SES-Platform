@@ -203,6 +203,10 @@ model User {
   // 🔴 Issue #33 / docs/05 §3.3.1（A-1）: 複合 FK。references は PartnerCompany の @@unique([tenantId, id])。
   ownerPartnerCompany PartnerCompany? @relation(fields: [tenantId, ownerPartnerCompanyId], references: [tenantId, id], onDelete: Restrict)
   memberships         Membership[]
+  /// ✅✅ 2026-10-16: 自分が担当者になっている案件（`Project.assigneeUserId` の逆側。
+  /// Prisma は関連の両側の宣言を要求する）。🔴 **この行はアプリから 1 度も読まない** ——
+  /// 読むのは常に案件の側（`Project.assignee`）であり、ここから案件の一覧を引く経路を作らない。
+  assignedProjects    Project[]       @relation("ProjectAssignee")
 
   @@unique([tenantId, email])
   @@index([tenantId, disabledAt])
@@ -657,7 +661,10 @@ model Project {
   name               String
   endClientName      String?   @map("end_client_name") // 🔴 内部限定。公開表示・LLM・運営者に出さない
   internalUnitPrice  Decimal?  @map("internal_unit_price") @db.Decimal(12, 2) // 🔴 内部限定（同上）
-  publicSummary      String?   @map("public_summary") // 外部公開用の記載（公開時に使うのはこれだけ）
+  publicSummary      String?   @map("public_summary") // 外部公開用の業務概要。勤務地の詳細・公開メモとともに検査する
+  locationDetail     String?   @map("location_detail") // 勤務地・最寄駅（公開用）
+  publicMemo         String?   @map("public_memo") // 公開メモ（公開検査の対象）
+  remarks            String?   // 内部備考。単価の補足など。取引先には出さない
   unitPriceMin       Decimal?  @map("unit_price_min") @db.Decimal(12, 2)
   unitPriceMax       Decimal?  @map("unit_price_max") @db.Decimal(12, 2)
   startDate          DateTime? @map("start_date") @db.Date
@@ -674,11 +681,37 @@ model Project {
   sourceKind         String    @default("OWN") @map("source_kind")
   /// ✅ 2026-10-16: 並行可否（他案件との並行提案を許すか）。null = 未設定。
   parallelOk         Boolean?  @map("parallel_ok")
+  /// ✅✅ 2026-10-16（人間の明示指示の「基本情報 19 項目」。migration 20261016040000）:
+  /// 案件サマリに描くために足した 9 列。🔴 **すべて null 許容**（既存の案件には値が無い）。
+  /// 🔴 **公開範囲の相手に出してよいかは列ごとに違う。** 出し分けは
+  ///    `apps/web/lib/projects/service.ts` の `select` を 2 本に分けることで行う
+  ///    （取得後に隠す実装にしない。`F-013 AC-2`）。
+  /// 🔴 内部限定（ホストのみ）: `upperCompanyName` / `distribution` / `assigneeUserId` / `copySummary`
+  upperCompanyName   String?   @map("upper_company_name") // 🔴 内部限定。商流の一部である
+  endDate            DateTime? @map("end_date") @db.Date
+  /// 精算幅（時間/月）。🔴 `140~180h` の 1 文字列にしない（検索も比較もできず表記ゆれが溜まる）
+  settlementMinHours Int?      @map("settlement_min_hours")
+  settlementMaxHours Int?      @map("settlement_max_hours")
+  /// 支払いサイト（日数）。🔴 自由文にしない（締め日と支払日が混ざって比較できない）
+  paymentSiteDays    Int?      @map("payment_site_days")
+  distribution       String?   // 🔴 内部限定。いま何次請けかという商流そのもの
+  /// 商流制限（何次請けまで許すか）。🔴 **これは取引先に出す**（提案の可否の判断そのもの）
+  distributionLimit  String?   @map("distribution_limit")
+  /// 担当者（自社の営業）。🔴 内部限定（ホスト社員の氏名に繋がる）
+  assigneeUserId     String?   @map("assignee_user_id") @db.Uuid
+  /// コピペ用サマリの本文。🔴 内部限定。null = 未編集（画面が案件の値から組む。焼き付けない）
+  copySummary        String?   @map("copy_summary")
   originAssignmentId String?   @map("origin_assignment_id") @db.Uuid // F-045 の後任募集の生成元。docs/05 §3.5 は relation を定義していないため FK を張らない（意図的）
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   tenant           Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// ✅✅ 2026-10-16: 担当者（migration 20261016040000）。
+  /// 🔴 `onDelete: SetNull` —— 担当者のアカウントが消えても案件は残る（業務上、案件の実体は
+  ///    担当者に依存しない）。`Restrict` にすると退職処理が案件の数だけ止まる。
+  /// ⚠️ テナントをまたぐ指定は**書き込み時にアプリが母集団へ照合して防ぐ**
+  ///    （docs/05 §6.4 #14 の条件②。`users` の RLS が `withTenant` の内側で効く）。
+  assignee         User?                @relation("ProjectAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
   requirements     ProjectRequirement[]
   visibilities     ProjectVisibility[]
   publishRequests  ProjectPublishRequest[] // T-07-09（docs/05 §11.11）
@@ -1351,7 +1384,7 @@ model Contract {
   projectId                    String?   @map("project_id") @db.Uuid
   engineerId                   String?   @map("engineer_id") @db.Uuid
   assignmentId                 String?   @map("assignment_id") @db.Uuid
-  // 🔴 自社とパートナーの間の契約単価。ホストの販売単価は Project.internalUnitPrice（経路 5 に出ない）
+  // 🔴 自社とパートナーの間の契約単価。案件の想定仕入単価はProject.internalUnitPrice（経路5に出ない）
   unitPrice                    Decimal?  @map("unit_price") @db.Decimal(12, 2)
   periodStart                  DateTime? @map("period_start") @db.Date
   periodEnd                    DateTime? @map("period_end") @db.Date

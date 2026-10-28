@@ -64,7 +64,7 @@ export type ToolbarProps = {
    *    画面が凍結済みの `data-testid` を持つ要素をそのまま渡せる必要がある
    *    （`project-list-order-note` は `docs/04` `U-22` の凍結対象で、E2E が掴んでいる）。
    */
-  readonly note?: ReactNode;
+  readonly note?: ReactNode | null;
   /** 一括操作。🔴 **どの幅でも既定で閉じた `<details>` の中に入る**（上の表）。 */
   readonly bulkActions?: ReactNode;
   /** 一括操作の開閉の語（`packages/i18n`）。`bulkActions` を渡すなら必須。 */
@@ -118,10 +118,17 @@ export function Toolbar({
                  （見える範囲）は 12px の補助のままである（§7.2 の「件数を要対応キューより
                  視覚的に強くしない」は**ホームの KPI の話**であり、一覧の母集団の行は
                  §3.2-2 が常時表示を定めている別物である）。 */}
-          <p data-testid={`${testIdPrefix}toolbar-population`} className="text-row font-bold text-fg">
-            {population}
-          </p>
-          {note === undefined ? null : (
+          {/* ✅✅ **2026-10-16: 空文字なら行ごと描かない**（人間の明示指示で `S-010` の
+              母集団の 1 行を外したため）。🔴 **prop を消していない** —— 母集団の明示が
+              要る一覧（`S-005` / `S-016` / `S-019`）はそのまま使っており、
+              **出すかどうかを呼び出し側が決める**形にした。
+              ⚠️ **太字をやめた**（人間の明示指示「ボールドが多すぎる」）。 */}
+          {population === '' ? null : (
+            <p data-testid={`${testIdPrefix}toolbar-population`} className="text-row text-fg">
+              {population}
+            </p>
+          )}
+          {note === undefined || note === null ? null : (
             <div data-testid={`${testIdPrefix}toolbar-note`}>{note}</div>
           )}
         </div>

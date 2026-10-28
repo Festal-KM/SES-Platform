@@ -9,6 +9,7 @@ import { PrismaClient } from '@prisma/client';
 import { assertSeedableAppEnv } from '@ses/config';
 import { countTenantRows } from '../src/seed-sql.js';
 import { getSeedPreset } from './presets/index.js';
+import { seedDemoProjectSamples } from './presets/demo.js';
 import { resetPreset } from './reset.js';
 import { createSeedRng } from './rng.js';
 import { SEED_PRESET_NAMES, type SeedPreset, type SeedPresetName } from './types.js';
@@ -40,6 +41,7 @@ export {
 export {
   DEMO_SEED_DOMAINS,
   DEMO_SEED_IDS,
+  DEMO_ADDITIONAL_PROJECT_COUNT,
   DEMO_SEED_NAME_RULES,
   DEMO_SEED_PASSWORD,
   demoSeedCompanyNames,
@@ -79,6 +81,21 @@ export {
   type PerfTenantProfile,
 } from './presets/perf.js';
 export { createSeedRng, type SeedRng } from './rng.js';
+
+/** 既存のデモを消さずに、一覧確認用の案件だけを追加する。 */
+export async function expandDemoProjects(options: {
+  readonly appEnv: string | undefined;
+  readonly databaseUrl: string;
+  readonly now?: Date;
+}): Promise<number> {
+  assertSeedableAppEnv(options.appEnv);
+  const db = new PrismaClient({ datasourceUrl: options.databaseUrl });
+  try {
+    return await seedDemoProjectSamples(db, options.now ?? new Date());
+  } finally {
+    await db.$disconnect();
+  }
+}
 // 🔴 T-10-07: テナント ID で絞った行数の実測（読み取りだけ）。結合テストが「reset で消える / 他テナントは消えない」を
 //    テーブルを列挙せずに突き合わせるために公開する。`deleteTenantData`（削除の実体）は公開しない —— 環境ガード
 //    （`runSeedReset` の先頭）を通らずに消せる経路を作らない。

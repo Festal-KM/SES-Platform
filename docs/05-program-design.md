@@ -892,6 +892,8 @@ model SkillSheetExtraction {
 
 ### 3.5 案件・公開範囲・マッチング・匿名共有
 
+**2026-10-26 人間の追加指示**：projectsにnullableのlocation_detail、public_memo、remarksを追加（migration 20261026000000_project_basic_info）。location_detailとpublic_memoは公開用、remarksはホスト内部用。公開本文グループはprojectPublicContentでpublicSummary→locationDetail→publicMemoの順にまとめ、内容ハッシュ・検査対象・PATCH前後の差分判定を一致させる。internalUnitPriceは画面上の想定仕入単価、卸単価は既存unitPriceMin／unitPriceMaxへ同額を保存する。旧レンジの情報は備考に保持。S-010の基本情報は選択された1件の専用射影から読み、商流・備考・担当者はホスト枝だけで取得し、project.view監査を記録する。
+
 ```prisma
 // 🔴 列挙は Prisma の `enum` を使わず `String` + 許容値コメントで宣言する（§3.1「列挙」規約）。
 //    ProjectStatus: 'OPEN'|'CLOSED'（募集中/終了）

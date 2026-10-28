@@ -55,6 +55,7 @@ import {
   countTenantRows,
   DEMO_SEED_DOMAINS,
   DEMO_SEED_IDS,
+  DEMO_ADDITIONAL_PROJECT_COUNT,
   DEMO_SEED_NAME_RULES,
   demoSeedCompanyNames,
   ISOLATION_SEED_IDS,
@@ -156,10 +157,19 @@ function segment(id: string): { params: Promise<Record<string, string>> } {
 
 async function listProjects(ctx: AuthenticatedTenantCtx): Promise<string[]> {
   requireTenantCtxMock.mockResolvedValue(ctx);
-  const response = await projectsRoute.GET(new Request('https://app.test/api/projects?limit=50'));
-  expect(response.status).toBe(200);
-  const body = (await response.json()) as { readonly items: readonly { readonly id: string }[] };
-  return body.items.map((item) => item.id);
+  const ids: string[] = [];
+  let cursor: string | null = null;
+  do {
+    const url = new URL('https://app.test/api/projects?limit=50');
+    if (cursor !== null) url.searchParams.set('cursor', cursor);
+    const response = await projectsRoute.GET(new Request(url));
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { readonly items: readonly { readonly id: string }[]; readonly nextCursor: string | null };
+    ids.push(...body.items.map((item) => item.id));
+    cursor = body.nextCursor;
+  } while (cursor !== null);
+  expect(new Set(ids).size).toBe(ids.length);
+  return ids;
 }
 
 async function approve(ctx: AuthenticatedTenantCtx, id: string): Promise<Response> {
@@ -391,7 +401,7 @@ describe('① 🔴 F-053 AC-1 / BR-47: 投入された全行が架空である�
 
   it('エンド企業名（projects.end_client_name / proposals.recipient_company_name / 契約先）は「架空〜株式会社」だけ', async () => {
     const projects = await admin.project.findMany({ where: { tenantId: { in: DEMO_TENANT_IDS } }, select: { endClientName: true } });
-    expect(projects).toHaveLength(12);
+    expect(projects).toHaveLength(2 * (Object.keys(ALPHA.projects).length + DEMO_ADDITIONAL_PROJECT_COUNT));
     for (const project of projects) {
       expect(project.endClientName?.startsWith(DEMO_SEED_NAME_RULES.endClientPrefix), project.endClientName ?? '').toBe(true);
     }
@@ -502,9 +512,10 @@ describe('③ 🔴 F-053 AC-3: 投入直後の demo で 2 本の実演が成立�
     expect(partner2).toContain(ALPHA.projects.publishedOne);
     expect(partner2).not.toContain(ALPHA.projects.unpublishedReady);
     expect(partner2).not.toContain(ALPHA.projects.unpublishedCandidates);
-    // ホストは 6 件すべて。
+    // ホストは既存シナリオと追加の一覧用案件をすべて読める。
     const host = await listProjects(await ctxOf(HOST_SALES));
-    expect(host).toHaveLength(6);
+    expect(host).toHaveLength(Object.keys(ALPHA.projects).length + DEMO_ADDITIONAL_PROJECT_COUNT);
+    expect(host).toEqual(expect.arrayContaining(Object.values(ALPHA.projects)));
   });
 
   it('🔴 匿名候補（S-016 相当）に共有中の取引先エンジニア 10 名（5 社 × e1 / e2）だけが匿名 5 項目で出る（シナリオ B の開始地点）', async () => {

@@ -13,12 +13,27 @@
 //    （新規依存を増やさない）。
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ProjectListRowView } from '../../../lib/projects/list-rows';
 import {
   ProjectListScreen,
   type ProjectListScreenMessages,
 } from './project-list-screen';
+import type { SearchPanelMessages } from './_search/search-panel';
+
+// 🔴🔴 **`SearchPanel` が `useRouter()` を呼ぶ**（2026-10-19: 検索を**再読み込みなし**の
+//    クライアント遷移にした。`_search/search-panel.tsx` 冒頭の 🔴🔴）。
+//    `renderToStaticMarkup` には App Router の context が無いため、素のままだと
+//    **`invariant expected app router to be mounted` で全件落ちる。**
+//    他の画面の描画テスト（`proposal-approval-screen.render.test.tsx` ほか 3 本）と**同じ差し替え**である。
+// ⚠️ ここは**サーバ描画だけを見るテスト**であり、遷移そのものは実画面で確認する。
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: () => undefined,
+    replace: () => undefined,
+    refresh: () => undefined,
+  }),
+}));
 
 const PROJECT_A = '01930000-0000-7000-8000-0000000000c1';
 const PROJECT_B = '01930000-0000-7000-8000-0000000000c2';
@@ -33,6 +48,7 @@ function row(overrides: Partial<ProjectListRowView> = {}): ProjectListRowView {
     mustRequirements: 'Java 5 年以上、Spring',
     moreMustRequirements: null,
     unitPrice: '65〜75 万円',
+    purchaseUnitPrice: '90 万円',
     startDate: '2026-10-01',
     location: '東京都',
     remoteMode: '一部リモート可',
@@ -49,37 +65,14 @@ const messages: ProjectListScreenMessages = {
   orderNote: '後任募集 → 募集中 → 充足 の順に、同じ状態のなかでは更新日の新しい順に表示しています。',
   overflowNote: '右端が切れているときは、表を横にスクロールすると残りの列が見られます。',
   // ✅ 2026-10-16: 「リモート可否」を外した（稼働形態の絞り込みを実装したため）。
-  searchComingSoon: 'スキル要件での絞り込みは、後続のリリースで行えます。',
-  searchLegend: '検索条件',
-  searchQ: 'フリーワード',
-  searchStatus: '案件の状態',
-  searchStartFrom: '開始日（この日以降）',
-  searchPrefecture: '勤務地（都道府県）',
-  searchPriceMin: '単価（下限）',
-  searchPriceMax: '単価（上限）',
-  // ✅ 2026-10-15: 受領画像の絞り込みカード（虫眼鏡 + プレースホルダ / 単価の 1 つの欄）。
-  searchQPlaceholder: '案件名・外部公開用の記載から探す',
-  searchPrice: '単価（月額）',
-  searchPriceMinPlaceholder: '下限なし',
-  searchPriceMaxPlaceholder: '上限なし',
-  searchPriceRangeSeparator: '〜',
-  searchPriceUnit: '円',
-  // ✅ 2026-10-16（人間の明示指示。案件一覧の検索機能）。
-  searchRemoteMode: '稼働形態',
-  searchCategory: 'カテゴリ',
-  searchSourceKind: '案件区分',
-  searchParallelOk: '並行可否',
-  searchStartWithin: '開始時期',
-  searchRecruitingOnly: '募集中のみ',
-  searchPriceInverted: '単価の下限が上限を上回っています。どちらかを直してください。',
-  searchSubmit: '検索',
-  searchClear: '条件をクリア',
+  // ⚠️ **2026-10-19: 検索条件の語は `searchMessages`（下）に移った。**
   register: '案件を登録',
   readOnlyNote: '案件の登録は、閲覧のみの権限では行えません。',
   columnName: '案件名',
-  columnStatus: '状態',
+  columnStatus: 'ステータス',
   columnMustRequirements: '必須要件の要約',
-  columnUnitPrice: '単価レンジ',
+  columnUnitPrice: '卸単価',
+  columnPurchaseUnitPrice: '想定仕入単価',
   columnStartDate: '開始日',
   columnLocation: '勤務地',
   columnRemoteMode: '稼働形態',
@@ -102,25 +95,17 @@ const statusOptions = [
   { value: 'CLOSED', label: '終了' },
 ] as const;
 
-const prefectureOptions = [
-  { value: '', label: 'すべて' },
-  { value: '13', label: '東京都' },
-] as const;
 
-const emptyFilters = {
+const emptyApplied = {
   q: '',
   status: '',
-  startFrom: '',
-  prefecture: '',
+  category: '',
+  remoteMode: '',
   priceMin: '',
   priceMax: '',
-  // ✅ 2026-10-16: 稼働形態 / 募集中のみ / カテゴリ / 案件区分 / 並行可否 / 開始時期。
-  remoteMode: '',
-  recruitingOnly: '',
-  category: '',
-  sourceKind: '',
-  parallelOk: '',
+  prefecture: '',
   startWithin: '',
+  skills: [] as readonly string[],
 } as const;
 
 /** ✅ 2026-10-16（受領モック）: カテゴリ / 案件区分 / 並行可否 / 開始時期の選択肢。 */
@@ -129,22 +114,13 @@ const categoryOptions = [
   { value: 'BACKEND', label: 'バックエンド' },
   { value: 'FRONTEND', label: 'フロントエンド' },
 ] as const;
-const sourceKindOptions = [
-  { value: '', label: 'すべて' },
-  { value: 'OWN', label: '自社案件' },
-  { value: 'PARTNER', label: 'パートナー案件' },
-] as const;
-const parallelOkOptions = [
-  { value: '', label: 'すべて' },
-  { value: '1', label: '可' },
-  { value: '0', label: '不可' },
-] as const;
-const startWithinOptions = [
-  { value: '', label: 'すべて' },
-  { value: 'IMMEDIATE', label: '即日' },
-  { value: 'THIS_MONTH', label: '今月' },
-  { value: 'NEXT_MONTH', label: '来月' },
-  { value: 'LATER', label: '再来月以降' },
+/**
+ * ✅✅ 2026-10-16: スキルの選択肢（辞書の ID と `name`）。
+ * 🔴 **「すべて」を含まない** —— `<select multiple>` では**何も選んでいない状態が「すべて」**である。
+ */
+const skillOptions = [
+  { value: '11111111-1111-7111-8111-111111111111', label: 'Java' },
+  { value: '22222222-2222-7222-8222-222222222222', label: 'TypeScript' },
 ] as const;
 
 /** ✅ 2026-10-16: 稼働形態の選択肢（値の出所は `REMOTE_MODES`。語は一覧の列と同じ）。 */
@@ -169,38 +145,173 @@ const COLUMN_TOGGLE_SHOWN = [
   },
 ] as const;
 
-/** 🔴 隠している状態（URL に `?hide=visibility` が載っている状態）で届く形。 */
-const COLUMN_TOGGLE_HIDDEN = [
-  {
-    id: 'visibility',
-    label: '「公開先の設定状況」の列を表示する',
-    hidden: true,
-    href: '/projects',
-  },
+// ⚠️ **2026-10-16: 「隠している状態」の形は外した** —— `表示する列` のボタンを画面から
+//    外した時点（人間の明示指示）で、この形を描く経路が 1 つも無くなったためである。
+//    🔴 **`?hide=` の query を受け取れる状態は保っている**（`page.tsx` が `columnToggleItems` を
+//    組み立て続けている）ので、共有された URL は壊れていない。
+
+/** ✅✅ 2026-10-19: 検索エリア（`_search/`）の選択肢と語。 */
+const prefectureOptions = [
+  { value: '', label: 'すべて' },
+  { value: '13', label: '東京都' },
 ] as const;
+const startWithinOptions = [
+  { value: '', label: 'すべて' },
+  { value: 'THIS_MONTH', label: '今月' },
+] as const;
+const searchOptions = {
+  statusOptions,
+  categoryOptions,
+  remoteModeOptions,
+  prefectureOptions,
+  startWithinOptions,
+  skillOptions,
+};
+const searchMessages: SearchPanelMessages = {
+  tabsLabel: '検索エリアの切り替え',
+  tabSearch: '検索条件',
+  selectedSavedLabel: '選択中の保存条件',
+  selectedSavedModified: '変更あり',
+  tabSaved: '保存した条件',
+  save: '条件を保存',
+  collapse: '折りたたむ',
+  expand: '展開する',
+  saveDialogTitle: '条件を保存',
+  saveDialogNameLabel: '保存名',
+  saveDialogNamePlaceholder: '例：Python 案件',
+  saveDialogConfirm: '保存',
+  renameDialogTitle: '名前を変更',
+  overwriteDialogTitle: '現在の条件で上書き',
+  overwriteCurrent: '条件を上書きする',
+  overwriteDialogConfirm: '上書き',
+  removeDialogTitle: '保存した条件を削除',
+  removeDialogConfirm: '削除',
+  cancel: 'キャンセル',
+  nameError: '保存名は 1〜40 文字で入力してください。',
+  limitError: '保存できる条件は 30 件までです。',
+  writeError: 'このブラウザーに保存できませんでした。',
+  saved: '保存しました。',
+  renamed: '名前を変更しました。',
+  overwritten: '上書きしました。',
+  removed: '削除しました。',
+  summaryJoiner: '、',
+  quoteOpen: '「',
+  overwriteDialogBodySuffix: '」を上書きします。',
+  removeDialogBodySuffix: '」を削除します。',
+  saveDialogBodyPrefix: '次の条件を保存：',
+  saveDialogBodyEmpty: '条件なし',
+  form: {
+    q: 'フリーワード',
+    qPlaceholder: '案件名・キーワードで検索',
+    status: 'ステータス',
+    category: 'カテゴリ',
+    skill: 'スキル',
+    remoteMode: '稼働形態',
+    price: '単価（月額）',
+    priceMin: '単価（下限）',
+    priceMax: '単価（上限）',
+    priceMinPlaceholder: '下限なし',
+    priceMaxPlaceholder: '上限なし',
+    priceSeparator: '〜',
+    priceUnit: '円',
+    priceInverted: '単価の下限が上限を上回っています。',
+    prefecture: '勤務地',
+    startWithin: '開始時期',
+    skillMessages: {
+      placeholder: 'スキルを選択',
+      remove: 'を解除',
+      overflowLabel: '選んだスキルをすべて見る',
+      selectedCountSuffix: '件選択',
+      searchLabel: 'スキルを名前で絞り込む',
+      searchPlaceholder: 'スキルを検索',
+      modeAll: 'すべて',
+      modeSelected: '選択中',
+      noMatch: '該当するスキルがありません。',
+      selectedSummarySuffix: '件選択中',
+      clearSelection: '選択をクリア',
+      triggerLabel: 'スキル',
+    },
+    selectMessages: {
+      searchLabel: '選択肢を名前で絞り込む',
+      searchPlaceholder: '絞り込む…',
+      noMatch: '該当する選択肢がありません。',
+    },
+  },
+  bar: {
+    label: '選択中の条件',
+    empty: '条件は指定されていません',
+    remove: 'を解除',
+    overflowLabel: '表示しきれない条件を開く',
+    clear: '条件をクリア',
+    submit: '検索',
+    pending: '未適用',
+    pendingHint: '一覧はまだ以前の条件の結果です。',
+  },
+  savedList: {
+    search: '保存条件名・スキルで絞り込み',
+    sort: '並び順',
+    sortRecent: '最近使った順',
+    sortUpdated: '更新が新しい順',
+    sortName: '名前順',
+    columnName: '条件名',
+    columnFilters: '保存した検索条件',
+    columnActions: '操作',
+    countSuffix: '件',
+    range: '{total}件中 {from}–{to}件を表示',
+    noResults: '該当する保存条件がありません。',
+    previous: '前へ',
+    next: '次へ',
+
+    apply: '適用',
+    menuLabel: 'の操作メニュー',
+    rename: '名前を変更',
+    overwrite: '現在の条件で上書き',
+    remove: '削除',
+    emptyTitle: '保存した条件はまだありません。',
+    emptyAction: '現在の条件を保存',
+    brokenNote: '保存した条件を読み込めませんでした。',
+    storageNote: '保存した条件はこのブラウザーに保存しています。',
+    noCondition: '条件なし',
+    activeLabel: '適用中',
+  },
+  chipLabels: {
+    statusOptions,
+    categoryOptions,
+    remoteModeOptions,
+    prefectureOptions,
+    startWithinOptions,
+    skillOptions,
+    fieldLabels: {
+      q: 'フリーワード',
+      category: 'カテゴリ',
+      prefecture: '勤務地',
+      startWithin: '開始時期',
+      price: '単価（月額）',
+    },
+    fieldSeparator: '：',
+    priceRangeSeparator: '〜',
+    priceUnit: '円',
+  },
+};
 
 function render(
   overrides: Partial<Parameters<typeof ProjectListScreen>[0]> = {},
 ): string {
   // 🔴 取引先には 9 列目そのものが無いので、切替も届かない（`page.tsx` と同じ導き方）。
-  const showVisibilityColumn = overrides.showVisibilityColumn ?? true;
   return renderToStaticMarkup(
     createElement(ProjectListScreen, {
       rows: [row()],
-      filters: emptyFilters,
-      statusOptions,
-      prefectureOptions,
-      remoteModeOptions,
-      categoryOptions,
-      sourceKindOptions,
-      parallelOkOptions,
-      startWithinOptions,
-      priceInverted: false,
-      showVisibilityColumn,
+      applied: emptyApplied,
+      searchOptions,
+      passThroughParams: [],
+      storageTenantId: '01930000-0000-7000-8000-0000000000a1',
+      storageUserId: '01930000-0000-7000-8000-0000000000b1',
+      defaultExpanded: true,
+      searchMessages,
       canRegister: true,
       nextPageHref: null,
       firstPageHref: null,
-      columnToggleItems: showVisibilityColumn ? COLUMN_TOGGLE_SHOWN : [],
+      columnToggleItems: COLUMN_TOGGLE_SHOWN,
       // 🔴 SP-22 段④: 副カラムで開いている行（既定は先頭行）と、行から開く URL。
       //    組み立ては `lib/projects/list-rows.test.ts`（`selectedProjectId` / `projectSelectHref`）が
       //    固定する。ここでは「画面が受け取った形をどう描くか」だけを見る。
@@ -212,24 +323,24 @@ function render(
   );
 }
 
-describe('🔴 F-014 AC-4 / BR-07: 取引先に公開先の設定状況を出さない', () => {
-  it('ホストには 9 列目（公開先の設定状況）が出る', () => {
+
+describe('単価の表示範囲', () => {
+  it('ホストは仕入単価と卸単価を別列で表示する', () => {
     const html = render();
-
-    expect(html).toContain('公開先の設定状況');
-    expect(html).toContain('3 社に公開中');
+    expect(html).toContain('仕入単価');
+    expect(html).toContain('卸単価');
+    expect(html).toContain('90 万円');
+    expect(html).toContain('65〜75 万円');
   });
-
-  it('🔴 取引先では列そのものが描かれない（列見出しも値も 0 件）', () => {
+  it('取引先は卸単価だけを表示する', () => {
     const html = render({
-      showVisibilityColumn: false,
-      // 🔴 取引先の行は `visibility: null` で届く（`projectListRow` が型で保証する）。
-      rows: [row({ visibility: null })],
+      rows: [row({ purchaseUnitPrice: null, visibility: null })],
+      messages: { ...messages, partnerScopeNotice: '御社に公開された案件' },
     });
-
-    expect(html).not.toContain('公開先の設定状況');
-    expect(html).not.toContain('社に公開中');
-    expect(html).not.toContain('未設定');
+    expect(html).not.toContain('仕入単価');
+    expect(html).not.toContain('90 万円');
+    expect(html).toContain('卸単価');
+    expect(html).toContain('65〜75 万円');
   });
 });
 
@@ -286,15 +397,19 @@ describe('権限差分（docs/04 §S-010）', () => {
 });
 
 describe('行から詳細への導線（docs/04 §S-010「行クリックで `S-011`」）', () => {
-  it('案件名が `S-011` へのリンクになる', () => {
-    expect(render()).toContain(`href="/projects/${PROJECT_A}"`);
+  // ✅✅ **2026-10-16: 名称の行き先が `S-011` から「右パネルを開く URL」に変わった**
+  //    （人間の明示指示「案件タイトルもリンクにしない。列クリック→右側で詳細をクリックで
+  //    詳細画面に行く動線」）。🔴 **行いっぱいが当たり判定である**（`nameCell.stretch`）。
+  it('行の当たり判定が右パネルを開く URL になる', () => {
+    // 2026-10-16: 行の行き先は右パネルを開く URL（selectHrefOf）である。
+    expect(render()).toContain(`project-list-link-${PROJECT_A}`);
   });
 
   it('複数行を描ける', () => {
     const html = render({ rows: [row(), row({ id: PROJECT_B, name: '物流管理システム保守' })] });
 
-    expect(html).toContain(`href="/projects/${PROJECT_A}"`);
-    expect(html).toContain(`href="/projects/${PROJECT_B}"`);
+    expect(html).toContain(`project-list-link-${PROJECT_A}`);
+    expect(html).toContain(`project-list-link-${PROJECT_B}`);
   });
 
   it('🔴 超過件数は 0 のとき描かない（`+0` を出さない）', () => {
@@ -318,7 +433,6 @@ describe('空状態（docs/04 §10.1 `S-010`）', () => {
   it('🔴 取引先の初回空は「公開されていない」と書く（「案件が無い」と書かない）', () => {
     const html = render({
       rows: [],
-      showVisibilityColumn: false,
       messages: {
         ...messages,
         emptyTitle: '御社に公開された案件はまだありません。',
@@ -331,80 +445,217 @@ describe('空状態（docs/04 §10.1 `S-010`）', () => {
   });
 });
 
-describe('検索条件（docs/04 §S-010 セクション 1）', () => {
-  it('`method="get"` のフォームで `/projects` に送る（クライアント JS を要求しない）', () => {
+// ============================================================================
+// ✅✅ **2026-10-19: 検索エリアの改修**（人間の指示書 `BizOrch_SearchArea_ClaudeCode.md`）
+// ============================================================================
+// 🔴 指示書 §8 の**必須の完成条件**のうち、描画で示せるものをここに固定する。
+//    （「＋N から解除できる」「折りたたんでも検索できる」の**操作**は実画面で見る）
+describe('検索エリア（改修指示書 §2 の 3 層）', () => {
+  it('`method="get"` のフォームで `/projects` に送る（検索の経路を変えていない）', () => {
     const html = render();
 
+    expect(html).toContain('data-testid="project-list-filters"');
     expect(html).toContain('method="get"');
     expect(html).toContain('action="/projects"');
   });
 
-  it('現在の条件がフォームに戻る（検索してもフォームが空にならない）', () => {
+  it('🔴 3 層（ヘッダ / 本文 / 条件バー）がそろっている', () => {
+    const html = render();
+
+    // A. ヘッダ（タブ + 条件を保存 + 折りたたむ）
+    expect(html).toContain('role="tablist"');
+    expect(html).toContain('検索条件');
+    expect(html).toContain('保存した条件');
+    expect(html).toContain('data-testid="project-list-search-save"');
+    expect(html).toContain('data-testid="project-list-search-toggle"');
+    // B. 本文
+    expect(html).toContain('data-testid="project-list-filter-q"');
+    // C. 条件バー（常時表示）
+    expect(html).toContain('data-testid="project-list-summary"');
+    expect(html).toContain('data-testid="project-list-clear"');
+    expect(html).toContain('data-testid="project-list-search"');
+  });
+
+  it('🔴 折りたたみのボタンが `aria-expanded` / `aria-controls` を持つ', () => {
+    expect(render()).toMatch(
+      /data-testid="project-list-search-toggle"[^>]*|aria-expanded="true"[^>]*data-testid="project-list-search-toggle"/,
+    );
+    expect(render()).toContain('aria-expanded="true"');
+    // 🔴 cookie が `'0'` なら閉じた状態でサーバが描く（再訪時の復元）。
+    expect(render({ defaultExpanded: false })).toContain('aria-expanded="false"');
+  });
+
+  // ==========================================================================
+  // 🔴🔴 水合前（= JS が死んでいるとき）の送信
+  // ==========================================================================
+  // `tests/static/form-method-required.test.ts` が「既存の検索フォーム（`S-005` /
+  // **`S-010`** / …）は JS 無しでも正しく動く」と明文で書いている。
+  // 🔴 **素の入力欄（キーワード / 単価）は、本文が見えていれば欄そのものが送る**（`name` を持つ）。
+  //    持たせないと、水合前に打った語が捨てられて**前の条件で静かに検索される**。
+  // 🔴🔴 **自前の引き金（ステータス等）は常に hidden が送る。**
+  //    ✅✅ 2026-10-19 に `<select>` を `role="combobox"` の `<div>` に替えた
+  //    （人間の指示「スキルのプルダウンと同じ UI にして」）。`<div>` は**ネイティブの
+  //    フォーム値を持たない**ので、素の入力欄と同じ出し分けにすると
+  //    **本文を開いている間だけ条件が送られない**という最悪の壊れ方になる。
+  it('🔴🔴 展開中: 素の欄は自分で送り、自前の引き金は hidden が送る', () => {
+    const html = render({ applied: { ...emptyApplied, q: '基幹', status: 'OPEN' } });
+
+    // ① 見える欄が `name` を持っている（キーワード）。
+    expect(html).toMatch(/data-testid="project-list-filter-q"[^>]*name="q"|name="q"[^>]*data-testid="project-list-filter-q"/);
+    // 🔴 **同じキーの hidden を重ねて出さない**（`optionalFilter` が壊れる）。
+    expect(html).not.toContain('<input type="hidden" name="q"');
+
+    // ② 自前の引き金は `name` を持たず、hidden が肩代わりする。
+    const trigger = /<[^>]*data-testid="project-list-filter-status"[^>]*>/.exec(html)?.[0] ?? '';
+    expect(trigger).not.toBe('');
+    expect(trigger).not.toContain('name=');
+    expect(trigger).toContain('role="combobox"');
+    expect(html).toContain('<input type="hidden" name="status" value="OPEN"/>');
+    expect(render({ applied: { ...emptyApplied, skills: ['11111111-1111-7111-8111-111111111111'] } }))
+      .toContain('<input type="hidden" name="skills" value="11111111-1111-7111-8111-111111111111"/>');
+  });
+
+  it('🔴🔴 折りたたんでいるときは hidden が補い、本文は `disabled` で送らない', () => {
     const html = render({
-      filters: {
+      defaultExpanded: false,
+      applied: { ...emptyApplied, q: '基幹', status: 'OPEN', priceMin: '600000' },
+    });
+
+    expect(html).toContain('<input type="hidden" name="q" value="基幹"/>');
+    expect(html).toContain('<input type="hidden" name="status" value="OPEN"/>');
+    expect(html).toContain('<input type="hidden" name="priceMin" value="600000"/>');
+    // 🔴 **`inert` だけでは送信は止まらない**ので `<fieldset disabled>` を置いている。
+    expect(html).toContain('<fieldset class="contents" disabled="">');
+    expect(html).toContain('inert=""');
+  });
+
+  it('🔴 現在の条件が欄にも戻る（検索してもフォームが空にならない）', () => {
+    const html = render({
+      applied: {
+        ...emptyApplied,
         q: '基幹',
         status: 'OPEN',
-        startFrom: '2026-10-01',
-        prefecture: '13',
-        // ✅ 2026-10-15: 単価レンジも戻る（条件が 1 つでも落ちると「検索したのに消えた」になる）。
+        category: 'BACKEND',
+        remoteMode: 'FULL_REMOTE',
         priceMin: '600000',
         priceMax: '800000',
-        // ✅ 2026-10-16: 稼働形態と「募集中のみ」も戻る。
-        remoteMode: 'FULL_REMOTE',
-        recruitingOnly: '1',
-        // ✅ 2026-10-16（受領モック）: 足した 4 条件も戻る。
-        category: 'BACKEND',
-        sourceKind: 'OWN',
-        parallelOk: '1',
+        prefecture: '13',
         startWithin: 'THIS_MONTH',
+        skills: ['22222222-2222-7222-8222-222222222222'],
       },
     });
 
     expect(html).toContain('value="基幹"');
-    // ✅ 2026-10-16: `開始日` の日付入力は `開始時期` の選択になった（受領モック）。
-    //    🔴 **「選んだ区分が選択状態で戻る」ことを見る**（`<option selected>`）。
-    expect(html).toContain('value="THIS_MONTH" selected=""');
     expect(html).toContain('value="600000"');
     expect(html).toContain('value="800000"');
-    // `select` の既定値は `option` の `selected` として描かれる。
-    expect(html).toContain('<option value="OPEN" selected=""');
-    expect(html).toContain('<option value="13" selected=""');
+    // ✅✅ 2026-10-19: 自前の引き金になったので **`<option selected>` ではなく
+    //    「引き金に選んだ語が出ている」**ことを見る（人間の指示でプルダウンを統一した）。
+    //    🔴 ここで語を見るのは、**選んだ値が利用者に見えること**が要件だからである
+    //    （`value` の往復は hidden で、下の 🔴 が別に固定している）。
+    for (const label of ['募集中', 'バックエンド', 'フルリモート可', '東京都', '今月']) {
+      expect(html).toContain(label);
+    }
+    // 🔴 **送信に載る値も往復している**（引き金の語だけでは URL に戻らない）。
+    for (const [name, value] of [
+      ['status', 'OPEN'],
+      ['category', 'BACKEND'],
+      ['remoteMode', 'FULL_REMOTE'],
+      ['prefecture', '13'],
+      ['startWithin', 'THIS_MONTH'],
+    ]) {
+      expect(html).toContain(`<input type="hidden" name="${name}" value="${value}"/>`);
+    }
+    // 🔴 選んだスキルは**バッジ**で見える。
+    expect(html).toContain('TypeScript');
   });
 
-  // ✅✅ **2026-10-16: 常時表示に変えた**（受領モックのフッタは「条件をクリア」と「検索」が
-  //    常に並んでいる）。⚠️ **以前は「絞り込みが効いているときだけ」だった** ——
-  //    「押しても何も起きないボタンを常設しない」という規律による。
-  // 🔴 **規律を曲げた理由**: 絞り込みの帯が 3 行になり、どこまでが条件なのかが一目で
-  //    分からなくなった。クリアが常に同じ位置に在ることのほうが、空振りの 1 クリックより
-  //    価値が高い（押した結果は「条件なしの一覧」であり、壊れる操作ではない）。
-  it('🔴 「条件をクリア」は常に出る（絞り込みの有無によらない）', () => {
-    // 🔴 **絞り込みが 1 つも無くても出る**（これが変えた点である）。
-    expect(render()).toContain('条件をクリア');
-    // 🔴 行き先は条件なしの一覧である（押しても壊れない）。
-    expect(render()).toContain('data-testid="project-list-clear"');
-  });
-
-  it('効かない条件は入力欄を描かず、できないことを書く', () => {
+  it('🔴🔴 検索項目は 8 つちょうどで、「並行可否」が無い（指示書 §3）', () => {
     const html = render();
 
-    // ✅ **2026-10-15: 単価レンジは「効かない条件」から外れた**（`#25` に `priceMin` /
-    //    `priceMax` を足し、述語は人材検索と同じ `unitPriceOverlapConditions` を通る）。
-    // ✅✅ **2026-10-16: 「リモート可否」も外れた**（稼働形態の絞り込みを実装したため）。
-    //    🔴 **残るのはスキル要件だけである。** できるようになったものを注記に残すと、
-    //       画面が嘘をつく（`projects.list.searchComingSoon` の 🔴）。
-    expect(html).toContain('スキル要件');
-    expect(html).not.toContain('リモート可否での絞り込み');
-    expect(html).not.toContain('name="skills"');
-    expect(html).not.toContain('name="remote"');
+    for (const testId of [
+      'project-list-filter-q',
+      'project-list-filter-status',
+      'project-list-filter-category',
+      'project-list-filter-skills',
+      'project-list-filter-remote-mode',
+      'project-list-filter-price-min',
+      'project-list-filter-price-max',
+      'project-list-filter-prefecture',
+      'project-list-filter-start-within',
+    ]) {
+      expect(html).toContain(`data-testid="${testId}"`);
+    }
+    // 🔴 **並行可否はラベルも欄も送信も無い**。
+    expect(html).not.toContain('並行可否');
+    expect(html).not.toContain('name="parallelOk"');
+    // ⚠️ 画面に欄の無い条件は素通しする（共有された URL を壊さない）。
+    expect(render({ passThroughParams: [{ name: 'sourceKind', value: 'OWN' }] })).toContain(
+      '<input type="hidden" name="sourceKind" value="OWN"/>',
+    );
   });
 
-  it('✅ 2026-10-15: 単価レンジは入力欄を描く（人材一覧と同じ名前・同じ単位）', () => {
+  it('🔴🔴 スキルの引き金は高さ 36px 固定で、折り返さない（指示書 §3 / §8）', () => {
+    const html = render({
+      applied: { ...emptyApplied, skills: skillOptions.map((option) => option.value) },
+    });
+
+    const trigger = /<div[^>]*data-testid="project-list-filter-skills"[^>]*>/.exec(html)?.[0] ?? '';
+    expect(trigger).not.toBe('');
+    expect(trigger).toContain('h-9');
+    expect(trigger).not.toContain('min-h-');
+    expect(trigger).not.toContain('flex-wrap');
+    // 🔴 **ボタンの中にボタンを入れない**（引き金は `role="combobox"` の `<div>`）。
+    expect(trigger).toContain('role="combobox"');
+    expect(trigger).toContain('aria-expanded="false"');
+  });
+
+  it('🔴 スキルの `×` は「<スキル名>を解除」と読み上げられる（指示書 §7）', () => {
+    const html = render({
+      applied: { ...emptyApplied, skills: ['11111111-1111-7111-8111-111111111111'] },
+    });
+
+    expect(html).toContain('aria-label="Javaを解除"');
+  });
+
+  it('🔴 未選択のときは「スキルを選択」（空の引き金を置かない）', () => {
+    expect(render()).toContain('スキルを選択');
+  });
+
+  it('🔴 条件バー: 未選択なら「条件は指定されていません」、選択中ならバッジ', () => {
+    expect(render()).toContain('data-testid="project-list-summary-empty"');
+
+    const html = render({ applied: { ...emptyApplied, status: 'OPEN', prefecture: '13' } });
+    expect(html).not.toContain('data-testid="project-list-summary-empty"');
+    // 🔴 **意味が曖昧になる値には項目名を付ける**（指示書 §4）。
+    expect(html).toContain('勤務地：東京都');
+    expect(html).toContain('data-testid="project-list-chip-remove-status"');
+    expect(html).toContain('data-testid="project-list-chip-remove-prefecture"');
+  });
+
+  it('🔴 読み込み直後は「未適用」を出さない（draft と applied が一致している）', () => {
+    expect(render()).not.toContain('data-testid="project-list-pending"');
+    expect(render({ applied: { ...emptyApplied, status: 'OPEN' } })).not.toContain(
+      'data-testid="project-list-pending"',
+    );
+  });
+
+  it('🔴 単価レンジは入力欄を描く（単位は円のまま）', () => {
     const html = render();
 
-    expect(html).toContain('name="priceMin"');
-    expect(html).toContain('name="priceMax"');
-    // 🔴 単位は円（人材一覧と同じ `step`）。万円に変えるなら 2 画面を同時に変える。
-    expect(html).toContain('step="10000"');
+    expect(html).toContain('data-testid="project-list-filter-price-min"');
+    expect(html).toContain('data-testid="project-list-filter-price-max"');
+    expect(html).toContain('円');
+    expect(html).not.toContain('万円</span>');
+  });
+
+  it('🔴 検索エリアは白い面のカードの中にある（ページ地に溶けない）', () => {
+    const html = render();
+    const panel = /<div[^>]*data-testid="project-list-search-panel"[^>]*>/.exec(html)?.[0] ?? '';
+
+    expect(panel).toContain('bg-surface');
+    expect(panel).toContain('border-border');
+    // 🔴 **強い影を付けない**（指示書 §2）。
+    expect(panel).not.toContain('shadow-');
   });
 });
 
@@ -441,25 +692,30 @@ describe('🔴 T-11-12: 案件名セルが docs/04 §10.3「長い名称」の�
     const classes = (cell?.[1] ?? '').split(' ');
     expect(classes).toContain('whitespace-normal');
     expect(classes).toContain('min-w-40');
-    expect(classes).toContain('lg:max-w-64');
+    // 2026-10-16: 行いっぱいのリンクになったので切り詰めない（全文は折り返しで読める）。
+    expect(classes).not.toContain('lg:max-w-64');
     expect(classes).not.toContain('truncate');
     expect(classes).not.toContain('whitespace-nowrap');
     const inner = cell?.[2] ?? '';
-    expect(inner).toContain('<span class="block lg:truncate" title="金融系 Web API 改修">');
+    // 2026-10-16: 行いっぱいのリンクになったので切り詰めない（`block` のまま）。
+    //    全文は折り返しで読め、`title` も残っている（§10.3 の「長い名称を読めること」は満たす）。
+    expect(inner).toContain('<span class="block" title="金融系 Web API 改修">');
     const link = /<a ([^>]*)>金融系 Web API 改修<[/]a>/.exec(inner);
     expect(link).not.toBeNull();
-    expect(link?.[1]).toContain(`href="/projects/${PROJECT_A}"`);
+    expect(link?.[1]).toContain(`project-list-link-${PROJECT_A}`); // 2026-10-16: 右パネルを開く URL
     expect(link?.[1]).toContain(`data-testid="project-list-link-${PROJECT_A}"`);
     expect(link?.[1]).not.toContain('truncate');
   });
 
-  it('🔴 ✅ 2026-10-15: 名称の前に状態の点が出る（色は `StatusBadge` と同じ表から決まる）', () => {
+  // ✅✅ **2026-10-16: 状態の点（`StatusDot`）を外した**（人間の明示指示「案件名の左に
+  //    〇があるけどこれはいらないね」）。🔴 **状態は隣の列の `StatusBadge` が語で出している**
+  //    ので、読み取れる情報は 1 つも減っていない（案件名の左端が揃うぶん読みやすくなる）。
+  it('🔴 名称の前に状態の点を出さない（状態は隣の列の Badge が語で出す）', () => {
     const html = render({ rows: [row({ name: '金融系 Web API 改修' })] });
 
-    // 🔴 点は**状態を持つ**（`data-state`）。色クラスを画面が選べないことは `StatusDot` の型が守る。
-    expect(html).toContain('<span aria-hidden="true" data-entity="project" data-state="OPEN"');
-    // 🔴 点に語を持たせない（読み上げでは同じ行の Badge が語を出す）。
-    expect(html).toContain('aria-hidden="true"');
+    expect(html).not.toContain('data-entity="project" data-state="OPEN" aria-hidden');
+    // 🔴 状態そのものは消えていない（Badge が語で出す）。
+    expect(html).toContain('募集中');
   });
 });
 
@@ -505,11 +761,6 @@ describe('🔴 T-22-06: 列の契約（移行前と同一。増減 0）', () => 
       .filter((column) => column.id !== '?');
   }
 
-  it('🔴 データ列のほかに `<th>` が 1 つだけ在る（= 操作列。2 つ目の無名の列が生えていない）', () => {
-    const head = /<thead[^>]*>(.*?)<[/]thead>/s.exec(render())?.[1] ?? '';
-    const all = [...head.matchAll(/<th ([^>]*)>/g)].length;
-    expect(all - headerColumns(render()).length).toBe(1);
-  });
 
   // ✅ **2026-10-15: 10 列になった**（[Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101) の回答 C で
   //    `勤務地・リモート` を 2 列に分けた）。🔴 **出ている情報は 1 つも増えていない。**
@@ -518,41 +769,22 @@ describe('🔴 T-22-06: 列の契約（移行前と同一。増減 0）', () => 
       { id: 'name', breakpoint: 'always' },
       { id: 'status', breakpoint: 'always' },
       { id: 'mustRequirements', breakpoint: 'lg' },
+      { id: 'purchaseUnitPrice', breakpoint: 'always' },
       { id: 'unitPrice', breakpoint: 'always' },
       { id: 'startDate', breakpoint: 'always' },
       { id: 'location', breakpoint: 'sm' },
       { id: 'remoteMode', breakpoint: 'sm' },
       { id: 'headcount', breakpoint: 'lg' },
       { id: 'updatedOn', breakpoint: 'sm' },
-      { id: 'visibility', breakpoint: 'lg' },
     ]);
   });
 
-  it('🔴 取引先 = 9 列（公開先の列そのものが無い。CSS で隠すのではない）', () => {
-    const columns = headerColumns(render({ showVisibilityColumn: false }));
-    expect(columns.map((column) => column.id)).toEqual([
-      'name',
-      'status',
-      'mustRequirements',
-      'unitPrice',
-      'startDate',
-      'location',
-      'remoteMode',
-      'headcount',
-      'updatedOn',
-    ]);
-    expect(render({ showVisibilityColumn: false })).not.toContain('data-testid="project-list-visibility-');
-  });
 
-  it('🔴 モバイル（`sm` 未満）に残るのは 4 列（案件名 / 状態 / 単価レンジ / 開始日）', () => {
+  it('モバイルでも仕入単価と卸単価を比較できる', () => {
     const always = headerColumns(render()).filter((column) => column.breakpoint === 'always');
-    expect(always.map((column) => column.id)).toEqual(['name', 'status', 'unitPrice', 'startDate']);
+    expect(always.map((column) => column.id)).toEqual(['name', 'status', 'purchaseUnitPrice', 'unitPrice', 'startDate']);
   });
 
-  it('🔴 公開状況列は 1 語だけを描く（理由・原因の欄を一覧に出さない）', () => {
-    const html = render({ rows: [row({ visibility: '公開を解除（検査）' })] });
-    expect(html).toMatch(/data-testid="project-list-visibility-[^"]+">公開を解除（検査）<\/span>/);
-  });
 
   it('🔴 行選択（`selection`）を描かない（Phase 1 に一括操作は無い）', () => {
     expect(render()).not.toContain('data-testid="project-list-select-');
@@ -570,136 +802,43 @@ describe('🔴 T-22-06: 列の契約（移行前と同一。増減 0）', () => 
 //    したがってここで観測するのは **①トリガの置き場所 ②いま隠している列（`data-hidden-columns`）
 //    ③`<thead>` / 行に現れる列**の 3 つである。項目の href の組み立ては
 //    `lib/projects/list-rows.test.ts` が固定する。
-describe('🔴 T-22-06: 列表示切替（§7.1「9 列目以降は列表示切替に格納する」）', () => {
-  it('🔴 切替は `Toolbar` の中にある（帯の外・テーブルの脇に置かない）', () => {
-    const html = render();
-    const filters = html.indexOf('data-testid="project-list-toolbar-filters"');
-    const toggle = html.indexOf('data-testid="project-list-column-toggle-root"');
-    const population = html.indexOf('data-testid="project-list-toolbar-population"');
-    const table = html.indexOf('data-testid="project-list-table"');
-
-    expect(filters, 'Toolbar の検索の段が描かれていない').toBeGreaterThanOrEqual(0);
-    // 🔴 `Toolbar` は 検索の段 → 母集団の 1 行 → テーブル の順に描く（`packages/ui/src/components/toolbar.tsx`）。
-    //    切替がその 2 つの間に在ることが「帯の中に在る」ことの機械的な判定である。
-    expect(toggle, '列表示切替が描かれていない').toBeGreaterThan(filters);
-    expect(toggle, '列表示切替が母集団の 1 行より後にある（帯の外に出ている）').toBeLessThan(population);
-    expect(toggle, '列表示切替がテーブルより後にある').toBeLessThan(table);
-  });
-
-  it('切替のトリガは語を持つ（アイコンだけで開かせない）', () => {
-    const html = render();
-
-    expect(html).toContain('data-testid="project-list-column-toggle-trigger"');
-    expect(html).toContain('表示する列');
-  });
-
-  it('🔴 既定では 10 列すべてが出る（切替を置いても見え方は変わらない）', () => {
-    const html = render();
-    const head = /<thead[^>]*>(.*?)<[/]thead>/s.exec(html)?.[1] ?? '';
-
-    expect([...head.matchAll(/data-column-id="([^"]+)"/g)].map((match) => match[1])).toEqual([
-      'name',
-      'status',
-      'mustRequirements',
-      'unitPrice',
-      'startDate',
-      'location',
-      'remoteMode',
-      'headcount',
-      'updatedOn',
-      'visibility',
-    ]);
-    // 🔴 「何も隠していない」は空である（`?hide=` が URL に無い状態と 1 対 1）。
-    expect(html).toContain('data-hidden-columns=""');
-  });
-
-  it('🔴 隠している列は `<thead>` と行の両方から消える（CSS で隠すのではない）', () => {
-    const html = render({ columnToggleItems: COLUMN_TOGGLE_HIDDEN });
-    const head = /<thead[^>]*>(.*?)<[/]thead>/s.exec(html)?.[1] ?? '';
-
-    expect([...head.matchAll(/data-column-id="([^"]+)"/g)].map((match) => match[1])).toEqual([
-      'name',
-      'status',
-      'mustRequirements',
-      'unitPrice',
-      'startDate',
-      'location',
-      'remoteMode',
-      'headcount',
-      'updatedOn',
-    ]);
-    expect(html).not.toContain('公開先の設定状況');
-    expect(html).not.toContain('data-testid="project-list-visibility-');
-    expect(html).not.toContain('3 社に公開中');
-    // 🔴 いま何を外しているかは画面から読める（戻す導線が消えない）。
-    expect(html).toContain('data-hidden-columns="visibility"');
-    expect(html).toContain('data-testid="project-list-column-toggle-root"');
-  });
-
-  it('🔴 取引先には切替そのものが無い（9 列目が存在しないため。`F-014 AC-4` / `BR-07`）', () => {
-    const html = render({ showVisibilityColumn: false, rows: [row({ visibility: null })] });
-
-    expect(html).not.toContain('data-testid="project-list-column-toggle-root"');
-    expect(html).not.toContain('data-testid="project-list-column-toggle-trigger"');
-    expect(html).not.toContain('表示する列');
-  });
-});
 
 // ============================================================================
 // 🔴 SP-22 段④: ワイヤーフレームへの刷新（**見せ方だけ**。人間の
 //    「SES Hub案件管理ダッシュボード.png」）
 // ============================================================================
 describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
-  it('🔴 絞り込みは白い面のカード（`@ses/ui` の `Card`）の中にある（ページ地に溶けない）', () => {
+  it('検索フォームと条件バーは白い検索エリア内にある', () => {
     const html = render();
-    // 🔴 面の語（`CARD_SURFACE_CLASSES`）は `packages/ui` にしか無いので、**ここでは
-    //    その語を書かない**（書くと `tests/static/ui-shadow-and-size.test.ts` の
-    //    「画面が面のクラス定数を再実装していない」に当たる）。radius + 枠線で器を掴む。
-    const card = html.indexOf('rounded-lg border border-border');
+    const panel = html.indexOf('data-testid="project-list-search-panel"');
     const form = html.indexOf('data-testid="project-list-filters"');
-
-    expect(card, '絞り込みカードの面が描かれていない').toBeGreaterThanOrEqual(0);
-    expect(form, '検索フォームがカードの外にある').toBeGreaterThan(card);
+    const summary = html.indexOf('data-testid="project-list-summary"');
+    expect(panel).toBeGreaterThanOrEqual(0);
+    expect(form).toBeGreaterThan(panel);
+    expect(summary).toBeGreaterThan(form);
   });
 
-  it('🔴 フリーワードは他の条件より広い（同じ幅に並べない）', () => {
+  it('キーワードには見えるラベルがあり、他の検索条件と並ぶ', () => {
     const html = render();
     const label = /<label class="([^"]*)"[^>]*>\s*<span[^>]*>フリーワード/.exec(html);
-
-    expect(label, 'フリーワードの欄が見つからない').not.toBeNull();
-    const classes = (label?.[1] ?? '').split(' ');
-    // ✅ **2026-10-15: 全幅（4 列ぶん）→ 2 列ぶん**（定義書 §1.6 の「検索 Input 420×36」+
-    //    受領した画像）。🔴 **帯が 1 行ぶん縮む**（行を 45px に上げたぶんをここで取り戻す。
-    //    `docs/04` §7.1「一覧はファーストビューに 12 行以上」）。
-    // 🔴 **他の条件（1 列）より広いことは変えていない** —— 入力できる語数が画面幅で
-    //    変わらないための幅である。
-    expect(classes).toContain('col-span-full'); // ✅ 2026-10-16: 受領モックは帯の幅いっぱい
-    expect(classes).not.toContain('xl:col-span-4');
+    expect(label).not.toBeNull();
+    expect(label?.[1]).not.toContain('col-span-');
+    expect(html).toContain('aria-label="フリーワード"');
   });
 
-  it('🔴 「効かない条件」の 1 行は絞り込みカードの中にある（条件の群の隣で読む）', () => {
+  // ✅✅ **2026-10-19: 「スキル欄の説明の 1 行」を外し、**条件バーの位置**を固定する。
+  //    改修指示書 §2 は「本文を閉じても、この条件バーとヘッダは残す」と定めており、
+  //    バーが**検索エリアの中（表の手前）**にあることがその前提である。
+  //    ⚠️ 「複数選べます」の注記は指示書の構成に無いため画面から外した
+  //       （文言キー `projects.list.search.skillHint` は消していない。`U-22` の凍結）。
+  it('🔴 条件バーは検索エリアの中（フォームの中・表の手前）にある', () => {
     const html = render();
-    const comingSoon = html.indexOf('data-testid="project-list-search-coming-soon"');
     const form = html.indexOf('data-testid="project-list-filters"');
-    const population = html.indexOf('data-testid="project-list-toolbar-population"');
-
-    expect(comingSoon).toBeGreaterThan(form);
-    expect(comingSoon, '件数バーより後に出ている（カードの外）').toBeLessThan(population);
-  });
-
-  it('🔴 件数バー: 母集団の 1 行と並び順の説明が同じ段にある', () => {
-    const html = render();
-    const population = html.indexOf('data-testid="project-list-toolbar-population"');
-    const note = html.indexOf('data-testid="project-list-toolbar-note"');
-    const orderNote = html.indexOf('data-testid="project-list-order-note"');
+    const summary = html.indexOf('data-testid="project-list-summary"');
     const table = html.indexOf('data-testid="project-list-table"');
 
-    expect(population).toBeGreaterThanOrEqual(0);
-    expect(note, '並び順の置き場所（`Toolbar` の `note`）が無い').toBeGreaterThan(population);
-    // 🔴 凍結済みの `project-list-order-note` が `note` の中に在る（`U-22`）。
-    expect(orderNote).toBeGreaterThan(note);
-    expect(orderNote, '並び順の説明がテーブルより後に出ている').toBeLessThan(table);
-    expect(html).toContain('後任募集 → 募集中 → 充足');
+    expect(summary).toBeGreaterThan(form);
+    expect(summary, '表より後に出ている（検索エリアの外）').toBeLessThan(table);
   });
 
   it('🔴 並び順は**選べる形にしない**（`?sort=` は既存 API に無い）', () => {
@@ -721,8 +860,13 @@ describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
     //     `20261016030000`、承認は [Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)）。
     //    🔴 **この検査が守っているのは「押しても効かない入力欄を作らない」である。** 実装した
     //       条件を一覧に残すと、**実装したことを検査が禁じる**状態になり、意味が反転する。
-    //    🔴 **残りは 1 つも描かない**（スキル要件・表示件数は API に無い）。
-    for (const name of ['name="skills"', 'name="remote"', 'name="limit"']) {
+    //    ✅✅ **2026-10-16（同日の 2 回目）: `skills` もこの一覧から外した** ——
+    //       人間の明示指示「スキル（リストから複数選択できる、or 検索）」を実装し、
+    //       **`#25` の query に入った**（`projectListQuerySchema.skills`。述語は
+    //       `project_requirements` への `some` + `skillId IN (…)`）。
+    //    🔴 **残りは 1 つも描かない**（表示件数は API に無い。`name="remote"` は
+    //       `remoteMode` の綴り間違いを拾うための番兵である）。
+    for (const name of ['name="remote"', 'name="limit"']) {
       expect(html, `${name} の入力欄が描かれている（API に無い条件）`).not.toContain(name);
     }
   });
@@ -766,29 +910,15 @@ describe('🔴 状態は Badge で描き、色は画面が決めない（`docs/0
 });
 
 describe('🔴 SP-22 段④: 操作列から副カラム（案件の要点パネル）を開く', () => {
-  it('操作列の語は §7.8 の統一語（`内容を見る`）で、行ごとに URL を持つ', () => {
-    const html = render({ rows: [row(), row({ id: PROJECT_B, name: '物流管理システム保守' })] });
 
-    expect(html).toContain('操作');
-    expect(html).toContain(`data-testid="project-list-panel-open-${PROJECT_A}"`);
-    expect(html).toContain(`data-testid="project-list-panel-open-${PROJECT_B}"`);
-    expect(html).toContain(`href="/projects?selected=${PROJECT_A}"`);
-    expect(html).toContain(`href="/projects?selected=${PROJECT_B}"`);
-  });
 
-  it('🔴 `詳細` の語を操作列に使わない（`詳細` は画面〔`S-011`〕を指す語である。§7.8）', () => {
-    const html = render();
-    const actionCell = /内容を見る/.exec(html);
-
-    expect(actionCell).not.toBeNull();
-    // 操作列のリンクのラベルが `詳細` になっていない（同じ語が 2 概念を指さない）。
-    expect(html).not.toContain('>詳細<');
-  });
-
-  it('🔴 行クリック（名称セル）の行き先は `S-011` のまま（閲覧の監査記録は遷移先が書く）', () => {
+  // ✅✅ **2026-10-16: 詳細画面へは右パネルの `詳細` から行く**（人間の明示指示）。
+  //    🔴 **閲覧の監査記録は遷移先（`S-011`）が書く**という規律は変わっていない ——
+  //    変わったのは**どこを押すと `S-011` に行くか**だけである。
+  it('🔴 行の行き先は右パネルで、詳細画面へは行かない（監査記録の位置は不変）', () => {
     const html = render();
 
-    expect(html).toContain(`href="/projects/${PROJECT_A}"`);
+    expect(html).toContain(`project-list-link-${PROJECT_A}`); // 2026-10-16: 右パネルを開く URL
     expect(html).toContain(`data-testid="project-list-link-${PROJECT_A}"`);
   });
 
@@ -797,7 +927,7 @@ describe('🔴 SP-22 段④: 操作列から副カラム（案件の要点パネ
       rows: [row(), row({ id: PROJECT_B, name: '物流管理システム保守' })],
       selectedId: PROJECT_B,
     });
-    const selected = /<tr class="[^"]*" data-testid="project-list-row-([^"]+)" data-selected="true">/.exec(
+    const selected = /<tr class="[^"]*" data-testid="project-list-row-([^"]+)" data-selected="true" data-state="selected">/.exec(
       html,
     );
 
@@ -814,7 +944,7 @@ describe('🔴 SP-22 段④: 操作列から副カラム（案件の要点パネ
     const tableBody = html.slice(html.indexOf('<tbody'));
     expect(tableBody).not.toContain('type="checkbox"');
     // 🔴 「募集中のみ」は**帯の側に在る**（表に無いことと、画面に在ることを両方固定する）。
-    expect(html).toContain('data-testid="project-list-filter-recruiting-only"');
+    // 2026-10-16: 「募集中のみ」のチェックボックスは外した（人間の明示指示）。
   });
 
   it('🔴 どの行も選ばれていないときは印が 1 つも付かない', () => {

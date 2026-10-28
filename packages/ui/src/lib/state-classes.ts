@@ -107,3 +107,17 @@ export const SELECTED_CLASSES = 'border-l-2 border-l-brand bg-brand-bg text-bran
  */
 export const SELECTED_ROW_CLASSES =
   'data-[state=selected]:border-l-2 data-[state=selected]:border-l-brand data-[state=selected]:bg-brand-bg data-[state=selected]:text-brand';
+
+/**
+ * ✅✅ **開閉できるブロックの見出し**（`<summary>`。2026-10-16。人間の明示指示
+ * 「検索エリアはアコーディオンにして閉じることもできるようにして」）。
+ *
+ * 🔴 **画面側に `focus-visible:` を書かせないための定数である**（`tests/static/ui-state-in-primitives.test.ts`
+ *    の (j)。8 状態は `packages/ui` のプリミティブが持つ —— 画面に書くと、その画面だけ
+ *    押し心地と focus リングが違う状態になる）。
+ * 🔴 **`marker:content-none` + `list-none`** で既定の三角を消す（印は呼び出し側が
+ *    `Icon` で置く。Safari は `list-none` だけでは消えない）。
+ * 🔴 **太字にしない**（人間の明示指示「ボールドが多すぎる」）。
+ */
+export const DISCLOSURE_SUMMARY_CLASSES =
+  'flex cursor-pointer list-none items-center gap-2 py-3 text-row text-fg-muted marker:content-none';

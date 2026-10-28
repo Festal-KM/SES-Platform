@@ -20,7 +20,7 @@ import { t } from '@ses/i18n';
 //    エンジニアの labels から import しない（機能モジュール間の依存を作らない）。
 import { PREFECTURE_MESSAGE_KEYS } from '../../../../lib/format/prefectures';
 // 🔴 `S-010` の入口は 1 か所（`lib/projects/list-rows.ts`）から取る。パスを書き写さない。
-import { PROJECT_LIST_PATH } from '../../../../lib/projects/list-rows';
+import { PROJECT_LIST_PATH, formatProjectListUnitPriceRange } from '../../../../lib/projects/list-rows';
 import {
   PROJECT_CATEGORY_MESSAGE_KEYS,
   PROJECT_REMOTE_MODE_MESSAGE_KEYS,
@@ -103,6 +103,8 @@ export const projectRequirementKinds: readonly string[] = [...REQUIREMENT_KINDS]
 
 /** 新規登録の初期値（`docs/04` §S-012「新規は空フォーム」）。 */
 export const EMPTY_PROJECT_FORM_VALUES: ProjectFormValues = {
+  upperCompanyName: '', endDate: '', distributionLimit: '', assigneeUserId: '',
+  locationDetail: '', publicMemo: '', remarks: '',
   name: '',
   // 🔴 DB の既定（`projects.status` の `@default("OPEN")`）と一致させる。
   status: 'OPEN',
@@ -125,12 +127,23 @@ export const EMPTY_PROJECT_FORM_VALUES: ProjectFormValues = {
 /** 編集の初期値（`null` は空文字にする。フォームは文字列だけを扱う）。 */
 export function toProjectFormValues(view: ProjectEditView): ProjectFormValues {
   return {
+    upperCompanyName: view.upperCompanyName ?? '',
+    endDate: view.endDate ?? '',
+    distributionLimit: view.distributionLimit ?? '',
+    assigneeUserId: view.assigneeUserId ?? '',
+    locationDetail: view.locationDetail ?? '',
+    publicMemo: view.publicMemo ?? '',
+    remarks: [view.remarks,
+      view.unitPriceMin !== null && view.unitPriceMax !== null && view.unitPriceMin !== view.unitPriceMax
+        ? `${t('projects.basic.legacyPriceRange')}：${formatProjectListUnitPriceRange(view.unitPriceMin, view.unitPriceMax)}`
+        : null,
+    ].filter(Boolean).join('\n'),
     name: view.name,
     status: view.status,
     headcount: String(view.headcount),
     startDate: view.startDate ?? '',
-    unitPriceMin: view.unitPriceMin === null ? '' : String(view.unitPriceMin),
-    unitPriceMax: view.unitPriceMax === null ? '' : String(view.unitPriceMax),
+    unitPriceMin: view.unitPriceMin === null && view.unitPriceMax === null ? '' : String(view.unitPriceMin ?? view.unitPriceMax),
+    unitPriceMax: view.unitPriceMin === null && view.unitPriceMax === null ? '' : String(view.unitPriceMin ?? view.unitPriceMax),
     prefecture: view.prefecture ?? '',
     remoteMode: view.remoteMode ?? '',
     // ✅ 2026-10-16: 既存の値をフォームに戻す（`'0'` を落とすと「不可」が未設定に化ける）。
@@ -161,10 +174,18 @@ function messageRecord(
 
 export function projectFormMessages(): ProjectFormMessages {
   return {
+    upperCompanyNameLabel: t('projects.basic.upperCompanyName'),
+    endDateLabel: t('projects.basic.endDate'),
+    distributionLimitLabel: t('projects.basic.distributionLimit'),
+    assigneeLabel: t('projects.basic.assignee'),
+    locationDetailLabel: t('projects.basic.location'),
+    publicMemoLabel: t('projects.basic.publicMemo'),
+    remarksLabel: t('projects.basic.remarks'),
+    remarksNote: t('projects.basic.remarksNote'),
     sectionBasic: t('projects.section.basic'),
     sectionConditions: t('projects.section.conditions'),
     sectionCommerce: t('projects.section.commerce'),
-    sectionPublicSummary: t('projects.section.publicSummary'),
+    sectionPublicSummary: t('projects.basic.businessOverview'),
 
     nameLabel: t('projects.name.label'),
     headcountLabel: t('projects.headcount.label'),
@@ -189,7 +210,7 @@ export function projectFormMessages(): ProjectFormMessages {
     requirementErrorEmpty: t('projects.requirements.error.empty'),
     requirementErrorDuplicate: t('projects.requirements.error.duplicate'),
 
-    unitPriceLabel: t('projects.unitPrice.label'),
+    unitPriceLabel: t('projects.basic.unitPrice'),
     unitPriceMin: t('projects.unitPrice.min'),
     unitPriceMax: t('projects.unitPrice.max'),
     unitPriceUnit: t('projects.unitPrice.unit'),
@@ -202,10 +223,10 @@ export function projectFormMessages(): ProjectFormMessages {
     valueUnset: t('projects.value.unset'),
 
     commerceNotice: t('projects.commerce.notice'),
-    endClientNameLabel: t('projects.endClientName.label'),
-    internalUnitPriceLabel: t('projects.internalUnitPrice.label'),
+    endClientNameLabel: t('projects.basic.endClientName'),
+    internalUnitPriceLabel: t('projects.basic.purchaseUnitPrice'),
 
-    publicSummaryLabel: t('projects.publicSummary.label'),
+    publicSummaryLabel: t('projects.basic.businessOverview'),
     publicSummaryNote: t('projects.publicSummary.note'),
 
     // 🔴 T-12-10（`docs/04` 改訂 14 §S-012 / `F-014 AC-6`）。

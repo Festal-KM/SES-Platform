@@ -33,10 +33,8 @@
 // ============================================================================
 // 🔴 応答の型をロールで分ける（docs/05 §6.4 #25 / §4.8 / `F-014 AC-4` / `BR-07`）
 // ============================================================================
-// 一覧に商流情報（エンド企業名・内部単価）の列は無いので、**両者の `select` は 1 本**である
-// （`PROJECT_LIST_SELECT` に `endClientName` / `internalUnitPrice` という識別子が 1 度も
-// 現れない ＝ SQL としても取得していない）。分かれるのは **公開先の設定状況**（`docs/04`
-// §S-010「ホストのみ 9 列目」）であり、これは**ホストの枝でしか問い合わせを発行しない**。
+// 共通SELECTは内部単価を含まない。2026-10-26の人間指示で仕入単価を追加したが、
+// 内部単価と公開先の設定状況の問い合わせはホストの枝だけで発行する。
 // `PartnerProjectView` は `visibleToCount` を `?: never` で持ち、値を入れた実装はコンパイルで
 // 落ちる（`PartnerProjectDetailView` と同じ手法）。
 import {
@@ -84,9 +82,7 @@ export type ProjectMustRequirementView = {
 /**
  * ホスト・取引先の双方に出す項目（`docs/04` §S-010 の結果テーブル 8 列）。
  *
- * 🔴 **商流情報のフィールドが 1 つも無い。** 一覧は取得の時点で 2 列を読んでいない
- *    （`PROJECT_LIST_SELECT`）ので、ホスト向けの型にも現れない —— 一覧で必要になったら
- *    まず `docs/04` §S-010 の列定義を変えることになる（`F-013 AC-2`）。
+ * 商流情報は共通項目に含めない。仕入単価はHostProjectViewだけに置く。
  */
 type ProjectListShared = {
   readonly id: string;
@@ -120,6 +116,8 @@ type ProjectListShared = {
  */
 export type HostProjectView = ProjectListShared & {
   readonly audience: 'HOST';
+  /** 仕入単価。ホストの分岐でのみ取得し、取引先には返さない。 */
+  readonly internalUnitPrice: number | null;
   /** 現在公開中の取引先の社数（解除済みは数えない）。 */
   readonly visibleToCount: number;
   /**
@@ -174,10 +172,7 @@ export type ProjectListView = {
 };
 
 /**
- * 🔴 **一覧が読む列の全部**（`docs/04` §S-010 の結果テーブルに出るものだけ）。
- *    `endClientName` / `internalUnitPrice` という識別子が本ファイルに 1 度も現れないことが
- *    `F-013 AC-2` の一覧側の担保である（`PARTNER_PROJECT_DETAIL_SELECT` と同じ考え方だが、
- *    一覧では**ホストの列も無い**ので `select` を 2 本に分ける必要がない）。
+ * 共通の取得列。内部単価は含めず、ホストの分岐でのみ追加取得する。
  */
 const PROJECT_LIST_SELECT = {
   id: true,
@@ -377,6 +372,17 @@ export async function listProjects(
   ctx: AuthenticatedTenantCtx,
   query: ProjectListQuery,
 ): Promise<ProjectListView> {
+  // ============================================================================
+  // ✅✅ **2026-10-16: 開始時期の区分 → 開始日の範囲は、ここで変換する**
+  // ============================================================================
+  // 🔴🔴 **当初は画面（`(list)/page.tsx`）だけで変換していた。CI の結合テストが捕まえた** ——
+  //    `GET /api/projects?startWithin=IMMEDIATE` は**条件を受け取って黙って捨て**、
+  //    絞り込まれていない一覧を返していた（`docs/05` §6.4「受け取って捨てるキーを置かない」）。
+  //    画面は正しく動いていたので、**ユニットでも画面の実測でも見つからなかった。**
+  // 🔴 **読み取りの経路はこの 1 本である**（API も画面もここを通る）。変換をここに置けば、
+  //    呼び手が増えても落ちない。
+  // 🔴 **現在時刻をこの 1 行でだけ読む** —— 一覧と `COUNT` が同じ `where` を使うので、
+  //    日付の境目で件数と行がずれない（`resolveStartWindow` は純粋関数である）。
   // 🔴 `where` を 1 つの値にしておくのは、一覧と `COUNT` で書き分けられないようにするためである。
   //    🔴 述語の出所は `projectSearchWhere`（`@ses/db` の `search/projects.ts`）の 1 本だけである。
   const where = projectSearchWhere(withStartWindow(query, new Date()));
@@ -411,6 +417,16 @@ export async function listProjects(
     }
 
     const visibilitySummaries = await readVisibilitySummaries(db, projectIds);
+    // 共通SELECTには内部単価を追加しない。取引先の分岐はこの取得前に返す。
+    const purchaseRows = projectIds.length === 0
+      ? []
+      : await db.project.findMany({
+          where: { id: { in: projectIds } },
+          select: { id: true, internalUnitPrice: true },
+        });
+    const purchasePrices = new Map(
+      purchaseRows.map((row) => [row.id, decimalToNumber(row.internalUnitPrice)]),
+    );
     return {
       items: page.items.map((row) => {
         const summary = visibilitySummaries.get(row.id);
@@ -418,6 +434,7 @@ export async function listProjects(
         return {
           ...toSharedView(row, summaries.get(row.id)),
           audience: 'HOST' as const,
+          internalUnitPrice: purchasePrices.get(row.id) ?? null,
           visibleToCount: liveVisibilityCount,
           // 🔴 T-12-10: 判定は `packages/domain` の 1 関数（詳細と規則が食い違わない）。
           publishStatus: projectPublishListStatus({

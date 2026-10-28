@@ -103,6 +103,7 @@ describe('🔴 F-014 AC-4 / BR-07: PartnerProjectView に他社の存在を示�
     expectTypeOf<Extract<ProjectView, { audience: 'HOST' }>>().toEqualTypeOf<
       ExpectedShared & {
         readonly audience: 'HOST';
+        readonly internalUnitPrice: number | null;
         readonly visibleToCount: number;
         // 🔴 T-12-10: ホストの枝にだけある 3 値（`docs/04` §S-010 の公開状況列）。
         readonly publishStatus: ProjectPublishListStatus;
@@ -119,8 +120,8 @@ describe('🔴 F-014 AC-4 / BR-07: PartnerProjectView に他社の存在を示�
     }>();
   });
 
-  it('🔴 ホストの一覧にも商流情報のフィールドが無い（一覧では 2 列を取得しない）', () => {
+  it('ホストは仕入単価を持つが、エンド企業名は一覧に出さない', () => {
     expectTypeOf<HostProjectView>().not.toHaveProperty('endClientName');
-    expectTypeOf<HostProjectView>().not.toHaveProperty('internalUnitPrice');
+    expectTypeOf<HostProjectView['internalUnitPrice']>().toEqualTypeOf<number | null>();
   });
 });

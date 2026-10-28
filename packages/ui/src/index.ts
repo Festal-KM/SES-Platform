@@ -109,7 +109,16 @@ export {
 // 🔴 2026-10-03（人間の明示指示 + モックアップ）: サイドバーを 6 項目のフラットに畳んだぶんの
 //    **第 2 階層**（`components/nav-panel.tsx` の冒頭に「なぜ `Tabs` ではないのか」がある）。
 //    🔴 **いずれもサーバのまま描ける**（`'use client'` を宣言しない）。
-export { NavIndex, SectionNav, SectionNavDefaultGate } from './components/nav-panel.js';
+// ✅✅ 2026-10-16: `NAV_TAB_CLASSES` / `NAV_TAB_CURRENT_CLASSES` は**横並びタブ（遷移する側）の
+//    見え方の 1 定義**である（`nav-panel.tsx` の同名の JSDoc）。`S-010` の案件サマリのタブが
+//    同じ見え方を使う —— 🔴 **画面側で下端 2px とブランド色を組み直さない。**
+export {
+  NAV_TAB_CLASSES,
+  NAV_TAB_CURRENT_CLASSES,
+  NavIndex,
+  SectionNav,
+  SectionNavDefaultGate,
+} from './components/nav-panel.js';
 export type {
   NavIndexItem,
   NavIndexProps,
@@ -342,6 +351,8 @@ export { cn } from './lib/cn.js';
 export {
   DISABLED_CLASSES,
   DISABLED_TOGGLE_CLASSES,
+  // ✅ 2026-10-16: 開閉できるブロックの見出し（`<summary>`）。
+  DISCLOSURE_SUMMARY_CLASSES,
   FOCUS_RING_CLASSES,
   SELECTED_CLASSES,
   SELECTED_ROW_CLASSES,
@@ -375,6 +386,7 @@ export {
   ENV_BANNER_HEIGHT_CLASS,
   ENV_BANNER_HEIGHT_PX,
   ENV_BANNER_HEIGHT_VAR,
+  DETAIL_PANE_VIEWPORT_CLASSES,
   HEADER_HEIGHT_CLASS,
   HEADER_HEIGHT_PX,
   KPI_CARD_HEIGHT_CLASS,
@@ -399,5 +411,57 @@ export {
 // ✅ 2026-10-27: チャットの入力欄の枠（`S-031` だけ）。
 export { CHAT_COMPOSER_FOCUS_CLASSES, CHAT_COMPOSER_INPUT_FOCUS_CLASSES } from './lib/chat-composer-classes.js';
 // 🔴 一覧の行の操作（146 × 32）と行の hover の 1 実装（面と状態は部品側が持つ）。
-export { ROW_ACTION_LINK_CLASSES, ROW_HOVER_CLASSES } from './lib/control-classes.js';
+// ✅✅ 2026-10-16: 複数選択を**ポップアップで選び、選んだものはバッジで見せる**ための 3 定数
+//    （人間の明示指示。`S-010` のスキル条件が使う）。🔴 **画面側で面・高さ・重なりを組まない。**
+export {
+  FILTER_BODY_CLASSES,
+  FILTER_BODY_COLLAPSE_CLASSES,
+  FILTER_BODY_COLLAPSE_CLOSED_CLASSES,
+  FILTER_BODY_COLLAPSE_OPEN_CLASSES,
+  FILTER_GRID_CLASSES,
+  FILTER_GRID_COLUMN_CLASSES,
+  FILTER_GRID_FULL_SPAN_CLASSES,
+  FILTER_SAVED_CARD_ACTIVE_CLASSES,
+  FILTER_SAVED_CARD_CLASSES,
+  FILTER_SAVED_COLUMN_CLASSES,
+  FILTER_SAVED_LIST_CLASSES,
+  FILTER_GRID_SPAN_2_CLASSES,
+  FILTER_SUMMARY_BAR_CLASSES,
+  FILTER_SUMMARY_CHIPS_CLASSES,
+  MULTI_SELECT_BADGE_CLASSES,
+  MULTI_SELECT_BADGE_LABEL_CLASSES,
+  MULTI_SELECT_BADGE_WIDE_CLASSES,
+  MULTI_SELECT_BADGE_REMOVE_CLASSES,
+  MULTI_SELECT_BADGE_ROW_CLASSES,
+  MULTI_SELECT_EMPTY_CLASSES,
+  MULTI_SELECT_OPTION_CLASSES,
+  MULTI_SELECT_OPTION_SELECTED_CLASSES,
+  MULTI_SELECT_OVERFLOW_CLASSES,
+  MULTI_SELECT_SEARCH_CLASSES,
+  MULTI_SELECT_TRIGGER_CLASSES,
+  MULTI_SELECT_TRIGGER_OPEN_CLASSES,
+  ROW_ACTION_LINK_CLASSES,
+  ROW_HOVER_CLASSES,
+} from './lib/control-classes.js';
+// 🔴 **`MULTI_SELECT_PANEL_CLASSES` は `./lib/overlay-classes.js` に在る**（重なる面の影
+//    `shadow-overlay` を書いてよいのはあのファイルだけである。`docs/04` §7.9）。
+// 🔴 **主バレル（サーバ側）から出す。** `./lib/overlay-classes.ts` は**定数だけのモジュール**で
+//    あり（React の値を 1 つも持たない。`import type { ReactNode }` は型である）、
+//    Radix を引き込まない。使う側の `S-010` は `'use client'` を 1 つも宣言しない画面なので、
+//    `@ses/ui/client` からは取れない（`tests/static/ui-dependency-single-path.test.ts` (i)⑤）。
+export {
+  DIALOG_PANEL_NARROW_CLASSES,
+  MULTI_SELECT_LIST_CLASSES,
+  MULTI_SELECT_PANEL_CLASSES,
+  POPOVER_FOOTER_CLASSES,
+  POPOVER_LIST_CLASSES,
+  POPOVER_OPTION_CLASSES,
+  POPOVER_OPTION_SELECTED_CLASSES,
+  POPOVER_PANEL_CLASSES,
+  POPOVER_PANEL_END_CLASSES,
+  POPOVER_SEARCH_INPUT_CLASSES,
+  POPOVER_SEGMENT_CLASSES,
+  POPOVER_SEGMENT_ITEM_CLASSES,
+  POPOVER_SEGMENT_ITEM_SELECTED_CLASSES,
+} from './lib/overlay-classes.js';
 export { BrandLogo } from './components/sidebar.js';

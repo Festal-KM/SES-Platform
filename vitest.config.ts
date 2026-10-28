@@ -1,5 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
+const isCi = process.env.CI === 'true' || process.env.CI === '1';
+
 // 🔴 tests/smoke/**（docker-compose 依存のスモークテスト）と
 // tests/isolation/**（Testcontainers 依存の分離検証）はここに含めない。
 // CI の `pnpm test:unit`（本設定）が Docker 依存にならないようにするため。
@@ -14,6 +16,9 @@ export default defineConfig({
   //    ＝ Next.js のビルドには影響しない）。React 19 の自動 JSX ランタイムに合わせる。
   oxc: { jsx: { runtime: 'automatic' } },
   test: {
+    // 16GB開発機のページングを抑える。CIの並列実行は維持する。
+    fileParallelism: isCi,
+    maxWorkers: isCi ? undefined : 1,
     include: [
       'packages/*/src/**/*.test.ts',
       // packages/db/seed/**（シードの引数解釈・環境ガード・ID 生成。DB を要らない部分）。

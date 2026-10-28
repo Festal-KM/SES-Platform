@@ -59,6 +59,7 @@ import type { ProjectCategory, ProjectSourceKind } from '../../src/schema-value-
 import { auditLogRowValues, type AuditLogEntry } from '../../src/audit.js';
 import { PROPOSAL_AUDIT_TARGET_TYPE } from '../../src/proposal-draft.js';
 import { computeProposalContentHash, gateContentHash } from '../../src/gate-content-hash.js';
+import { projectPublicContent } from '../../src/project-public-content.js';
 import { addDays, advanceState, dateOnly, seedUuid, type StateStep } from '../support.js';
 import type { SeedRng } from '../rng.js';
 import type { SeedContext, SeedPreset } from '../types.js';
@@ -1020,10 +1021,22 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number, profile: Tenant
   const projectKeys = Object.keys(PROJECT_TEXTS) as (keyof DemoProjectIds)[];
   const projectEndClient = new Map<keyof DemoProjectIds, string>();
   const projectInternalPrice = new Map<keyof DemoProjectIds, number>();
+  const projectPublicContents = new Map<keyof DemoProjectIds, string | null>();
   await db.project.createMany({
     data: projectKeys.map((key, index) => {
       const client = endClientName(index);
-      const internalUnitPrice = (rng.int(80, 110) * 10_000);
+      const internalUnitPrice = rng.int(50, 80) * 10_000;
+      const wholesaleUnitPrice = internalUnitPrice + 100_000;
+      const startDate = dateOnly(addDays(now, key === 'filled' ? -35 : rng.int(20, 60)));
+      const prefecture = rng.pick(PREFECTURES);
+      const stations: Readonly<Record<string, string>> = {
+        '13': '神田駅（徒歩5分）', '14': '横浜駅（徒歩5分）', '27': '梅田駅（徒歩5分）',
+        '11': '大宮駅（徒歩5分）', '12': '千葉駅（徒歩5分）', '23': '名古屋駅（徒歩5分）',
+        '40': '博多駅（徒歩5分）',
+      };
+      const locationDetail = stations[prefecture] ?? '最寄駅は面談時にご案内';
+      const publicMemo = '勤務時間 9:00〜18:00。初日は出社して環境設定を行います。';
+      projectPublicContents.set(key, projectPublicContent({ publicSummary: PROJECT_TEXTS[key].publicSummary, locationDetail, publicMemo }));
       projectEndClient.set(key, client);
       projectInternalPrice.set(key, internalUnitPrice);
       return {
@@ -1034,15 +1047,22 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number, profile: Tenant
         endClientName: client,
         internalUnitPrice,
         publicSummary: PROJECT_TEXTS[key].publicSummary,
-        unitPriceMin: internalUnitPrice - 250_000,
-        unitPriceMax: internalUnitPrice - 150_000,
+        unitPriceMin: wholesaleUnitPrice,
+        unitPriceMax: wholesaleUnitPrice,
+        upperCompanyName: `デモ上位会社${String(index + 1)}`,
+        locationDetail,
+        endDate: dateOnly(addDays(now, 180 + index * 30)),
+        distributionLimit: '貴社所属まで',
+        publicMemo,
+        remarks: '卸単価は月額固定。スキル・経験による調整は個別に相談。',
+        assigneeUserId: salesUserId,
         status: PROJECT_TEXTS[key].status,
         // ✅ 2026-10-16（Issue #113 + 受領モック）。
         category: PROJECT_TEXTS[key].category,
         sourceKind: PROJECT_TEXTS[key].sourceKind,
         parallelOk: PROJECT_TEXTS[key].parallelOk,
-        startDate: dateOnly(addDays(now, key === 'filled' ? -35 : rng.int(20, 60))),
-        prefecture: rng.pick(PREFECTURES),
+        startDate,
+        prefecture,
         remoteMode: rng.pick(REMOTE_MODES),
         headcount: key === 'publishedAll' ? 2 : 1,
         createdAt: addDays(now, -120 + index * 10),
@@ -1099,7 +1119,7 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number, profile: Tenant
         .filter((row) => row.projectId === ids.projects[publish.key])
         .sort((a, b) => (a.kind === b.kind ? (a.id < b.id ? -1 : 1) : a.kind < b.kind ? -1 : 1))
         .map((row) => row.freeText),
-      publicSummary: PROJECT_TEXTS[publish.key].publicSummary,
+      publicSummary: projectPublicContents.get(publish.key) ?? null,
       endClientName: projectEndClient.get(publish.key) ?? null,
       internalUnitPrice: projectInternalPrice.get(publish.key) ?? null,
       audiencePartnerCompanyIds: audienceIds,
@@ -1633,6 +1653,104 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number, profile: Tenant
   }
 }
 
+/** 一覧の密度・絞り込み・ページ送りを確認するための追加の未公開案件。 */
+export const DEMO_ADDITIONAL_PROJECT_COUNT = 114;
+
+export function buildDemoProjectSamples(tenantIndex: number, now: Date) {
+  const tenant = DEMO_SEED_IDS.tenants[tenantIndex - 1];
+  if (tenant === undefined) throw new Error('Unknown demo tenant');
+  const templates = [
+    { name: '受発注システムのAPI開発', skill: 'Java', category: 'BACKEND' },
+    { name: '顧客向けポータル画面の刷新', skill: 'React', category: 'FRONTEND' },
+    { name: 'クラウド基盤の設計・構築', skill: 'AWS', category: 'INFRA' },
+    { name: '需要予測モデルの開発支援', skill: 'Python', category: 'AI' },
+    { name: 'データ分析基盤の整備', skill: 'SQL', category: 'DATA' },
+    { name: '業務改善プロジェクトの推進', skill: 'Java', category: 'PM_PMO' },
+    { name: '社内システムの運用改善', skill: 'SQL', category: 'HELPDESK' },
+  ] as const;
+  const industries = ['金融', '流通', '製造', '物流', '通信', '医療'];
+  const locations = [
+    { prefecture: '13', station: '神田駅（徒歩5分）' },
+    { prefecture: '14', station: '横浜駅（徒歩5分）' },
+    { prefecture: '27', station: '梅田駅（徒歩5分）' },
+  ];
+  const projects = Array.from({ length: DEMO_ADDITIONAL_PROJECT_COUNT }, (_, index) => {
+    const template = templates[index % templates.length] ?? templates[0];
+    const location = locations[index % locations.length] ?? locations[0];
+    if (location === undefined) throw new Error('Missing demo location');
+    const purchase = (45 + (index * 7) % 46) * 10000;
+    const wholesale = purchase + (8 + index % 8) * 10000;
+    const closed = index % 6 === 0;
+    return {
+      id: id(tenantIndex, ENTITY.PROJECT, 1000 + index), tenantId: tenant.tenantId,
+      name: `${industries[index % industries.length]}向け${template.name}（${String(index + 1).padStart(3, '0')}）`,
+      endClientName: endClientName(index), upperCompanyName: `株式会社ダミー${DEMO_SEED_NAME_RULES.partnerCompanySuffixes[index % DEMO_SEED_NAME_RULES.partnerCompanySuffixes.length]}`,
+      category: template.category, sourceKind: index % 3 === 0 ? 'PARTNER' : 'OWN',
+      internalUnitPrice: purchase, unitPriceMin: wholesale, unitPriceMax: wholesale,
+      publicSummary: `${template.skill}を用いた${template.name}です。\n設計から実装・テストまで、チームで担当します。`,
+      publicMemo: index % 2 === 0 ? '面談1回（オンライン）。長期参画を想定しています。' : '勤務時間9:30〜18:30。立ち上がり後はリモート併用が可能です。',
+      remarks: index % 3 === 0 ? `経験により${wholesale / 10000}〜${wholesale / 10000 + 5}万円で調整相談。卸単価欄は提示額。` : '卸単価は月額固定。契約更新は3か月ごと。',
+      status: closed ? 'CLOSED' : 'OPEN', headcount: 1 + index % 4,
+      startDate: dateOnly(addDays(now, closed ? -180 : 7 + index % 8 * 14)),
+      endDate: dateOnly(addDays(now, closed ? -7 : 180 + index % 6 * 30)),
+      prefecture: location.prefecture, locationDetail: location.station,
+      remoteMode: (['FULL_REMOTE', 'PARTIAL_REMOTE', 'ONSITE_ONLY'] as const)[index % 3] ?? 'FULL_REMOTE',
+      distributionLimit: index % 2 === 0 ? '貴社所属まで' : '一社先まで相談可',
+      assigneeUserId: tenant.hostSalesUserIds[index % tenant.hostSalesUserIds.length] ?? tenant.hostOwnerUserId,
+      parallelOk: index % 4 !== 0, createdAt: addDays(now, -60 - index), updatedAt: addDays(now, -index % 30),
+    };
+  });
+  const requirements = projects.map((project, index) => {
+    const template = templates[index % templates.length] ?? templates[0];
+    return {
+      id: id(tenantIndex, ENTITY.REQUIREMENT, 1000 + index), tenantId: tenant.tenantId,
+      projectId: project.id, kind: 'MUST', skillId: GLOBAL_SKILL_IDS[template.skill] as string,
+      freeText: `${template.skill}での実務経験`, requiredYears: 2 + index % 5,
+    };
+  });
+  return { projects, requirements };
+}
+
+export async function seedDemoProjectSamples(db: SeedContext['db'], now: Date): Promise<number> {
+  let added = 0;
+  for (const [index, tenant] of DEMO_SEED_IDS.tenants.entries()) {
+    const actual = await db.tenant.findUnique({ where: { id: tenant.tenantId }, select: { environment: true } });
+    if (actual === null) continue;
+    if (actual.environment !== 'demo') throw new Error('Refusing to expand non-demo data');
+    // 旧バージョンで投入した既知の6案件も、固定卸単価と正の利ザヤへ揃える。
+    const originals = await db.project.findMany({ where: { id: { in: Object.values(tenant.projects) } } });
+    for (const original of originals) {
+      const key = (Object.keys(tenant.projects) as (keyof DemoProjectIds)[])
+        .find((candidate) => tenant.projects[candidate] === original.id);
+      if (key === undefined) continue;
+      const wholesale = Math.max(Number(original.unitPriceMin ?? original.unitPriceMax ?? 700000), 200000);
+      const oldRange = original.unitPriceMin !== null && original.unitPriceMax !== null &&
+        String(original.unitPriceMin) !== String(original.unitPriceMax)
+        ? `卸単価の補足（従来のレンジ）：${String(original.unitPriceMin)}〜${String(original.unitPriceMax)} 円。`
+        : null;
+      await db.project.update({ where: { id: original.id }, data: {
+        unitPriceMin: wholesale, unitPriceMax: wholesale,
+        internalUnitPrice: original.internalUnitPrice !== null && Number(original.internalUnitPrice) < wholesale
+          ? original.internalUnitPrice : wholesale - 100000,
+        category: original.category ?? PROJECT_TEXTS[key].category,
+        upperCompanyName: original.upperCompanyName ?? '株式会社ダミーチャーリー',
+        locationDetail: original.locationDetail ?? '最寄駅は面談時にご案内',
+        publicMemo: original.publicMemo ?? '勤務時間9:00〜18:00。面談はオンラインで実施します。',
+        endDate: original.endDate ?? dateOnly(addDays(original.startDate ?? now, 180)),
+        distributionLimit: original.distributionLimit ?? '貴社所属まで',
+        assigneeUserId: original.assigneeUserId ?? tenant.hostSalesUserIds[0] ?? tenant.hostOwnerUserId,
+        remarks: [original.remarks, oldRange].filter(Boolean).join('\n') || '卸単価は月額固定。条件調整は個別に相談。',
+        updatedAt: original.updatedAt,
+      } });
+    }
+    const samples = buildDemoProjectSamples(index + 1, now);
+    const result = await db.project.createMany({ data: samples.projects, skipDuplicates: true });
+    await db.projectRequirement.createMany({ data: samples.requirements, skipDuplicates: true });
+    added += result.count;
+  }
+  return added;
+}
+
 export const demoPreset: SeedPreset = {
   name: 'demo',
   rngSeed: 'ses-demo-v1',
@@ -1643,6 +1761,7 @@ export const demoPreset: SeedPreset = {
     for (const [index, profile] of TENANT_PROFILES.entries()) {
       await seedTenant(ctx, index + 1, profile);
     }
+    await seedDemoProjectSamples(ctx.db, ctx.now);
     // 🔴 `demo` は `PlatformUser` を作らない（運営者は実アカウントで `/admin` に入る。docs/05 §13.6
     //    「T-10-06 の実装の決着」）。ローカル開発で運営者が要るなら `isolation` プリセットの
     //    `ISOLATION_SEED_PLATFORM_USERS` を使う。

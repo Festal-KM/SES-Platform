@@ -45,6 +45,14 @@ export default function proxy(request: NextRequest): NextResponse {
 //    除外を足したもの。**平面の呼び分けは matcher ではなく `decidePlane`（パス接頭辞）が行う** ——
 //    管理平面の API は `/api/admin/**` にあり `/admin` 配下ではないためである
 //    （`lib/middleware/planes.ts` 冒頭の補正の注記）。
+// 🔴 2026-10-16: 除外を `_next/static` / `_next/image` から **`_next/` 全体**に広げた。
+//    理由: `/_next/hmr`（Turbopack の開発サーバとの WebSocket）が matcher に当たっていた。
+//    Edge のプロキシを通した時点で**アップグレードが壊れて** `ERR_INVALID_HTTP_RESPONSE` になり、
+//    開発サーバのクライアント初期化がそこで止まる —— つまり **React が一度も hydration しない**。
+//    結果、`onSubmit`（サインインフォームほか全画面）が付かず、`<form method="post">` の
+//    ブラウザ既定の送信が走って**入力値が消えるだけ**になる（2026-10-16 に実測。§7.5 の罠）。
+//    `_next/**` は枠組みの資産であって画面ではなく、`decidePlane` の判断対象でもないため
+//    除外して差し支えない（本ファイル冒頭の 🔴 のとおり、ここは境界の強制をしない）。
 export const config = {
-  matcher: ['/((?!admin|_next/static|_next/image|favicon.ico).*)', '/admin/:path*'],
+  matcher: ['/((?!admin|_next/|favicon.ico).*)', '/admin/:path*'],
 };

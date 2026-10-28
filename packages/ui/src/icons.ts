@@ -72,10 +72,11 @@ import {
   Building2,
   CalendarClock,
   ChartColumn,
+  Check,
+  Copy,
   ChevronLeft,
   Clock,
   Columns2,
-  Copy,
   Download,
   Ellipsis,
   Eye,
@@ -87,11 +88,15 @@ import {
   Inbox,
   Info,
   ListChecks,
+  ListPlus,
   Mail,
   Megaphone,
   Menu,
   MessageSquare,
+  MoreHorizontal,
   PanelLeft,
+  ChevronDown,
+  Plus,
   PanelLeftClose,
   PanelLeftOpen,
   Paperclip,
@@ -100,6 +105,9 @@ import {
   Quote,
   ScrollText,
   Search,
+  Save,
+  SaveAll,
+  FilterX,
   Send,
   SendHorizontal,
   Settings,
@@ -134,6 +142,7 @@ export const ICONS = {
   'calendar-clock': CalendarClock,
   'message-square': MessageSquare,
   'list-checks': ListChecks,
+  'list-plus': ListPlus,
   'bar-chart-3': ChartColumn,
   'building-2': Building2,
   gauge: Gauge,
@@ -162,11 +171,32 @@ export const ICONS = {
   //    許可されている操作にアイコンを与えただけ**である（`eye` を足したときと同じ扱い）。
   // 🔴 **比喩ではない**（虫めがね = 検索そのもの）。🔴 **他の意味で使い回していない。**
   search: Search,
+  save: Save,
+  'save-all': SaveAll,
+  'filter-x': FilterX,
   // ✅ 2026-10-02（`docs/04` 改訂 23 / §7.5 の許可④）: ホームのセクション見出しと KPI カードの印。
   // 🔴 **§7.5 ④ が `clock` を名指しで列挙している**（`S-003` / `S-004` の `返信待ち`）。
   //    新しい用途の区分を作ったのではなく、**条文が挙げた名前にアイコンを与えただけ**である。
   // 🔴 **比喩ではない**（時計 = 時間が経っていること）。🔴 **他の意味で使い回していない。**
   clock: Clock,
+  // ✅✅ 2026-10-19（人間の明示指示「装飾アイコンは禁止ですが、検索、開閉矢印、チェック、×、
+  //    三点メニューなどの操作に必要なアイコンは使用できます」= `S-010` の検索エリアの改修指示）。
+  // 🔴 **比喩ではない**（チェック = 選んである / 三点 = その行の操作がまとめてある）。
+  // 🔴 **他の意味で使い回さない**（`check` を「完了」や「成功」の印に使わない —— それは `StatusBadge` の語が担う）。
+  check: Check,
+  copy: Copy,
+  'more-horizontal': MoreHorizontal,
+  // ✅ 2026-10-16（人間の明示指示「『案件を登録』ボタンは『新規案件登録』にして、＋アイコンも
+  //    つけて」）: 作成の primary の語の前に置く印。
+  // 🔴 **§7.5 の許可①（テキストなしで意味が通る操作）に当たる**が、**語は消していない** ——
+  //    印は語の前に添えるだけである（アイコンだけのボタンを作らない）。
+  // 🔴 **比喩ではない**（＋ = 新しく作る）。🔴 **他の意味で使い回さない**（増加・加算には使わない）。
+  plus: Plus,
+  // ✅✅ 2026-10-16（人間の明示指示「スキルの部分はポップアップや Tip で
+  //    選択肢を表示して」）: **開けることを示す印**。
+  // 🔴 **比喩ではない**（↓ = 下に開く）。`<summary>` に添え、開いている間は回転させる。
+  // 🔴 **他の意味で使い回さない**（並び替え・減少・ダウンロードには使わない）。
+  'chevron-down': ChevronDown,
   // ── ✅ 2026-10-26（紺野「チャットは拡張して」）: **チャット（S-031）専用**のアイコン。
   // 🔴 `docs/04` §7.5「ボタン・見出しにアイコンを付けない」の**例外はチャットの画面だけ**である
   //    （Slack・Teams・LINE と同じく、入力欄・会話の見出し・発言の操作を印で素早く押せるようにする）。

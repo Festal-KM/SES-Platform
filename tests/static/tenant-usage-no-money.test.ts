@@ -91,6 +91,8 @@ const I18N_FILE = path.join(repoRoot, 'packages', 'i18n', 'src', 'index.ts');
  */
 const BUSINESS_DATA_MONEY_NAMES: ReadonlySet<string> = new Set([
   'internalUnitPrice',
+  // 案件一覧の想定仕入単価。課金・AI原価ではなく、既存internalUnitPriceの表示値。
+  'purchaseUnitPrice',
   'offeredUnitPrice',
   'priceBand',
   'priceMax',

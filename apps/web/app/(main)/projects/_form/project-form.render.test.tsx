@@ -39,6 +39,9 @@ const MUST_EMPTY = '必須要件がありません。このままでも保存で
 const NICE_EMPTY = '尚可要件は登録されていません。';
 
 const messages: ProjectFormMessages = {
+  upperCompanyNameLabel: '上位会社', endDateLabel: '終了時期', distributionLimitLabel: '商流制限',
+  assigneeLabel: '担当者', locationDetailLabel: '勤務地/最寄駅', publicMemoLabel: '公開メモ',
+  remarksLabel: '備考', remarksNote: '内部用の備考',
   sectionBasic: '基本',
   sectionConditions: '条件',
   sectionCommerce: '商流情報（内部用）',
@@ -104,6 +107,8 @@ const messages: ProjectFormMessages = {
 };
 
 const EMPTY_VALUES: ProjectFormValues = {
+  upperCompanyName: '', endDate: '', distributionLimit: '', assigneeUserId: '',
+  locationDetail: '', publicMemo: '', remarks: '',
   name: '',
   status: 'OPEN',
   headcount: '1',
@@ -333,6 +338,18 @@ describe('送信 body（docs/05 §6.4 #26 の ProjectInput）', () => {
 //    `F-014 AC-6` / `UC-26` 手順 2）
 // ============================================================================
 describe('🔴 T-12-10: 公開欄 3 欄の印と、再検査が走る条件の事前表示', () => {
+  it('卸単価は固定値で送り、公開メモと内部備考を別々に保存する', () => {
+    const body = toRequestBody({ ...EMPTY_VALUES, unitPriceMin: '700000', unitPriceMax: '800000',
+      internalUnitPrice: '600000', publicMemo: '週2回出社', remarks: '調整幅は個別相談' });
+    expect(body.unitPriceMin).toBe(700000);
+    expect(body.unitPriceMax).toBe(700000);
+    expect(body.publicMemo).toBe('週2回出社');
+    expect(body.remarks).toBe('調整幅は個別相談');
+    const html = render();
+    expect(html).toMatch(/<input(?=[^>]*name="unitPriceMax")(?=[^>]*type="hidden")/);
+    expect(html).toContain('data-testid="project-public-memo"');
+    expect(html).toContain('data-testid="project-remarks"');
+  });
   it('🔴 3 欄すべてに「この欄は公開先が読む」印が付く（商流情報の注記と対になる）', () => {
     const html = render();
     expect(html).toContain('data-testid="project-public-field-notice-name"');
