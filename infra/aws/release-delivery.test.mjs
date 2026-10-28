@@ -24,7 +24,8 @@ test('デモと本番の配備ロールは別environmentを完全一致で照合
   }
 });
 test('通常のアプリは管理用パスワードを受け取らず、migrationだけ別実行ロールを使う', () => {
-  const web = taskDefinition({ ...descriptor, role: 'web' });
+  const web = taskDefinition({ ...descriptor, runtimeKeys: [...descriptor.runtimeKeys, 'NODE_ENV'], role: 'web' });
+  assert.ok(!web.containerDefinitions[0].secrets.some(item => item.name === 'NODE_ENV'));
   assert.ok(!JSON.stringify(web).includes('DB_ADMIN_PASSWORD'));
   assert.ok(web.taskRoleArn.endsWith('ses-platform-demo-task'));
   const migration = taskDefinition({ ...descriptor, role: 'migration', rolesSecretArn: descriptor.runtimeSecretArn.replace('runtime-', 'roles-'), masterSecretArn: 'arn:aws:secretsmanager:ap-northeast-1:117425831827:secret:rds!db-fixture' });

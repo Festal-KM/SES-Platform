@@ -9,7 +9,8 @@ export function taskDefinition({ environment, role, image, runtimeSecretArn, run
   if (!new RegExp(`^${ACCOUNT_ID}\\.dkr\\.ecr\\.${REGION}\\.amazonaws\\.com/${prefix}@sha256:[a-f0-9]{64}$`).test(image)) throw new Error('現在の環境専用の固定イメージを指定してください');
   if (runtimeKeys.some((key) => !/^[A-Z][A-Z0-9_]*$/.test(key) || /PASSWORD|MIGRATION|SUPERUSER|SEED_DATABASE|^DB_ADMIN_/.test(key))) throw new Error('通常のアプリに管理用の変数を渡せません');
   const migration = role === 'migration';
-  const secrets = runtimeKeys.map((key) => ({ name: key, valueFrom: `${runtimeSecretArn}:${key}::` }));
+  // NODE_ENVは固定の通常変数で渡す。ECSはsecretsとの同名定義を拒否する。
+  const secrets = runtimeKeys.filter(key => key !== 'NODE_ENV').map((key) => ({ name: key, valueFrom: `${runtimeSecretArn}:${key}::` }));
   if (migration) {
     for (const key of ['APP_MIGRATOR_PASSWORD', 'APP_TENANT_PASSWORD', 'APP_PLATFORM_PASSWORD', 'APP_PLATFORM_WRITE_PASSWORD']) secrets.push({ name: key, valueFrom: `${rolesSecretArn}:${key}::` });
     secrets.push({ name: 'DB_ADMIN_USERNAME', valueFrom: `${masterSecretArn}:username::` }, { name: 'DB_ADMIN_PASSWORD', valueFrom: `${masterSecretArn}:password::` });
