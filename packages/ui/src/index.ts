@@ -464,5 +464,4 @@ export {
   POPOVER_SEGMENT_ITEM_CLASSES,
   POPOVER_SEGMENT_ITEM_SELECTED_CLASSES,
 } from './lib/overlay-classes.js';
-export { ROW_ACTION_LINK_CLASSES, ROW_HOVER_CLASSES } from './lib/control-classes.js';
 export { BrandLogo } from './components/sidebar.js';
