@@ -31,7 +31,7 @@ export function chatRequirementText(requirement: ChatProjectRequirementView, lab
 }
 
 /** 勤務地 / リモート（「東京都・一部リモート」）。どちらも無ければ `—`。 */
-export function chatProjectLocationText(project: ChatVisibleProjectCard, labels: ChatProjectCardLabels): string {
+export function chatProjectLocationText(project: Pick<ChatVisibleProjectCard, 'prefecture' | 'remoteMode'>, labels: ChatProjectCardLabels): string {
   const parts = [
     project.prefecture === null ? null : labels.prefectures[project.prefecture] ?? null,
     project.remoteMode === null ? null : labels.remoteModes[project.remoteMode] ?? null,
