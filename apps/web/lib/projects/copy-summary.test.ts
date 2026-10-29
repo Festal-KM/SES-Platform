@@ -49,7 +49,8 @@ describe('基本情報から作るコピペ用サマリ', () => {
     for (const key of COPY_SUMMARY_EXCLUDED_FIELDS) {
       const field = fields().find(f => f.key === key);
       expect(field).toBeDefined();
-      expect(text).not.toContain(`【${field?.label}】`);
+      // 提出用の備考は公開メモから作るため、同名の内部備考は値で検査する。
+      if (key !== 'remarks') expect(text).not.toContain(`【${field?.label}】`);
       expect(text).not.toContain(field?.value);
     }
   });
@@ -65,5 +66,11 @@ describe('基本情報から作るコピペ用サマリ', () => {
     const text = projectCopySummary('案件', fields().filter(f => f.key !== 'purchaseUnitPrice'));
     expect(text).not.toContain('【単価】');
     expect(text).not.toContain('60 万円');
+  });
+  it('開始か終了だけでも期間を保持し、精算や面談条件を推測しない', () => {
+    expect(projectCopySummary('案件', [{ key: 'startDate', label: '開始時期', value: '2026-11-01' }])).toContain('【期間】2026-11-01～');
+    expect(projectCopySummary('案件', [{ key: 'endDate', label: '終了時期', value: '2027-03-31' }])).toContain('【期間】～2027-03-31');
+    const text = projectCopySummary('案件', fields());
+    for (const label of ['精算', '面談', '年齢', '性別']) expect(text).not.toContain(`【${label}】`);
   });
 });
