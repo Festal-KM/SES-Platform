@@ -29,12 +29,14 @@ export function KeywordGroups({ draft, onChange, onComposingChange, testIdPrefix
     setGroups(readGroups(draft)); setPending({});
   }, [signature, draft]);
 
-  function update(next: ProjectKeywordGroup[]): void {
-    setGroups(next);
+  function update(next: ProjectKeywordGroup[]): boolean {
     const active = next.filter(group => group.terms.length);
     const keywordGroups = active.length ? JSON.stringify(active) : '';
+    if (keywordGroups.length > 4000) { setError(t('projects.search.keywordTotalLimit')); return false; }
+    setGroups(next); setError('');
     lastWritten.current = `\n${keywordGroups}`;
     onChange({ q: '', keywordGroups });
+    return true;
   }
   function addTerm(index: number): void {
     const value = pending[index]?.trim();
@@ -43,7 +45,7 @@ export function KeywordGroups({ draft, onChange, onComposingChange, testIdPrefix
     if (!group) return;
     const terms = [...new Set([...group.terms, ...value.split('|').map(term => term.trim()).filter(Boolean)])];
     if (terms.length > 10 || terms.some(term => term.length > 200)) { setError(t('projects.search.keywordLimit')); return; }
-    update(groups.map((item, i) => i === index ? { ...item, terms } : item));
+    if (!update(groups.map((item, i) => i === index ? { ...item, terms } : item))) return;
     setPending(current => ({ ...current, [index]: '' })); setError('');
   }
   const active = groups.filter(group => group.terms.length);

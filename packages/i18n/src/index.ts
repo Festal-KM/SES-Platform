@@ -3108,6 +3108,7 @@ const ja = {
   // 🔴 **コピペ用サマリの組み立ての部品**（`lib/projects/copy-summary.ts`）。
   //    記号も語であり、画面・モジュールにベタ書きしない（`CLAUDE.md` §3.5）。
   'projects.search.expressionSeparator': '：',
+  'projects.search.keywordTotalLimit': '詳細検索の条件が長すぎます。キーワードを減らしてください。',
   'projects.search.keywordLimit': 'キーワードは1グループ10個、1個200文字以内で入力してください。',
   'projects.search.addKeyword': 'キーワードを追加',
   'projects.search.removeKeyword': 'キーワードを解除',
