@@ -157,7 +157,7 @@ export default async function ProjectListPage({
   const panelTab = projectPanelTab(raw[PROJECT_PANEL_TAB_PARAM]);
   const selectedRow = rows.find((row) => row.id === selectedId) ?? null;
   const basicInfo = selectedRow !== null
-    ? await readProjectBasicInfo(ctx, selectedRow.id, await readRequestMeta())
+    ? await readProjectBasicInfo(ctx, selectedRow.id, await readRequestMeta(), panelTab === 'COPY')
     : [];
   const canRegister = isProjectEditorRole(ctx.role);
   // 🔴 9 列目（公開先の設定状況）そのものが無い取引先には**その行を渡さない**（`F-014 AC-4` / `BR-07`）。

@@ -6,6 +6,7 @@ import { toJstIsoDay } from '../format/datetime';
 import { formatManYen } from '../format/number';
 import { PROJECT_CATEGORY_MESSAGE_KEYS } from './labels';
 import { formatProjectLocation, formatProjectRemoteMode, formatProjectListUnitPriceRange } from './list-rows';
+import { projectCopyRequirementFields } from './copy-summary';
 import { recordProjectView, PROJECT_VIEW_VIA, type ProjectViewMeta } from './service';
 
 export type ProjectBasicInfoField = {
@@ -83,7 +84,7 @@ const HOST_SELECT = {
 
 /** 選択された1件だけを読み、商流を含む閲覧は既存の監査経路へ記録する。 */
 export async function readProjectBasicInfo(
-  ctx: AuthenticatedTenantCtx, id: string, meta: ProjectViewMeta,
+  ctx: AuthenticatedTenantCtx, id: string, meta: ProjectViewMeta, includeRequirements = false,
 ): Promise<readonly ProjectBasicInfoField[]> {
   return withTenant(ctx, async (db) => {
     const result = ctx.partnerCompanyId === null
@@ -100,7 +101,12 @@ export async function readProjectBasicInfo(
       remarks: hostRow.remarks,
       assignee: hostRow.assignee?.displayName ?? null,
     } : null;
-    return projectBasicInfoFields({
+    const requirements = includeRequirements ? await db.projectRequirement.findMany({
+      where: { projectId: id },
+      select: { kind: true, skillId: true, freeText: true, requiredYears: true, skill: { select: { name: true } } },
+      orderBy: [{ kind: 'asc' }, { skillId: 'asc' }, { id: 'asc' }],
+    }) : [];
+    const fields = projectBasicInfoFields({
       category: row.category as ProjectCategory | null,
       publicSummary: row.publicSummary,
       remoteMode: formatProjectRemoteMode(row.remoteMode as Parameters<typeof formatProjectRemoteMode>[0]),
@@ -110,5 +116,10 @@ export async function readProjectBasicInfo(
       headcount: row.headcount, distributionLimit: row.distributionLimit,
       publicMemo: row.publicMemo, updatedOn: toJstIsoDay(row.updatedAt), host,
     });
+    if (!includeRequirements) return fields;
+    return [...fields, ...projectCopyRequirementFields(requirements.map((item) => ({
+      kind: item.kind as 'MUST' | 'NICE', skillId: item.skillId, skillName: item.skill?.name ?? null,
+      freeText: item.freeText, requiredYears: decimalToNumber(item.requiredYears),
+    })))];
   });
 }

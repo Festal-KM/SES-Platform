@@ -3107,6 +3107,20 @@ const ja = {
     'いまは案件の情報から自動で組んでいます。書き換えて保存できるようにする作業は後続です。',
   // 🔴 **コピペ用サマリの組み立ての部品**（`lib/projects/copy-summary.ts`）。
   //    記号も語であり、画面・モジュールにベタ書きしない（`CLAUDE.md` §3.5）。
+  'projects.copy.project': '案件',
+  'projects.copy.content': '内容',
+  'projects.copy.skills': 'スキル',
+  'projects.copy.required': '[必須]',
+  'projects.copy.preferred': '[尚可]',
+  'projects.copy.period': '期間',
+  'projects.copy.place': '場所',
+  'projects.copy.recruitment': '募集',
+  'projects.copy.distribution': '商流',
+  'projects.copy.notes': '備考',
+  'projects.copy.bullet': '・',
+  'projects.copy.periodSeparator': '～',
+  'projects.copy.parenthesisOpen': '（',
+  'projects.copy.parenthesisClose': '）',
   'projects.list.panel.copy.labelOpen': '【',
   'projects.list.panel.copy.labelClose': '】',
   // 🔴 一覧の行は必須要件を上位 3 件しか持たない。**超過を黙って落とさない**
