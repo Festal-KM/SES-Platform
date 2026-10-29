@@ -30,7 +30,7 @@ import {
   type ProjectStatus,
   type RemoteMode,
 } from '../schema-value-sets.js';
-import { freeWordAllOf, freeWordFilter, type FreeWordFilter } from './free-word.js';
+import { freeWordTerms, freeWordFilter, type FreeWordFilter } from './free-word.js';
 import { unitPriceOverlapConditions } from './unit-price-range.js';
 
 /**
@@ -238,17 +238,6 @@ export function assertStatusPriority(priority: readonly ProjectStatus[]): void {
 assertStatusPriority(PROJECT_STATUS_LIST_PRIORITY);
 
 /**
- * 🔴 フリーワードの対象列（`docs/04` §S-010 の検索条件）。
- *
- * 🔴 **`end_client_name` を検索対象にしない** —— ホストだけが一致する検索を作ると、`where` が
- *    ロールで分岐して「一覧と `COUNT` が同じ述語」という担保（docs/05 §4.8）が崩れる
- *    （`F-013 AC-2` の趣旨にも反する）。`ProjectWhereFragment` に列自体を持たせていない。
- * 🔴 フリーワードは索引で加速されない（`free-word.ts` 冒頭の実測）。母集団は RLS の C4 が
- *    テナント / 公開範囲で絞っており、その中を走査する。
- */
-const PROJECT_FREE_WORD_COLUMNS = ['name', 'publicSummary'] as const;
-
-/**
  * ✅ **2026-10-16: 「募集中のみ」が指す状態**（人間の明示指示のチェックボックス）。
  *
  * 🔴 **`'OPEN'` を直書きしない。** 状態の値集合は 2026-10-16 に 3 値から 2 値へ変わった
@@ -297,8 +286,7 @@ export function projectSearchWhere(criteria: ProjectSearchCriteria): ProjectWher
   }
   // 従来の空白区切りANDも、新しい検索対象で一貫して照合する。
   if (criteria.q !== undefined && !criteria.q.includes('|')) {
-    const words = freeWordAllOf(criteria.q, PROJECT_FREE_WORD_COLUMNS);
-    if (words) and.push(...words.AND.map(condition => keywordCondition(condition.OR[0]?.name?.contains ?? '')));
+    and.push(...freeWordTerms(criteria.q).map(keywordCondition));
   }
   if (criteria.utilizationBand === 'FULL') and.push({ utilizationRate: { gte: 100, lte: 100 } });
   if (criteria.utilizationBand === 'HALF_TO_FULL') and.push({ utilizationRate: { gte: 50, lte: 99 } });

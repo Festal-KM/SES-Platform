@@ -42,6 +42,12 @@ test('案件検索のチップ入力・明示的な適用・保存条件の再�
     await selected.selectOption(savedId);
     await expect(page.getByTestId('project-list-filter-development-method-segment-AGILE')).toBeChecked();
     await expect(page.getByTestId('project-list-filter-keyword-term-0-0')).toContainText('Java');
+    await page.getByTestId('project-list-search-toggle').click();
+    await expect(page.getByTestId('project-list-search')).toHaveCount(0);
+    await expect(page.getByTestId('project-list-details-summary')).toBeVisible();
+    await page.getByTestId('project-list-details-summary').click();
+    await expect(page.getByTestId('project-list-filter-advanced')).toHaveAttribute('open','');
+    await expect(page.getByTestId('project-list-search')).toBeVisible();
     await page.setViewportSize({width:375,height:812});
     await expectNoHorizontalOverflow('案件検索の入力済み条件',page);
     session.outbound.assertNone();
