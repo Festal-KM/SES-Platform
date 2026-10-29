@@ -1,4 +1,5 @@
 import { ChatResizablePane } from './chat-resizable-pane';
+import { conversationLayoutFor } from '../../../lib/chat/layout';
 // apps/web/app/(main)/chat/chat-screen.render.test.tsx
 // `S-031` チャットの 3 コンポーネント（`ChatThreadList` / `ChatConversation` / `ChatThreadPanel`）の
 // 描画テスト（`docs/04` §S-031 / `F-038` / `BR-44` / `U-10` / `CLAUDE.md` §13.3）。
@@ -474,16 +475,18 @@ describe('⑦: 並べ方の切り替え（2026-10-13、Lark 寄せ。lib/chat/la
     expect((other as RegExpExecArray)[0]).not.toContain('items-end');
   });
 
-  it('話題型（案件スレッド・既定）: 自分の発言も左で、名前を出す（従来どおり）', () => {
+  // ✅ 2026-10-29: 画面は案件スレッドにも会話型を渡す（下の page.tsx の検査と `layout.test.ts`）。話題型は部品の既定として残る。
+  it('話題型（部品の既定）: 自分の発言も左で、名前を出す', () => {
     for (const html of [renderConversation(), renderConversation({ layout: 'topic' })]) {
       expect(html).toContain(`data-testid="chat-message-sender-${MESSAGE_OWN.id}"`);
       expect(html).not.toContain('data-layout="chat"');
     }
   });
 
-  it('page.tsx はスレッドの種類から並べ方を決めて渡す', () => {
+  it('page.tsx はスレッドの種類から並べ方を決めて渡す（✅ 2026-10-29: 案件スレッドも会話型 = 自分は右）', () => {
     const source = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
     expect(source).toContain('layout={conversationLayoutFor(selected.kind)}');
+    expect(conversationLayoutFor('PROJECT')).toBe('chat');
   });
 });
 
