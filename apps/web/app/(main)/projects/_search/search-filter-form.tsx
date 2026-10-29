@@ -107,6 +107,7 @@ export type SearchFilterFormOptions = {
 
 export function SearchFilterForm({
   draft,
+  openDetailsRequest,
   onChange,
   onComposingChange,
   columns,
@@ -116,6 +117,7 @@ export function SearchFilterForm({
   testIdPrefix,
 }: {
   readonly draft: ProjectSearchDraft;
+  readonly openDetailsRequest?: number;
   readonly onChange: (patch: Partial<ProjectSearchDraft>) => void;
   /**
    * 🔴🔴 **日本語変換の開始 / 終了**（`search-panel.tsx` 冒頭の 🔴🔴）。
@@ -280,7 +282,7 @@ export function SearchFilterForm({
         {!draft.utilizationBand && (draft.utilizationMin || draft.utilizationMax) ? <p className="m-0 text-xs text-fg-muted">{t('projects.search.legacyUtilization')}</p> : null}
       </Field>
     </div>
-    <KeywordGroups draft={draft} onChange={onChange} onComposingChange={onComposingChange} testIdPrefix={testIdPrefix} />
+    <KeywordGroups openRequest={openDetailsRequest} draft={draft} onChange={onChange} onComposingChange={onComposingChange} testIdPrefix={testIdPrefix} />
     </div>
   );
 }

@@ -258,6 +258,7 @@ export function SearchPanel({
   const [broken, setBroken] = useState(false);
   const [dialog, setDialog] = useState<DialogState>({ kind: 'NONE' });
   const [name, setName] = useState('');
+  const [detailsRequest, setDetailsRequest] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 🔴 **状態を書き換えた直後に送信する**ための旗（`null` = 送信待ちなし）。
@@ -406,6 +407,7 @@ export function SearchPanel({
     tab === 'SEARCH' ? (
       <SearchFilterForm
         draft={draft}
+        openDetailsRequest={detailsRequest}
         onChange={patch}
         // 🔴🔴 変換中は自動の検索を止める（ファイル冒頭の 🔴🔴）。
         onComposingChange={setComposing}
@@ -667,6 +669,9 @@ export function SearchPanel({
           chips={chips}
           pending={pending}
           submitting={navigating}
+          compact={!expanded}
+          keywordGroupCount={projectDraftKeywordGroups(draft).length}
+          onOpenDetails={() => { setTab('SEARCH'); if (!expanded) toggleExpanded(); setDetailsRequest(value => value + 1); }}
           onCancel={() => setDraft(applied)}
           onRemove={(key) => {
             // ✅✅ **2026-10-19 の人間の指示「選択条件を部分的に削除した場合も

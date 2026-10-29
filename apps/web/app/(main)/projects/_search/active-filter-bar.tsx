@@ -103,6 +103,9 @@ export function ActiveFilterBar({
   chips,
   pending,
   submitting = false,
+  compact = false,
+  keywordGroupCount = 0,
+  onOpenDetails,
   onRemove,
   onClear,
   onCancel,
@@ -112,6 +115,9 @@ export function ActiveFilterBar({
   readonly chips: readonly ProjectSearchChip[];
   readonly pending: boolean;
   readonly submitting?: boolean;
+  readonly compact?: boolean;
+  readonly keywordGroupCount?: number;
+  readonly onOpenDetails?: () => void;
   readonly onRemove: (key: string) => void;
   readonly onClear: () => void;
   readonly onCancel?: () => void;
@@ -282,7 +288,8 @@ export function ActiveFilterBar({
           </div>
         )}
       </div>
-      <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2">
+      {compact && keywordGroupCount > 0 && onOpenDetails ? <Button type="button" variant="ghost" size="sm" onClick={onOpenDetails} data-testid={`${testIdPrefix}details-summary`}>{t('projects.search.advanced')} ({keywordGroupCount}{t('projects.search.groupCountSuffix')})</Button> : null}
+      {!compact ? <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2">
         {/* 🔴 **未適用**（指示書 §6「検索結果がまだ以前の条件であることを示します」）。 */}
         {pending ? (
           <span
@@ -302,7 +309,7 @@ export function ActiveFilterBar({
           <Button type="submit" variant="primary" size="sm" aria-label={messages.submit} aria-busy={submitting}
             data-testid={`${testIdPrefix}search`}><Icon name="search" />{t('projects.search.submit')}</Button>
         </Tooltip>
-      </div>
+      </div> : null}
     </div>
   );
 }

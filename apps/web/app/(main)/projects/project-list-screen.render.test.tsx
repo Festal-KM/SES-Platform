@@ -960,3 +960,12 @@ it('追加した基本条件と詳細グループがフォーム送信に載る'
   expect(html).toContain('name="keywordGroups"');
   expect(html).toContain('(Java OR Springboot)');
 });
+
+it('全体を折りたたむと条件サマリと実際のグループ数だけを残す', () => {
+  const html = render({defaultExpanded:false,applied:{...emptyApplied,keywordGroups:JSON.stringify([{mode:'OR',terms:['Java','Springboot']},{mode:'AND',terms:['設計']}])}});
+  expect(html).toContain('data-testid="project-list-details-summary"');
+  expect(html).toContain('2グループ');
+  expect(html).not.toContain('data-testid="project-list-search"');
+  expect(html).not.toContain('data-testid="project-list-clear"');
+  expect(html).toContain('data-testid="project-list-summary"');
+});

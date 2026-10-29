@@ -11,7 +11,8 @@ function readGroups(draft: ProjectSearchDraft): ProjectKeywordGroup[] {
   return groups.length ? groups : [{ mode: 'OR', terms: [] }];
 }
 
-export function KeywordGroups({ draft, onChange, onComposingChange, testIdPrefix }: {
+export function KeywordGroups({ openRequest = 0, draft, onChange, onComposingChange, testIdPrefix }: {
+  readonly openRequest?: number;
   readonly draft: ProjectSearchDraft;
   readonly onChange: (patch: Partial<ProjectSearchDraft>) => void;
   readonly onComposingChange: (value: boolean) => void;
@@ -20,6 +21,7 @@ export function KeywordGroups({ draft, onChange, onComposingChange, testIdPrefix
   const [groups, setGroups] = useState<ProjectKeywordGroup[]>(() => readGroups(draft));
   const [pending, setPending] = useState<Readonly<Record<number, string>>>({});
   const [open, setOpen] = useState(Boolean(draft.q || draft.keywordGroups));
+  useEffect(() => { if (openRequest > 0) setOpen(true); }, [openRequest]);
   const [error, setError] = useState('');
   const signature = `${draft.q}\n${draft.keywordGroups ?? ''}`;
   const lastWritten = useRef(signature);
