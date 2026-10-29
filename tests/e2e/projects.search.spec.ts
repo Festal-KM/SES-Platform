@@ -10,7 +10,11 @@ test('案件検索のチップ入力・明示的な適用・保存条件の再�
     await page.goto('/projects', {waitUntil:'domcontentloaded'});
     const initial = page.url();
     const phases = page.getByTestId('project-list-filter-phases-skills');
-    await phases.focus(); await phases.press('ArrowDown');
+    // 初回描画の直後はイベント接続前の場合があるため、開いた状態を確認して進む。
+    await expect(async () => {
+      await phases.focus(); await phases.press('ArrowDown');
+      await expect(page.getByTestId('project-list-filter-phases-skills-panel')).toBeVisible({timeout:1000});
+    }).toPass({timeout:15000});
     await page.getByTestId('project-list-filter-phases-skills-search').press('ArrowDown');
     await expect(page.getByTestId('project-list-filter-phases-skills-option-PLANNING')).toBeFocused();
     await page.keyboard.press('Space');
@@ -53,3 +57,4 @@ test('案件検索のチップ入力・明示的な適用・保存条件の再�
     session.outbound.assertNone();
   } finally { await session.close(); }
 });
+
