@@ -528,7 +528,7 @@ export function SearchPanel({
           const href = query === '' ? '/projects' : `/projects?${query}`;
 
           // 🔴 **届いた `applied` が自分のものか判る**ようにしておく（`lastApplied` の 🔴🔴）。
-          requestedRef.current = draft;
+          requestedRef.current = formFieldsSubmit ? { ...draft, q: '', keywordGroups: projectDraftKeywordGroups(draft).length ? JSON.stringify(projectDraftKeywordGroups(draft)) : '' } : draft;
           startNavigation(() => {
             // 🔴 **`scroll: false`** —— 条件を 1 つ外すたびに先頭へ飛ばされると、
             //    一覧を見ながら絞り込む操作が成り立たない。
