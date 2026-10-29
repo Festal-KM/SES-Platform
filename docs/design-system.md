@@ -294,3 +294,8 @@ lucide 系 2px stroke。サイズは **24（KPI）/ 20（Nav・Card Header・Tab
 ⚠️ **まだ合わせていないもの**: 一覧（`DataTable`）の行高は **36.5px のまま**である（仕様書の 45px は「Section Card の行」の寸法であり、50 行の表に当てると 1 画面の行数が 3 割減る）。表に適用するかは別途の判断とする。
 
 🔴 **✅ 2026-10-14 の追記: その「別途の判断」を [Issue #99](https://github.com/Festal-KM/SES-Platform/issues/99) に出した。** 受領した定義書 2 本（[人材管理](./design-system-engineers.md) §2.2 と [案件管理](./design-system-projects.md) §1.7）が**どちらも Data Table の本体行を 45h・セルを 14px と定めている**ので、上の「45px は Section Card の行の寸法である」という読みは**崩れている**。🔴 **ただし適用すると一覧 20 画面すべての密度が同時に変わる**（1 画面に入る行数が約 2 割減る）ので、既定は現状維持とし、人間の判断を待つ。変更箇所は `packages/ui/src/components/table.tsx` の `CELL_PADDING_CLASSES`（`py-2` → `py-3`）と `Table` の基底の文字（`text-cell` → `text-body`）の 2 箇所である。
+
+
+### 2026-10-29 案件検索の画像指定（人間の指示）
+
+案件検索は添付された新UI画像を基準に、4カラムを基本とする。狭幅では列数と並びを変える。開発方式と稼働率のセグメントは、画像どおり丸い選択肢・選択中のブランド色と白文字を用いる。この角丸の例外は共通部品 `packages/ui/src/components/segmented-control.tsx` に限定し、カード・タグ・既存のボタン全般へ広げない。文言・色・高さは既存トークンを使う。基本検索・詳細検索・条件サマリー・検索とクリアの順に置き、編集だけで一覧を更新しない。画面外のデザインは変更しない。

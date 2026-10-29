@@ -198,7 +198,6 @@ export const FILTER_GRID_COLUMN_CLASSES = {
   2: 'grid-cols-2',
   3: 'grid-cols-3',
   4: 'grid-cols-4',
-  5: 'grid-cols-5',
 } as const;
 
 /** 4 列のときだけ単価が 2 列分を占める（指示書 §2）。 */
