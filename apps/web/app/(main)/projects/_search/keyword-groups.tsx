@@ -78,7 +78,7 @@ export function KeywordGroups({ draft, onChange, onComposingChange, testIdPrefix
               </span>)}
               <Input className="w-auto min-w-24 flex-1" name={index === 0 ? 'q' : undefined} value={pending[index] ?? ''} maxLength={200} placeholder={t('projects.search.addKeywordHint')}
                 aria-label={`${t('projects.search.addKeyword')} ${index + 1}`} data-testid={index === 0 ? `project-list-filter-q` : `${testIdPrefix}keyword-group-${index}`}
-                onChange={event => setPending(current => ({ ...current, [index]: event.currentTarget.value }))}
+                onChange={event => { const value = event.currentTarget.value; setPending(current => ({ ...current, [index]: value })); }}
                 onCompositionStart={() => onComposingChange(true)} onCompositionEnd={() => onComposingChange(false)}
                 onBlur={() => addTerm(index)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); addTerm(index); } }} />
             </div>

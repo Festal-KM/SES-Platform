@@ -240,8 +240,7 @@ export function isSameProjectSearchDraft(a: ProjectSearchDraft, b: ProjectSearch
     (a.utilizationBand ?? '') === (b.utilizationBand ?? '') &&
     (a.utilizationMin ?? '') === (b.utilizationMin ?? '') &&
     (a.utilizationMax ?? '') === (b.utilizationMax ?? '') &&
-    (a.keywordGroups ?? '') === (b.keywordGroups ?? '') &&
-    a.q === b.q &&
+    JSON.stringify(projectDraftKeywordGroups(a).map(group => ({ ...group, terms: [...group.terms].sort() }))) === JSON.stringify(projectDraftKeywordGroups(b).map(group => ({ ...group, terms: [...group.terms].sort() }))) &&
     a.status === b.status &&
     a.category === b.category &&
     a.remoteMode === b.remoteMode &&

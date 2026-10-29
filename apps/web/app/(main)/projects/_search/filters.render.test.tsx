@@ -314,3 +314,7 @@ describe('基本検索と詳細検索の保存・解除', () => {
     expect(parseSavedProjectSearchDraft({...draft,keywordGroups:'{'})?.keywordGroups).toBeUndefined();
   });
 });
+
+it('旧フリーワードと同じ意味のグループを適用後に未適用扱いしない', () => {
+  expect(isSameProjectSearchDraft({...EMPTY_PROJECT_SEARCH_DRAFT, q:'Java Springboot'}, {...EMPTY_PROJECT_SEARCH_DRAFT, keywordGroups: JSON.stringify([{mode:'AND',terms:['Springboot','Java']}])})).toBe(true);
+});
