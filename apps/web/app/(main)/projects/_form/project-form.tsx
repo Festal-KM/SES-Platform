@@ -30,6 +30,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import {
   Button,
   Field,
+  Checkbox,
   Input,
   SECONDARY_LINK_CLASSES,
   Select,
@@ -736,14 +737,14 @@ export function ProjectForm({
             />
         <Field as="div" className="mb-4" label={t('projects.search.phase')}>
           <div className="flex flex-wrap gap-3">{PROJECT_DEVELOPMENT_PHASES.map(phase => <label key={phase} className="flex items-center gap-2 text-body">
-            <input type="checkbox" checked={(values.developmentPhases ?? []).includes(phase)} onChange={event => update({ developmentPhases: event.currentTarget.checked ? [...(values.developmentPhases ?? []), phase] : (values.developmentPhases ?? []).filter(value => value !== phase) })} data-testid={`project-form-development-phase-${phase}`} />
+            <Checkbox checked={(values.developmentPhases ?? []).includes(phase)} onChange={event => update({ developmentPhases: event.currentTarget.checked ? [...(values.developmentPhases ?? []), phase] : (values.developmentPhases ?? []).filter(value => value !== phase) })} data-testid={`project-form-development-phase-${phase}`} />
             {t(`projects.search.phase.${phase}`)}
           </label>)}</div>
         </Field>
         <Field className="mb-4" label={t('projects.search.method')}>
-          <select className="h-9 border border-border bg-surface px-3 text-body text-fg" value={values.developmentMethod ?? ''} onChange={event => update({ developmentMethod: event.currentTarget.value })} data-testid="project-form-development-method">
+          <Select value={values.developmentMethod ?? ''} onChange={event => update({ developmentMethod: event.currentTarget.value })} data-testid="project-form-development-method">
             <option value="">{t('projects.search.any')}</option>{PROJECT_DEVELOPMENT_METHODS.map(value => <option key={value} value={value}>{t(`projects.search.method.${value}`)}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field className="mb-4" label={t('projects.search.utilization')}>
           <Input type="number" min={1} max={100} value={values.utilizationRate ?? ''} onChange={event => update({ utilizationRate: event.currentTarget.value })} data-testid="project-form-utilization-rate" />

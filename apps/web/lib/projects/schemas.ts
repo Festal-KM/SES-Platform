@@ -182,9 +182,9 @@ export const createProjectBodySchema = z.object({
   unitPriceMin: projectFields.unitPriceMin.default(null),
   unitPriceMax: projectFields.unitPriceMax.default(null),
   prefecture: projectFields.prefecture.default(null),
-  developmentPhases: z.array(z.enum(PROJECT_DEVELOPMENT_PHASES)).max(7).default([]),
-  developmentMethod: z.enum(PROJECT_DEVELOPMENT_METHODS).nullable().default(null),
-  utilizationRate: z.number().int().min(1).max(100).nullable().default(null),
+  developmentPhases: z.array(z.enum(PROJECT_DEVELOPMENT_PHASES)).max(7).optional(),
+  developmentMethod: z.enum(PROJECT_DEVELOPMENT_METHODS).nullable().optional(),
+  utilizationRate: z.number().int().min(1).max(100).nullable().optional(),
   remoteMode: projectFields.remoteMode.default(null),
   // ✅ 2026-10-16: 既定は「未設定」/「自社案件」（DB の既定と一致させる）。
   category: projectFields.category.default(null),
