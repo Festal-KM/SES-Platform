@@ -468,6 +468,5 @@ export { BrandLogo } from './components/sidebar.js';
 
 export { SegmentedControl } from './components/segmented-control.js';
 
-export { POPOVER_PANEL_ABOVE_CLASSES } from './lib/overlay-classes.js';
 
 export { SEARCH_KEYWORD_CHIP_CLASSES } from './lib/control-classes.js';

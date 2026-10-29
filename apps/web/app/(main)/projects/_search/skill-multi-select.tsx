@@ -39,8 +39,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import {
   Checkbox,
-  POPOVER_PANEL_END_CLASSES,
-  POPOVER_PANEL_ABOVE_CLASSES,
   Badge,
   FOCUS_RING_CLASSES,
   Icon,
@@ -177,8 +175,7 @@ export function SkillMultiSelect({
   readonly testIdPrefix: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [alignEnd, setAlignEnd] = useState(false);
-  const [above, setAbove] = useState(false);
+  const [placement, setPlacement] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<SkillPopoverMode>('ALL');
   const [keyword, setKeyword] = useState('');
@@ -189,16 +186,24 @@ export function SkillMultiSelect({
   const panelId = useId();
   const [visible, setVisible] = useState<number | null>(null);
 
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     if (!open) return;
     const position = (): void => {
       const rect = triggerRef.current?.getBoundingClientRect(); const panel = panelRef.current;
       if (!rect || !panel) return;
-      setAlignEnd(rect.left + panel.offsetWidth > window.innerWidth - 16);
-      setAbove(window.innerHeight - rect.bottom < panel.offsetHeight && rect.top > panel.offsetHeight);
+      const maxHeight = Math.max(0, window.innerHeight - 32);
+      const width = Math.min(panel.offsetWidth, window.innerWidth - 32);
+      const height = Math.min(panel.offsetHeight, maxHeight);
+      const desiredLeft = Math.max(16, Math.min(rect.left, window.innerWidth - 16 - width));
+      const availableBelow = window.innerHeight - rect.bottom;
+      const preferredTop = availableBelow >= height + 4 ? rect.bottom + 4 : rect.top - height - 4;
+      const desiredTop = Math.max(16, Math.min(preferredTop, window.innerHeight - 16 - height));
+      const next = { left: desiredLeft - rect.left, top: desiredTop - rect.top, maxHeight };
+      setPlacement(current => current?.left === next.left && current.top === next.top && current.maxHeight === maxHeight ? current : next);
     };
-    position(); window.addEventListener('resize', position); window.addEventListener('scroll', position, true);
-    return () => { window.removeEventListener('resize', position); window.removeEventListener('scroll', position, true); };
+    position(); const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(position); if (panelRef.current) observer?.observe(panelRef.current);
+    window.addEventListener('resize', position); window.addEventListener('scroll', position, true);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', position); window.removeEventListener('scroll', position, true); };
   }, [open]);
 
   // 🔴 **並びは辞書の順のまま**（指示書「選択するたびに行順を並べ替えて、クリック対象を
@@ -421,7 +426,8 @@ export function SkillMultiSelect({
         <div
           id={panelId}
           ref={panelRef}
-          className={cn(alignEnd ? POPOVER_PANEL_END_CLASSES : POPOVER_PANEL_CLASSES, above ? POPOVER_PANEL_ABOVE_CLASSES : null)}
+          className={POPOVER_PANEL_CLASSES}
+          style={placement ? { ...placement, right: 'auto', marginTop: 0 } : undefined}
           data-testid={`${testIdPrefix}skills-panel`}
         >
           {/* 上部: 32px の検索欄（指示書 §3）。🔴 `name` を持たせない（URL に乗せない）。 */}
