@@ -231,7 +231,7 @@ export function ActiveFilterBar({
 
   return (
     <div className={cn(FILTER_SUMMARY_BAR_CLASSES, 'flex-col items-stretch')} data-testid={`${testIdPrefix}summary`}>
-      <div className={FILTER_SUMMARY_CHIPS_CLASSES}>
+      <div className={cn(FILTER_SUMMARY_CHIPS_CLASSES, compact ? 'flex-wrap overflow-visible' : null)}>
         <span className="shrink-0 text-xs text-fg-muted">{messages.label}</span>
         {chips.length === 0 ? (
           <span className="truncate text-xs text-fg-muted" data-testid={`${testIdPrefix}summary-empty`}>
@@ -239,7 +239,7 @@ export function ActiveFilterBar({
           </span>
         ) : (
           // 🔴 `relative` は計測用の行（`absolute`）の基準点である。
-          <div ref={rowRef} className="relative flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+          <div ref={rowRef} className={cn('relative flex min-w-0 flex-1 items-center gap-2 overflow-hidden', compact ? 'min-w-24' : null)}>
             {chips.slice(0, shown).map((chip) => chipBadge(chip, false))}
             {hidden.length > 0 ? (
               <div ref={overflowRef} className="relative shrink-0">
@@ -301,12 +301,12 @@ export function ActiveFilterBar({
           </span>
         ) : null}
         <Tooltip content={messages.clear}>
-          <Button type="button" variant="secondary" size="sm" className="mr-auto" aria-label={messages.clear}
+          <Button type="button" variant="secondary" className="mr-auto" aria-label={messages.clear}
             data-testid={`${testIdPrefix}clear`} onClick={onClear}><Icon name="filter-x" />{t('projects.search.clearAll')}</Button>
         </Tooltip>
-        {onCancel ? <Button type="button" variant="secondary" size="sm" onClick={onCancel} data-testid={`${testIdPrefix}cancel-search`}>{t('projects.search.cancel')}</Button> : null}
+        {onCancel ? <Button type="button" variant="secondary" onClick={onCancel} data-testid={`${testIdPrefix}cancel-search`}>{t('projects.search.cancel')}</Button> : null}
         <Tooltip content={messages.submit}>
-          <Button type="submit" variant="primary" size="sm" aria-label={messages.submit} aria-busy={submitting}
+          <Button type="submit" variant="primary" aria-label={messages.submit} aria-busy={submitting}
             data-testid={`${testIdPrefix}search`}><Icon name="search" />{t('projects.search.submit')}</Button>
         </Tooltip>
       </div> : null}

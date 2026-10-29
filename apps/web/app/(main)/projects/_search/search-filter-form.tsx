@@ -282,7 +282,7 @@ export function SearchFilterForm({
         {!draft.utilizationBand && (draft.utilizationMin || draft.utilizationMax) ? <p className="m-0 text-xs text-fg-muted">{t('projects.search.legacyUtilization')}</p> : null}
       </Field>
     </div>
-    <KeywordGroups openRequest={openDetailsRequest} draft={draft} onChange={onChange} onComposingChange={onComposingChange} testIdPrefix={testIdPrefix} />
+    <KeywordGroups compact={columns < 3} openRequest={openDetailsRequest} draft={draft} onChange={onChange} onComposingChange={onComposingChange} testIdPrefix={testIdPrefix} />
     </div>
   );
 }

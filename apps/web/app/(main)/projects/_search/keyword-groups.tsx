@@ -11,7 +11,8 @@ function readGroups(draft: ProjectSearchDraft): ProjectKeywordGroup[] {
   return groups.length ? groups : [{ mode: 'OR', terms: [] }];
 }
 
-export function KeywordGroups({ openRequest = 0, draft, onChange, onComposingChange, testIdPrefix }: {
+export function KeywordGroups({ compact = false, openRequest = 0, draft, onChange, onComposingChange, testIdPrefix }: {
+  readonly compact?: boolean;
   readonly openRequest?: number;
   readonly draft: ProjectSearchDraft;
   readonly onChange: (patch: Partial<ProjectSearchDraft>) => void;
@@ -58,23 +59,23 @@ export function KeywordGroups({ openRequest = 0, draft, onChange, onComposingCha
       {active.length ? <span className="text-xs text-fg-muted">{active.length}{t('projects.search.groupCountSuffix')}</span> : null}
       {open ? <span className="min-w-0 flex-1 text-xs text-fg-muted">{t('projects.search.advancedLead')}</span> : null}
       {!open && expression ? <span className="min-w-0 flex-1 truncate text-xs text-fg-muted" title={expression}>{expression}</span> : null}
-      {groups.length < 10 ? <Button type="button" variant="secondary" size="sm" onClick={event => { event.preventDefault(); event.stopPropagation(); setOpen(true); setGroups(current => [...current, { mode: 'OR', terms: [] }]); }} data-testid={`${testIdPrefix}add-group`}>{t('projects.search.addGroup')}</Button> : null}
+      {groups.length < 10 ? <Button type="button" variant="secondary" size="sm" onClick={event => { event.preventDefault(); event.stopPropagation(); setOpen(true); setGroups(current => [...current, { mode: 'OR', terms: [] }]); }} data-testid={`${testIdPrefix}add-group`}><Icon name="plus" />{t('projects.search.addGroup')}</Button> : null}
       <Icon name="chevron-down" className={open ? 'ml-auto rotate-180' : 'ml-auto'} />
     </summary>
     <div className="flex min-w-0 flex-col gap-2 py-2">
 
       {groups.map((group, index) => <div key={index}>
-        <div className="flex min-w-0 flex-wrap items-center gap-3 rounded-md border border-border px-3 py-2" data-testid={`${testIdPrefix}keyword-row-${index}`}>
+        <div className={cn('min-w-0 gap-2 rounded-md border border-border px-3 py-2', compact ? 'grid grid-cols-2 items-center' : 'flex flex-wrap items-center gap-3')} data-testid={`${testIdPrefix}keyword-row-${index}`}>
           <strong className="shrink-0 text-cell">{t('projects.search.group')}{index + 1}</strong>
-          <fieldset className="flex min-w-0 flex-wrap items-center gap-3">
+          <fieldset className={cn('flex min-w-0 flex-wrap items-center gap-3', compact ? 'order-2 col-span-2' : null)}>
             <legend className="sr-only">{t('projects.search.groupMode')}{index + 1}</legend>
-            {(['OR', 'AND'] as const).map(mode => <label key={mode} className="flex cursor-pointer items-center gap-1 text-xs">
+            {(['OR', 'AND'] as const).map(mode => <label key={mode} className="flex cursor-pointer items-center gap-1 whitespace-nowrap text-xs">
               <Radio form="" name={`${testIdPrefix}mode-${index}`} value={mode} checked={group.mode === mode}
                 onChange={() => update(groups.map((item, i) => i === index ? { ...item, mode } : item))} data-testid={`${testIdPrefix}keyword-mode-${index}-${mode}`} />
               {t(mode === 'OR' ? 'projects.search.modeOR' : 'projects.search.modeAND')}
             </label>)}
           </fieldset>
-          <Field as="div" className="min-w-0 flex-1" labelClassName="sr-only" label={`${t('projects.search.group')}${index + 1}`}>
+          <Field as="div" className={cn('min-w-0 flex-1', compact ? 'order-3 col-span-2' : null)} labelClassName="sr-only" label={`${t('projects.search.group')}${index + 1}`}>
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               {group.terms.map((term, termIndex) => <span key={term} className="flex min-w-0 items-center gap-2">
                 {termIndex > 0 ? <span className="text-xs text-brand">{group.mode}</span> : null}
@@ -89,7 +90,7 @@ export function KeywordGroups({ openRequest = 0, draft, onChange, onComposingCha
                 onBlur={() => addTerm(index)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); addTerm(index); } }} />
             </div>
           </Field>
-          <IconButton type="button" variant="ghost" size="sm" icon={<Icon name="trash" />} aria-label={`${t('projects.search.removeGroup')} ${index + 1}`}
+          <IconButton type="button" variant="ghost" size="sm" className={compact ? 'order-1 justify-self-end' : undefined} icon={<Icon name="trash" />} aria-label={`${t('projects.search.removeGroup')} ${index + 1}`}
             onClick={() => { const next = groups.filter((_, i) => i !== index); update(next.length ? next : [{ mode: 'OR', terms: [] }]); setPending({}); }}
             data-testid={`${testIdPrefix}remove-group-${index}`} />
         </div>
