@@ -588,7 +588,7 @@ export function SearchPanel({
             </>
           }
           items={[
-            { value: 'SEARCH', label: <span className="flex items-center gap-2 text-lg font-semibold"><Icon name="search" />{t('projects.search.title')}</span>, content: collapsible },
+            { value: 'SEARCH', label: t('projects.search.title'), icon: 'search', content: collapsible },
             {
               value: 'SAVED',
               // 🔴 **件数はタブの語に入れる**（指示書 §2「保存した条件 N」）。
