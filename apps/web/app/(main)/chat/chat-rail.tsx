@@ -31,22 +31,26 @@ export type ChatRailProps = {
   readonly showSaved?: boolean;
 };
 
-/** 会社の印は列を畳んだときだけ残す。開いた列では社名で見分ける。 */
+/**
+ * 種類の印（一覧のアバターと同じ形・色の小さな四角・丸）。
+ * ✅ 2026-10-29（紺野「色分けしてあったほうがよかった」）: #167（5b9c539）で無彩色・畳んだ列だけにした印を元に戻し、
+ *    すべての項目に色つきの印を出す（`chat-thread-list.tsx` の `AVATAR_KIND_CLASSES` と同じ塗り）。
+ */
 type MarkKind = 'all' | 'unread' | 'dm' | 'group' | 'saved' | 'company' | 'project' | 'contacts';
 const MARK_CLASSES: Readonly<Record<MarkKind, string>> = {
-  all: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
-  unread: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
-  dm: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
-  group: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
-  saved: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
-  company: 'hidden rounded-md bg-neutral-bg text-fg-muted md:in-[[data-collapsed=true]]:inline-flex',
-  project: 'inline-flex rounded-md bg-neutral-bg text-fg-muted',
-  contacts: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
+  all: 'rounded-md bg-fg-muted text-bg',
+  unread: 'rounded-md bg-info text-bg',
+  dm: 'rounded-full bg-brand text-brand-fg',
+  group: 'rounded-full bg-success text-bg',
+  saved: 'rounded-md bg-brand text-brand-fg',
+  company: 'rounded-md bg-fg text-bg',
+  project: 'rounded-md bg-warning text-bg',
+  contacts: 'rounded-full bg-success text-bg',
 };
 
 function Mark({ kind, text }: { readonly kind: MarkKind; readonly text: string }) {
   return (
-    <span aria-hidden="true" className={cn('h-6 w-6 shrink-0 items-center justify-center text-xs font-bold', MARK_CLASSES[kind])}>
+    <span aria-hidden="true" className={cn('inline-flex h-6 w-6 shrink-0 items-center justify-center text-xs font-bold', MARK_CLASSES[kind])}>
       {text}
     </span>
   );

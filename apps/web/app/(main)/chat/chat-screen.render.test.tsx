@@ -666,13 +666,13 @@ describe('⑪: 会社ごとの木・検索・並べ替え（2026-10-14、チャ�
     expect(html).toContain(`chat-thread-row-${CHAT_A}`);
     expect(html).toContain(`chat-thread-row-${THREAD_PROJECT}`);
     expect(classTokensOf(html, `chat-thread-row-${THREAD_PROJECT}`)).not.toContain('pl-6');
-    // ✅ 2026-10-20: 種類は無彩色のアバター（案件 = 「#」、会社 = 頭文字）で分ける。会社・案件の行に札を付けない。
+    // ✅ 2026-10-29: 種類は色つきのアバター（案件 = 橙の「#」、会社 = 墨色の頭文字）で分ける。会社・案件の行に札を付けない。
     const projectRow = new RegExp(`<li data-testid="chat-thread-row-${THREAD_PROJECT}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
     const companyRow = new RegExp(`<li data-testid="chat-thread-row-${CHAT_A}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
-    expect(projectRow).toContain('bg-neutral-bg');
-    expect(projectRow).not.toContain('bg-warning');
+    expect(projectRow).toContain('bg-warning');
+    expect(projectRow).not.toContain('bg-neutral-bg');
     expect(projectRow).toContain('>#<');
-    expect(companyRow).toContain('bg-neutral-bg');
+    expect(companyRow).toContain('rounded-md bg-fg text-bg');
     expect(projectRow).not.toContain(t('chat.tag.external'));
     expect(companyRow).not.toContain(t('chat.tag.external'));
     // 「チャット / スレッド」の文字は出さない（見た目で分ける）。

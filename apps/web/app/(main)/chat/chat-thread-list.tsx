@@ -64,12 +64,17 @@ const KIND_MESSAGE_KEYS = {
   GROUP: 'chat.thread.kind.GROUP',
 } as const satisfies Readonly<Record<ChatThreadKind, `chat.thread.kind.${ChatThreadKind}`>>;
 
-/** 種類は形と文字で見分け、現在地・未読に色の強調を残す。 */
+/**
+ * 🔴 種類ごとのアバターの形と色。お気に入り・左の列も同じ。
+ * ✅ 2026-10-20（紺野「色もなんか一緒」）: 塗りつぶしにした。人 = 青の丸 / グループ = 緑の丸 / 取引先の会社 = 墨色の角丸 /
+ *    案件 = 橙の角丸に「#」。使う色は既存のトークンだけ。
+ * ✅ 2026-10-29（紺野「色分けしてあったほうがよかった」）: #167（5b9c539）で無彩色にしたのを元に戻した。
+ */
 export const AVATAR_KIND_CLASSES: Readonly<Record<ChatThreadKind, string>> = {
-  DM: 'bg-neutral-bg text-fg',
-  GROUP: 'bg-neutral-bg text-fg',
-  COMPANY: 'rounded-md bg-neutral-bg text-fg',
-  PROJECT: 'rounded-md bg-neutral-bg text-fg',
+  DM: 'bg-brand text-brand-fg',
+  GROUP: 'bg-success text-bg',
+  COMPANY: 'rounded-md bg-fg text-bg',
+  PROJECT: 'rounded-md bg-warning text-bg',
 };
 
 const TAG_CLASSES = 'shrink-0 rounded-xs px-1 text-xs';

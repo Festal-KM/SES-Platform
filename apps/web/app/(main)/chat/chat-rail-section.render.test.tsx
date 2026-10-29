@@ -26,14 +26,15 @@ describe('畳んだ左の列の節', () => {
 });
 
 describe('会社の印', () => {
-  it('開いた列は社名だけ、畳んだ列では頭文字を残す', () => {
+  it('会社の頭文字の印（墨色）を開いた列でも出し、畳んだ列では社名を読み上げ用に残す', () => {
     const html = renderToStaticMarkup(createElement(ChatRail, {
       groups: [{ key: 'company-chat', counterpartyName: '株式会社ダミーチャーリー', chat: null, threads: [], fastReply: false }],
       rooms: [], unreadCounts: {}, filter: { kind: 'all' }, showContacts: false,
     }));
     expect(html).toContain('data-testid="chat-rail-company-company-chat"');
     expect(html).toContain('title="株式会社ダミーチャーリー"');
-    expect(html).toMatch(/<span aria-hidden="true" class="[^"]*hidden rounded-md bg-neutral-bg text-fg-muted md:in-\[\[data-collapsed=true\]\]:inline-flex">ダ<\/span>/);
+    expect(html).toMatch(/<span aria-hidden="true" class="[^"]*inline-flex[^"]*rounded-md bg-fg text-bg">ダ<\/span>/);
+    expect(html).not.toContain('bg-neutral-bg');
     expect(html).toContain('truncate md:in-[[data-collapsed=true]]:sr-only">ダミーチャーリー</span>');
   });
 });
