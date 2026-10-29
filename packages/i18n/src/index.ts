@@ -3118,6 +3118,7 @@ const ja = {
   'projects.search.expression': '検索式',
   'projects.search.groupCountSuffix': 'グループ',
   'projects.search.or': 'OR',
+  'projects.search.advancedLead': 'キーワードをグループ化して、AND/OR条件で検索できます。',
   'projects.search.advancedHint': 'グループ内はAND/ORを選択。グループ同士はANDで結合します。',
   'projects.search.advancedTargets': '検索対象：案件名・業務概要・スキル・公開メモ（部分一致）。自社ユーザーは内部備考も対象。',
   'projects.search.skillTarget': '必須・尚可スキルを対象',

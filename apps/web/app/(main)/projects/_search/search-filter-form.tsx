@@ -167,7 +167,7 @@ export function SearchFilterForm({
         />
       </Field>
 
-      <Field as="div" labelClassName="text-xs text-fg-muted" label={messages.skill} description={t('projects.search.skillTarget')}>
+      <Field as="div" labelClassName="text-xs text-fg-muted" label={<span className="flex items-center gap-2" title={t('projects.search.skillTarget')}>{messages.skill}<span className="text-micro font-normal text-fg-muted">{t('projects.search.multiOR')}</span></span>}>
         <SkillMultiSelect
           options={options.skillOptions}
           values={draft.skills}
@@ -179,7 +179,7 @@ export function SearchFilterForm({
         />
       </Field>
 
-      <Field as="div" labelClassName="text-xs text-fg-muted" label={t('projects.search.phase')}>
+      <Field as="div" labelClassName="text-xs text-fg-muted" label={<span className="flex items-center gap-2">{t('projects.search.phase')}<span className="text-micro font-normal text-fg-muted">{t('projects.search.multiOR')}</span></span>}>
         <SkillMultiSelect options={PROJECT_DEVELOPMENT_PHASES.map(value => ({ value, label: t(`projects.search.phase.${value}`), shortLabel: t(`projects.search.phaseShort.${value}`) }))}
           values={draft.developmentPhases ?? []} onChange={developmentPhases => onChange({ developmentPhases })}
           messages={{ ...messages.skillMessages, placeholder: t('projects.search.phasePlaceholder'), triggerLabel: t('projects.search.phase'), searchLabel: t('projects.search.phase'), searchPlaceholder: t('projects.search.phasePlaceholder') }}

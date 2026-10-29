@@ -49,16 +49,18 @@ export function KeywordGroups({ draft, onChange, onComposingChange, testIdPrefix
   const active = groups.filter(group => group.terms.length);
   const expression = active.map(group => group.terms.length > 1 ? `(${group.terms.join(` ${group.mode} `)})` : group.terms[0]).join(` ${t('projects.search.and')} `);
   return <details className="border-t border-border pt-3" open={open} onToggle={event => setOpen(event.currentTarget.open)} data-testid={`${testIdPrefix}advanced`}>
-    <summary className="flex cursor-pointer flex-wrap items-center gap-3 bg-bg-subtle px-3 py-3 text-body text-fg">
+    <summary className="flex cursor-pointer flex-wrap items-center gap-3 bg-bg-subtle px-3 py-2 text-body text-fg" title={t('projects.search.advancedTargets')}>
       <span className="font-semibold">{t('projects.search.advanced')}</span>
       {active.length ? <span className="text-xs text-fg-muted">{active.length}{t('projects.search.groupCountSuffix')}</span> : null}
-      {!open && expression ? <span className="min-w-0 flex-1 break-words text-xs text-fg-muted">{expression}</span> : null}
+      {open ? <span className="min-w-0 flex-1 text-xs text-fg-muted">{t('projects.search.advancedLead')}</span> : null}
+      {!open && expression ? <span className="min-w-0 flex-1 truncate text-xs text-fg-muted" title={expression}>{expression}</span> : null}
+      {groups.length < 10 ? <Button type="button" variant="secondary" size="sm" onClick={event => { event.preventDefault(); event.stopPropagation(); setOpen(true); setGroups(current => [...current, { mode: 'OR', terms: [] }]); }} data-testid={`${testIdPrefix}add-group`}>{t('projects.search.addGroup')}</Button> : null}
       <Icon name="chevron-down" className={open ? 'ml-auto rotate-180' : 'ml-auto'} />
     </summary>
-    <div className="flex min-w-0 flex-col gap-3 py-3">
-      <p className="m-0 text-xs text-fg-muted">{t('projects.search.advancedTargets')}<br />{t('projects.search.advancedHint')}</p>
+    <div className="flex min-w-0 flex-col gap-2 py-2">
+
       {groups.map((group, index) => <div key={index}>
-        <div className="flex min-w-0 flex-wrap items-center gap-3 rounded-md border border-border p-3" data-testid={`${testIdPrefix}keyword-row-${index}`}>
+        <div className="flex min-w-0 flex-wrap items-center gap-3 rounded-md border border-border px-3 py-2" data-testid={`${testIdPrefix}keyword-row-${index}`}>
           <strong className="shrink-0 text-cell">{t('projects.search.group')}{index + 1}</strong>
           <fieldset className="flex min-w-0 flex-wrap items-center gap-3">
             <legend className="sr-only">{t('projects.search.groupMode')}{index + 1}</legend>
@@ -89,7 +91,7 @@ export function KeywordGroups({ draft, onChange, onComposingChange, testIdPrefix
         </div>
       </div>)}
       {error ? <p role="alert" className="m-0 text-xs text-danger">{error}</p> : null}
-      {groups.length < 10 ? <div><Button type="button" variant="secondary" size="sm" onClick={() => setGroups(current => [...current, { mode: 'OR', terms: [] }])} data-testid={`${testIdPrefix}add-group`}>{t('projects.search.addGroup')}</Button></div> : null}
+
       {expression ? <p className="m-0 break-words bg-bg-subtle p-3 text-xs text-fg" data-testid={`${testIdPrefix}expression`}>{t('projects.search.expression')}{t('projects.search.expressionSeparator')}{expression}</p> : null}
     </div>
   </details>;
