@@ -312,7 +312,9 @@ export function SearchPanel({
   // 🔴🔴 条件を入れた端から絞り込む（ファイル冒頭の 🔴🔴）
   // ==========================================================================
   // 🔴 **止める条件を 1 か所に集める。** 散らすと「なぜ今は走らないのか」が追えなくなる。
+  const unfinishedKeywords = draft.q.trimEnd().endsWith('|') || (draft.keywordGroups ? (JSON.parse(draft.keywordGroups) as string[][]).some(group => group.length > 1 && !group.at(-1)?.trim()) : false);
   const autoApplyBlocked =
+    unfinishedKeywords ||
     // 変換の最中（未確定の綴りで検索しない）
     composing ||
     // すでに遷移している（終わってから次を考える。同じ URL へ二度行かない）
@@ -333,6 +335,9 @@ export function SearchPanel({
       draft.skills.length === applied.skills.length &&
       draft.skills.every((id) => applied.skills.includes(id));
     const settling =
+      (draft.keywordGroups ?? '') !== (applied.keywordGroups ?? '') ||
+      (draft.utilizationMin ?? '') !== (applied.utilizationMin ?? '') ||
+      (draft.utilizationMax ?? '') !== (applied.utilizationMax ?? '') ||
       draft.q !== applied.q ||
       draft.priceMin !== applied.priceMin ||
       draft.priceMax !== applied.priceMax ||

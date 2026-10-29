@@ -37,7 +37,11 @@
 //    あり、折りたたみ中かどうかに依らず常に hidden が要る）。ここに `name` を戻すと
 //    同じキーが 2 つ載って壊れる。
 
+import { useState } from 'react';
+import { t } from '@ses/i18n';
+import { PROJECT_DEVELOPMENT_PHASES, PROJECT_DEVELOPMENT_METHODS } from '@ses/domain';
 import {
+  Button,
   FILTER_GRID_CLASSES,
   FILTER_GRID_COLUMN_CLASSES,
   Field,
@@ -124,57 +128,20 @@ export function SearchFilterForm({
   readonly messages: SearchFilterFormMessages;
   readonly testIdPrefix: string;
 }) {
+  const [extraRows, setExtraRows] = useState(0);
+  const groups: string[][] = draft.keywordGroups ? JSON.parse(draft.keywordGroups) as string[][] : [];
+  const rowCount = Math.max(groups.length, extraRows);
+  const changeGroup = (index: number, value: string): void => {
+    const next = Array.from({ length: rowCount }, (_, i) => i === index ? value.split('|') : groups[i] ?? []);
+    const active = next;
+    onChange({ keywordGroups: active.length ? JSON.stringify(active) : '' });
+  };
   // 🔴 2 列・1 列のときは単価も 1 列ぶん（2 列のときに 2 列分を取ると行が単価だけになる）。
 
   return (
+    <div className="flex min-w-0 flex-col gap-3">
+    <p className="m-0 text-xs text-fg-muted">{t('projects.search.basic')}</p>
     <div className={cn(FILTER_GRID_CLASSES, FILTER_GRID_COLUMN_CLASSES[columns])}>
-      {/* 🔴 キーワードは**行全体**（指示書 §2 の図の 1 行目）。 */}
-      <Field label={messages.q} labelClassName="text-xs text-fg-muted">
-        <div className="relative">
-          <Icon
-            name="search"
-            className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-fg-muted"
-          />
-          <Input
-            type="search"
-            // 🔴🔴 **`name` を持つ**（水合前・JS 無しでも打った語がそのまま送られる）。
-            //    持たせないと、水合前の送信が**前の条件で静かに検索される**
-            //    （結果が変わらないのにエラーも出ない、最も分かりにくい壊れ方）。
-            //    `search-panel.tsx` は**この欄が使えないときだけ** hidden で補う。
-            // ⚠️ `name` を持つのは**キーワードと単価の 3 欄だけ**になった（2026-10-19）——
-            //    単一選択の 5 欄とスキルは `<div>` でネイティブのフォーム値を持たないため、
-            //    常に hidden 側が送る（ファイル冒頭の 🔴🔴）。
-            name={PROJECT_SEARCH_FIELD_NAMES.q}
-            className="pl-8"
-            value={draft.q}
-            placeholder={messages.qPlaceholder}
-            aria-label={messages.q}
-            data-testid={`${testIdPrefix}q`}
-            onChange={(event) => {
-              onChange({ q: event.currentTarget.value });
-            }}
-            // 🔴🔴 **変換の間は自動の絞り込みを止める**（上の `onComposingChange` の 🔴🔴）。
-            onCompositionStart={() => {
-              onComposingChange(true);
-            }}
-            onCompositionEnd={(event) => {
-              // 🔴 **確定した語をここでも取り込む。** ブラウザによっては
-              //    `compositionend` が最後の `change` より**後**に来るため、
-              //    これが無いと確定した 1 文字ぶんが条件から落ちることがある。
-              onChange({ q: event.currentTarget.value });
-              onComposingChange(false);
-            }}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter') return;
-              // 🔴🔴 **日本語変換の確定 Enter では検索しない**（指示書 §6）。
-              //    `isComposing` は変換中に `true` になる。これを見ないと、
-              //    「案件」と打って変換を確定しただけで検索が走る。
-              if (event.nativeEvent.isComposing) event.preventDefault();
-            }}
-          />
-        </div>
-      </Field>
-
       {/* 🔴 `as="div"` —— 引き金は `role="combobox"` の `<div>` であり、`<label>` では結べない
           （`Field` の既定は `<label>`。スキル欄と同じ扱いである）。読み上げ名は
           `aria-label` として `FilterSelect` に渡す。 */}
@@ -218,6 +185,17 @@ export function SearchFilterForm({
         />
       </Field>
 
+      <Field as="div" labelClassName="text-xs text-fg-muted" label={t('projects.search.phase')}>
+        <SkillMultiSelect options={PROJECT_DEVELOPMENT_PHASES.map(value => ({ value, label: t(`projects.search.phase.${value}`) }))}
+          values={draft.developmentPhases ?? []} onChange={developmentPhases => onChange({ developmentPhases })}
+          messages={{ ...messages.skillMessages, placeholder: t('projects.search.phasePlaceholder'), triggerLabel: t('projects.search.phase'), searchLabel: t('projects.search.phase'), searchPlaceholder: t('projects.search.phasePlaceholder') }}
+          testIdPrefix={`${testIdPrefix}phases-`} />
+      </Field>
+      <Field as="div" labelClassName="text-xs text-fg-muted" label={t('projects.search.method')}>
+        <FilterSelect options={[{ value: '', label: t('projects.search.any') }, ...PROJECT_DEVELOPMENT_METHODS.map(value => ({ value, label: t(`projects.search.method.${value}`) }))]}
+          value={draft.developmentMethod ?? ''} label={t('projects.search.method')} messages={messages.selectMessages}
+          testId={`${testIdPrefix}development-method`} onChange={developmentMethod => onChange({ developmentMethod })} />
+      </Field>
       <Field as="div" labelClassName="text-xs text-fg-muted" label={messages.remoteMode}>
         <FilterSelect
           options={options.remoteModeOptions}
@@ -301,6 +279,81 @@ export function SearchFilterForm({
           }}
         />
       </Field>
+      <Field as="div" labelClassName="text-xs text-fg-muted" label={t('projects.search.utilization')}>
+        <div className="flex items-center gap-2">
+          <Input type="number" min={1} max={100} value={draft.utilizationMin ?? ''} aria-label={t('projects.search.utilizationMin')}
+            data-testid={`${testIdPrefix}utilization-min`} onChange={event => onChange({ utilizationMin: event.currentTarget.value })} />
+          <span className="text-fg-muted">{messages.priceSeparator}</span>
+          <Input type="number" min={1} max={100} value={draft.utilizationMax ?? ''} aria-label={t('projects.search.utilizationMax')}
+            data-testid={`${testIdPrefix}utilization-max`} onChange={event => onChange({ utilizationMax: event.currentTarget.value })} />
+        </div>
+      </Field>
+    </div>
+    <details className="border-t border-border pt-3" open={draft.q !== '' || groups.length > 0 ? true : undefined} data-testid={`${testIdPrefix}advanced`}>
+      <summary className="cursor-pointer text-body text-fg">{t('projects.search.advanced')}</summary>
+      <div className="flex flex-col gap-3 py-3">
+        <p className="m-0 text-xs text-fg-muted">{t('projects.search.hint')}</p>
+      {/* 🔴 キーワードは**行全体**（指示書 §2 の図の 1 行目）。 */}
+      <Field label={t('projects.search.keywordGroup')} labelClassName="text-xs text-fg-muted">
+        <div className="relative">
+          <Icon
+            name="search"
+            className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-fg-muted"
+          />
+          <Input
+            type="search"
+            // 🔴🔴 **`name` を持つ**（水合前・JS 無しでも打った語がそのまま送られる）。
+            //    持たせないと、水合前の送信が**前の条件で静かに検索される**
+            //    （結果が変わらないのにエラーも出ない、最も分かりにくい壊れ方）。
+            //    `search-panel.tsx` は**この欄が使えないときだけ** hidden で補う。
+            // ⚠️ `name` を持つのは**キーワードと単価の 3 欄だけ**になった（2026-10-19）——
+            //    単一選択の 5 欄とスキルは `<div>` でネイティブのフォーム値を持たないため、
+            //    常に hidden 側が送る（ファイル冒頭の 🔴🔴）。
+            name={PROJECT_SEARCH_FIELD_NAMES.q}
+            className="pl-8"
+            value={draft.q}
+            placeholder={t('projects.search.keywordPlaceholder')}
+            aria-label={messages.q}
+            data-testid={`${testIdPrefix}q`}
+            onChange={(event) => {
+              onChange({ q: event.currentTarget.value });
+            }}
+            // 🔴🔴 **変換の間は自動の絞り込みを止める**（上の `onComposingChange` の 🔴🔴）。
+            onCompositionStart={() => {
+              onComposingChange(true);
+            }}
+            onCompositionEnd={(event) => {
+              // 🔴 **確定した語をここでも取り込む。** ブラウザによっては
+              //    `compositionend` が最後の `change` より**後**に来るため、
+              //    これが無いと確定した 1 文字ぶんが条件から落ちることがある。
+              onChange({ q: event.currentTarget.value });
+              onComposingChange(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter') return;
+              // 🔴🔴 **日本語変換の確定 Enter では検索しない**（指示書 §6）。
+              //    `isComposing` は変換中に `true` になる。これを見ないと、
+              //    「案件」と打って変換を確定しただけで検索が走る。
+              if (event.nativeEvent.isComposing) event.preventDefault();
+            }}
+          />
+        </div>
+      </Field>
+
+
+        {Array.from({ length: rowCount }, (_, index) => <div key={index} className="flex min-w-0 items-center gap-2">
+          <span className="text-xs text-fg-muted">{t('projects.search.and')}</span>
+          <Input value={(groups[index] ?? []).join('|')} placeholder={t('projects.search.keywordPlaceholder')}
+            aria-label={`${t('projects.search.keywordGroup')} ${index + 2}`} data-testid={`${testIdPrefix}keyword-group-${index}`}
+            onCompositionStart={() => onComposingChange(true)} onCompositionEnd={() => onComposingChange(false)}
+            onChange={event => changeGroup(index, event.currentTarget.value)} />
+          <Button type="button" variant="ghost" size="sm" onClick={() => {
+            const next = groups.filter((_, i) => i !== index); setExtraRows(Math.max(0, rowCount - 1)); onChange({ keywordGroups: next.length ? JSON.stringify(next) : '' });
+          }} data-testid={`${testIdPrefix}remove-group-${index}`}>{t('projects.search.removeGroup')}</Button>
+        </div>)}
+        {rowCount < 9 ? <div><Button type="button" variant="secondary" size="sm" onClick={() => setExtraRows(rowCount + 1)} data-testid={`${testIdPrefix}add-group`}>{t('projects.search.addGroup')}</Button></div> : null}
+      </div>
+    </details>
     </div>
   );
 }

@@ -658,6 +658,9 @@ model EngineerCareer {
 model Project {
   id                 String    @id @default(uuid(7)) @db.Uuid
   tenantId           String    @map("tenant_id") @db.Uuid
+  developmentPhases String[] @default([]) @map("development_phases")
+  developmentMethod String? @map("development_method")
+  utilizationRate Int? @map("utilization_rate")
   name               String
   endClientName      String?   @map("end_client_name") // 🔴 内部限定。公開表示・LLM・運営者に出さない
   internalUnitPrice  Decimal?  @map("internal_unit_price") @db.Decimal(12, 2) // 🔴 内部限定（同上）

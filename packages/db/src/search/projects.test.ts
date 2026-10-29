@@ -62,6 +62,8 @@ describe('検索条件 → 述語（`F-015` の入力）', () => {
           OR: [
             { name: { contains: '基幹', mode: 'insensitive' } },
             { publicSummary: { contains: '基幹', mode: 'insensitive' } },
+            { publicMemo: { contains: '基幹', mode: 'insensitive' } },
+            { requirements: { some: { OR: [{ freeText: { contains: '基幹', mode: 'insensitive' } }, { skill: { name: { contains: '基幹', mode: 'insensitive' } } }] } } },
           ],
         },
       ],
@@ -75,12 +77,16 @@ describe('検索条件 → 述語（`F-015` の入力）', () => {
           OR: [
             { name: { contains: '基幹', mode: 'insensitive' } },
             { publicSummary: { contains: '基幹', mode: 'insensitive' } },
+            { publicMemo: { contains: '基幹', mode: 'insensitive' } },
+            { requirements: { some: { OR: [{ freeText: { contains: '基幹', mode: 'insensitive' } }, { skill: { name: { contains: '基幹', mode: 'insensitive' } } }] } } },
           ],
         },
         {
           OR: [
             { name: { contains: '刷新', mode: 'insensitive' } },
             { publicSummary: { contains: '刷新', mode: 'insensitive' } },
+            { publicMemo: { contains: '刷新', mode: 'insensitive' } },
+            { requirements: { some: { OR: [{ freeText: { contains: '刷新', mode: 'insensitive' } }, { skill: { name: { contains: '刷新', mode: 'insensitive' } } }] } } },
           ],
         },
       ],
@@ -316,5 +322,27 @@ describe('🔴 F-015 AC-3: 既定の並びが決定的である', () => {
         assertStatusPriority(['OPEN', 'CLOSED', 'ARCHIVED' as ProjectStatus]);
       }).toThrow(/PROJECT_STATUS_LIST_PRIORITY/);
     });
+  });
+});
+
+describe('基本検索とグループ検索', () => {
+  it('フェーズはOR、方式と稼働率はANDで組む', () => {
+    expect(projectSearchWhere({ developmentPhases: ['BASIC_DESIGN', 'DETAIL_DESIGN'], developmentMethod: 'AGILE', utilizationMin: 60, utilizationMax: 80 })).toEqual({ developmentPhases: { hasSome: ['BASIC_DESIGN', 'DETAIL_DESIGN'] }, developmentMethod: 'AGILE', utilizationRate: { gte: 60, lte: 80 } });
+  });
+  it('グループ内はOR、グループ同士はAND。必須・尚可の両方を対象とする', () => {
+    const where = projectSearchWhere({ q: 'Java | Springboot', keywordGroups: JSON.stringify([['基本設計', '内部設計'], ['マネジメント']]) });
+    expect(where.AND).toHaveLength(3);
+    const groups = where.AND?.map(group => JSON.stringify(group));
+    expect(groups?.filter(group => group.includes('基本設計') && group.includes('内部設計'))).toHaveLength(1);
+    expect(groups?.filter(group => group.includes('Java') && group.includes('Springboot'))).toHaveLength(1);
+    expect(JSON.stringify(where)).toContain('publicMemo');
+    expect(JSON.stringify(where)).toContain('requirements');
+    expect(JSON.stringify(where)).not.toContain('kind');
+    expect(JSON.stringify(where)).not.toContain('remarks');
+  });
+  it('内部備考は認証文脈から許可した場合だけ検索する', () => {
+    expect(JSON.stringify(projectSearchWhere({ q: '社内連絡' }))).not.toContain('remarks');
+    expect(JSON.stringify(projectSearchWhere({ q: '社内連絡', searchInternalRemarks: true }))).toContain('remarks');
+    expect(JSON.stringify(projectSearchWhere({ q: '社内連絡', searchInternalRemarks: true }))).not.toContain('endClientName');
   });
 });

@@ -29,7 +29,7 @@ import {
   type ProjectStatus,
   type RemoteMode,
 } from '../schema-value-sets.js';
-import { freeWordAllOf, type FreeWordFilter } from './free-word.js';
+import { freeWordAllOf, freeWordFilter, type FreeWordFilter } from './free-word.js';
 import { unitPriceOverlapConditions } from './unit-price-range.js';
 
 /**
@@ -70,7 +70,12 @@ export type ProjectWhereFragment = {
    *    （migration 20260903050000 の `project_requirements_c4_select`）ので、
    *    パートナー文脈では**自社に公開された案件の要件しか結合されない**。
    */
-  requirements?: { some: { skillId: { in: string[] } } };
+  requirements?: { some: { skillId?: { in: string[] }; OR?: { freeText?: FreeWordFilter; skill?: { name: FreeWordFilter } }[] } };
+  publicMemo?: FreeWordFilter;
+  remarks?: FreeWordFilter;
+  developmentPhases?: { hasSome: string[] };
+  developmentMethod?: string;
+  utilizationRate?: { gte?: number; lte?: number };
   OR?: ProjectWhereFragment[];
   /**
    * 🔴 **単価レンジの 2 条件はここに入る**（`OR` ではなく `AND`）。フリーワードが
@@ -87,6 +92,13 @@ export type ProjectWhereFragment = {
  *    この型に構造的に適合する（`EngineerSearchCriteria` と同じ契約の結び方）。
  */
 export type ProjectSearchCriteria = {
+  readonly developmentPhases?: readonly string[];
+  readonly developmentMethod?: string;
+  readonly utilizationMin?: number;
+  readonly utilizationMax?: number;
+  readonly keywordGroups?: string;
+  /** 認証文脈からだけ指定する。リクエストから受け取らない。 */
+  readonly searchInternalRemarks?: boolean;
   readonly status?: ProjectStatus;
   /** 開始日が**この日以降**（`YYYY-MM-DD`）。 */
   readonly startFrom?: string;
@@ -269,12 +281,22 @@ export function projectSearchWhere(criteria: ProjectSearchCriteria): ProjectWher
     //    人材検索（`#15`）と同じものを通る（T-06-03 の申し送りの決着）。
     ...unitPriceOverlapConditions(criteria),
   ];
-  if (criteria.q !== undefined) {
-    // ✅ **2026-10-16: 複数語 AND**（語は AND、列は OR。`freeWordAllOf` の 🔴）。
-    //    🔴 空白だけの入力は `null`（条件なし）になる —— 空語の `contains` は全件に一致するので、
-    //    「絞り込んだのに全件」を作らない。
-    const freeWord = freeWordAllOf(criteria.q, PROJECT_FREE_WORD_COLUMNS);
-    if (freeWord !== null) and.push(...freeWord.AND);
+  const keywordCondition = (term: string): ProjectWhereFragment => ({ OR: [
+    { name: freeWordFilter(term) }, { publicSummary: freeWordFilter(term) },
+    { publicMemo: freeWordFilter(term) },
+    { requirements: { some: { OR: [{ freeText: freeWordFilter(term) }, { skill: { name: freeWordFilter(term) } }] } } },
+    ...(criteria.searchInternalRemarks === true ? [{ remarks: freeWordFilter(term) }] : []),
+  ] });
+  const groups: string[][] = criteria.keywordGroups ? JSON.parse(criteria.keywordGroups) as string[][] : [];
+  if (criteria.q?.includes('|')) groups.unshift(criteria.q.split('|').map(term => term.trim()).filter(Boolean));
+  for (const group of groups) {
+    const terms = group.map(term => term.trim()).filter(Boolean);
+    if (terms.length) and.push({ OR: terms.map(keywordCondition) });
+  }
+  // 従来の空白区切りANDも、新しい検索対象で一貫して照合する。
+  if (criteria.q !== undefined && !criteria.q.includes('|')) {
+    const words = freeWordAllOf(criteria.q, PROJECT_FREE_WORD_COLUMNS);
+    if (words) and.push(...words.AND.map(condition => keywordCondition(condition.OR[0]?.name?.contains ?? '')));
   }
   if (criteria.recruitingOnly === true) {
     // 🔴 `status` と独立に積む（併用して矛盾したら 0 件が正しい。`recruitingOnly` の 🔴）。
@@ -293,6 +315,9 @@ export function projectSearchWhere(criteria: ProjectSearchCriteria): ProjectWher
   }
   return {
     ...(and.length === 0 ? {} : { AND: and }),
+    ...(criteria.developmentPhases?.length ? { developmentPhases: { hasSome: [...criteria.developmentPhases] } } : {}),
+    ...(criteria.developmentMethod === undefined ? {} : { developmentMethod: criteria.developmentMethod }),
+    ...(criteria.utilizationMin === undefined && criteria.utilizationMax === undefined ? {} : { utilizationRate: { ...(criteria.utilizationMin === undefined ? {} : { gte: criteria.utilizationMin }), ...(criteria.utilizationMax === undefined ? {} : { lte: criteria.utilizationMax }) } }),
     ...(criteria.status === undefined ? {} : { status: criteria.status }),
     // 🔴 `start_date` が未設定の案件は「開始日 X 以降」に一致しない（NULL は比較で偽）。
     //    絞り込みを掛けたときだけ落ちる挙動であり、既定（未指定）では全件が出る。

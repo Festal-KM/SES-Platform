@@ -131,6 +131,7 @@ export function toProjectFormValues(view: ProjectEditView): ProjectFormValues {
     endDate: view.endDate ?? '',
     distributionLimit: view.distributionLimit ?? '',
     assigneeUserId: view.assigneeUserId ?? '',
+    developmentPhases: view.developmentPhases ?? [], developmentMethod: view.developmentMethod ?? '', utilizationRate: view.utilizationRate == null ? '' : String(view.utilizationRate),
     locationDetail: view.locationDetail ?? '',
     publicMemo: view.publicMemo ?? '',
     remarks: [view.remarks,

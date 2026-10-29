@@ -1,3 +1,4 @@
+import { PROJECT_DEVELOPMENT_PHASES } from '@ses/domain';
 // apps/web/app/(main)/projects/list-props.ts
 // `S-010` の文言と選択肢の組み立て（`ProjectListScreen` の props）。T-06-03。
 //
@@ -448,6 +449,8 @@ export function projectSearchPanelMessages(): SearchPanelMessages {
       activeLabel: t('projects.list.search.savedActive'),
     },
     chipLabels: {
+      phaseOptions: PROJECT_DEVELOPMENT_PHASES.map(value => ({ value, label: t(`projects.search.phase.${value}`) })),
+      extraLabels: { developmentMethod: t('projects.search.method'), utilizationMin: t('projects.search.utilizationMin'), utilizationMax: t('projects.search.utilizationMax'), keywordGroups: t('projects.search.groups'), WATERFALL: t('projects.search.method.WATERFALL'), AGILE: t('projects.search.method.AGILE') },
       statusOptions: projectStatusFilterOptions,
       categoryOptions: projectCategoryFilterOptions,
       remoteModeOptions: projectRemoteModeFilterOptions,
@@ -478,6 +481,11 @@ export function projectSearchPanelMessages(): SearchPanelMessages {
  *    検索に影響しない」（指示書 §3 / §8）の入口側である。
  */
 export function projectAppliedSearchDraft(query: {
+  readonly developmentPhases?: readonly string[];
+  readonly developmentMethod?: string;
+  readonly utilizationMin?: number;
+  readonly utilizationMax?: number;
+  readonly keywordGroups?: string;
   readonly q?: string;
   readonly status?: string;
   readonly category?: string;
@@ -489,6 +497,11 @@ export function projectAppliedSearchDraft(query: {
   readonly skills?: readonly string[];
 }): ProjectSearchDraft {
   return {
+    ...(query.developmentPhases?.length ? { developmentPhases: query.developmentPhases } : {}),
+    ...(query.developmentMethod ? { developmentMethod: query.developmentMethod } : {}),
+    ...(query.utilizationMin === undefined ? {} : { utilizationMin: String(query.utilizationMin) }),
+    ...(query.utilizationMax === undefined ? {} : { utilizationMax: String(query.utilizationMax) }),
+    ...(query.keywordGroups ? { keywordGroups: query.keywordGroups } : {}),
     q: query.q ?? '',
     status: query.status ?? '',
     category: query.category ?? '',

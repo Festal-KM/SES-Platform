@@ -35,6 +35,7 @@ import {
   REMOTE_MODES,
   REQUIREMENT_KINDS,
 } from '@ses/db';
+import { PROJECT_DEVELOPMENT_PHASES, PROJECT_DEVELOPMENT_METHODS } from '@ses/domain';
 import { PREFECTURE_CODES } from '@ses/domain';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 import { idCursorPageQuerySchema } from '../api/pagination';
@@ -181,6 +182,9 @@ export const createProjectBodySchema = z.object({
   unitPriceMin: projectFields.unitPriceMin.default(null),
   unitPriceMax: projectFields.unitPriceMax.default(null),
   prefecture: projectFields.prefecture.default(null),
+  developmentPhases: z.array(z.enum(PROJECT_DEVELOPMENT_PHASES)).max(7).default([]),
+  developmentMethod: z.enum(PROJECT_DEVELOPMENT_METHODS).nullable().default(null),
+  utilizationRate: z.number().int().min(1).max(100).nullable().default(null),
   remoteMode: projectFields.remoteMode.default(null),
   // ✅ 2026-10-16: 既定は「未設定」/「自社案件」（DB の既定と一致させる）。
   category: projectFields.category.default(null),
@@ -225,6 +229,9 @@ export const updateProjectBodySchema = z.object({
   unitPriceMin: projectFields.unitPriceMin.optional(),
   unitPriceMax: projectFields.unitPriceMax.optional(),
   prefecture: projectFields.prefecture.optional(),
+  developmentPhases: z.array(z.enum(PROJECT_DEVELOPMENT_PHASES)).max(7).optional(),
+  developmentMethod: z.enum(PROJECT_DEVELOPMENT_METHODS).nullable().optional(),
+  utilizationRate: z.number().int().min(1).max(100).nullable().optional(),
   remoteMode: projectFields.remoteMode.optional(),
   // ✅ 2026-10-16: 未指定 = 変更しない（`null` 指定 = 値を消す、と区別する）。
   category: projectFields.category.optional(),
@@ -334,6 +341,13 @@ const SKILL_FILTER_MAX = 20;
  * 🔴 分離キーを持たない（`AssertNoIsolationKeys`）。母集団は RLS の C4 が決める。
  */
 export const projectListQuerySchema = idCursorPageQuerySchema.extend({
+  developmentPhases: optionalListFilter(z.array(z.enum(PROJECT_DEVELOPMENT_PHASES)).max(7)),
+  developmentMethod: optionalFilter(z.enum(PROJECT_DEVELOPMENT_METHODS)),
+  utilizationMin: optionalFilter(z.coerce.number().int().min(1).max(100)),
+  utilizationMax: optionalFilter(z.coerce.number().int().min(1).max(100)),
+  keywordGroups: optionalFilter(z.string().max(4000).refine((value) => {
+    try { const groups: unknown = JSON.parse(value); return Array.isArray(groups) && groups.length <= 10 && groups.every(group => Array.isArray(group) && group.length <= 10 && group.every(term => typeof term === 'string' && term.length <= 200)); } catch { return false; }
+  }).transform(value => JSON.stringify((JSON.parse(value) as string[][]).map(group => group.map(term => term.trim()).filter(Boolean)).filter(group => group.length)))),
   /** フリーワード（案件名・外部公開用の記載を対象にする。`lib/projects/list.ts`）。 */
   q: optionalFilter(z.string().trim().min(1).max(FREE_WORD_MAX_LENGTH)),
   /** 案件の状態（募集中 / 充足 / 後任募集）。未指定は「すべて」。 */

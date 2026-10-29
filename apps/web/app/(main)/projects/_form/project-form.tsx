@@ -1,4 +1,6 @@
 'use client';
+import { t } from '@ses/i18n';
+import { PROJECT_DEVELOPMENT_PHASES, PROJECT_DEVELOPMENT_METHODS } from '@ses/domain';
 
 // apps/web/app/(main)/projects/_form/project-form.tsx
 // `S-012` 案件の登録・編集 — フォーム本体（docs/04 §S-012 / `F-013` / `F-010`）。T-06-01。
@@ -80,6 +82,9 @@ export type ProjectFormValues = {
   readonly endDate: string;
   readonly distributionLimit: string;
   readonly assigneeUserId: string;
+  readonly developmentPhases?: readonly string[];
+  readonly developmentMethod?: string;
+  readonly utilizationRate?: string;
   readonly locationDetail: string;
   readonly publicMemo: string;
   readonly remarks: string;
@@ -258,6 +263,7 @@ export function toRequestBody(values: ProjectFormValues) {
     endDate: emptyToNull(values.endDate),
     distributionLimit: emptyToNull(values.distributionLimit),
     assigneeUserId: emptyToNull(values.assigneeUserId),
+    developmentPhases: [...(values.developmentPhases ?? [])], developmentMethod: emptyToNull(values.developmentMethod ?? ''), utilizationRate: values.utilizationRate ? Number(values.utilizationRate) : null,
     locationDetail: emptyToNull(values.locationDetail),
     publicMemo: emptyToNull(values.publicMemo),
     remarks: emptyToNull(values.remarks),
@@ -728,6 +734,20 @@ export function ProjectForm({
               value={values.unitPriceMin}
               data-testid="project-unit-price-max"
             />
+        <Field as="div" className="mb-4" label={t('projects.search.phase')}>
+          <div className="flex flex-wrap gap-3">{PROJECT_DEVELOPMENT_PHASES.map(phase => <label key={phase} className="flex items-center gap-2 text-body">
+            <input type="checkbox" checked={(values.developmentPhases ?? []).includes(phase)} onChange={event => update({ developmentPhases: event.currentTarget.checked ? [...(values.developmentPhases ?? []), phase] : (values.developmentPhases ?? []).filter(value => value !== phase) })} data-testid={`project-form-development-phase-${phase}`} />
+            {t(`projects.search.phase.${phase}`)}
+          </label>)}</div>
+        </Field>
+        <Field className="mb-4" label={t('projects.search.method')}>
+          <select className="h-9 border border-border bg-surface px-3 text-body text-fg" value={values.developmentMethod ?? ''} onChange={event => update({ developmentMethod: event.currentTarget.value })} data-testid="project-form-development-method">
+            <option value="">{t('projects.search.any')}</option>{PROJECT_DEVELOPMENT_METHODS.map(value => <option key={value} value={value}>{t(`projects.search.method.${value}`)}</option>)}
+          </select>
+        </Field>
+        <Field className="mb-4" label={t('projects.search.utilization')}>
+          <Input type="number" min={1} max={100} value={values.utilizationRate ?? ''} onChange={event => update({ utilizationRate: event.currentTarget.value })} data-testid="project-form-utilization-rate" />
+        </Field>
         <Field className="mb-4" label={messages.locationDetailLabel}>
           <Input name="locationDetail" value={values.locationDetail}
             onChange={(event) => update({ locationDetail: event.target.value })}

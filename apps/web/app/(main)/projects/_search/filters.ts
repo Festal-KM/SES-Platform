@@ -34,6 +34,11 @@
  *    （指示書 §3）。単価は**円**のままである。
  */
 export type ProjectSearchDraft = {
+  readonly developmentPhases?: readonly string[];
+  readonly developmentMethod?: string;
+  readonly utilizationMin?: string;
+  readonly utilizationMax?: string;
+  readonly keywordGroups?: string;
   readonly q: string;
   readonly status: string;
   readonly category: string;
@@ -60,6 +65,8 @@ export const EMPTY_PROJECT_SEARCH_DRAFT: ProjectSearchDraft = {
 
 /** `<form>` が送るキー（`name` 属性）。🔴 **既存の query と 1 文字も違わない。** */
 export const PROJECT_SEARCH_FIELD_NAMES = {
+  developmentPhases: 'developmentPhases', developmentMethod: 'developmentMethod',
+  utilizationMin: 'utilizationMin', utilizationMax: 'utilizationMax', keywordGroups: 'keywordGroups',
   q: 'q',
   status: 'status',
   category: 'category',
@@ -92,6 +99,8 @@ export type ProjectSearchOption = {
  *    `カテゴリ：バックエンド`）。どの項目に接頭辞を付けるかは**この語彙の有無**で決まる。
  */
 export type ProjectSearchChipLabels = {
+  readonly extraLabels?: Readonly<Record<string, string>>;
+  readonly phaseOptions?: readonly ProjectSearchOption[];
   readonly statusOptions: readonly ProjectSearchOption[];
   readonly categoryOptions: readonly ProjectSearchOption[];
   readonly remoteModeOptions: readonly ProjectSearchOption[];
@@ -173,6 +182,14 @@ export function projectSearchChips(
   if (startWithin !== null) {
     chips.push({ key: 'startWithin', label: prefixed(labels.fieldLabels.startWithin, startWithin) });
   }
+  for (const phase of draft.developmentPhases ?? []) {
+    const label = labelOf(labels.phaseOptions ?? [], phase);
+    if (label) chips.push({ key: `phase:${phase}`, label });
+  }
+  for (const key of ['developmentMethod', 'utilizationMin', 'utilizationMax', 'keywordGroups'] as const) {
+    const value = draft[key];
+    if (value && labels.extraLabels?.[key]) chips.push({ key, label: prefixed(labels.extraLabels[key], key === 'keywordGroups' ? (JSON.parse(value) as string[][]).map(group => `(${group.join(' OR ')})`).join(' AND ') : labels.extraLabels[value] ?? value) });
+  }
   return chips;
 }
 
@@ -184,6 +201,8 @@ export function removeProjectSearchChip(
   draft: ProjectSearchDraft,
   key: string,
 ): ProjectSearchDraft {
+  if (key.startsWith('phase:')) return { ...draft, developmentPhases: (draft.developmentPhases ?? []).filter(phase => phase !== key.slice(6)) };
+  if (['developmentMethod', 'utilizationMin', 'utilizationMax', 'keywordGroups'].includes(key)) return { ...draft, [key]: '' };
   if (key.startsWith('skill:')) {
     const skillId = key.slice('skill:'.length);
     return { ...draft, skills: draft.skills.filter((id) => id !== skillId) };
@@ -212,6 +231,11 @@ export function removeProjectSearchChip(
 /** 2 つの条件が同じか。🔴 **`未適用` の判定そのもの**（指示書 §6）。 */
 export function isSameProjectSearchDraft(a: ProjectSearchDraft, b: ProjectSearchDraft): boolean {
   return (
+    [...(a.developmentPhases ?? [])].sort().join(',') === [...(b.developmentPhases ?? [])].sort().join(',') &&
+    (a.developmentMethod ?? '') === (b.developmentMethod ?? '') &&
+    (a.utilizationMin ?? '') === (b.utilizationMin ?? '') &&
+    (a.utilizationMax ?? '') === (b.utilizationMax ?? '') &&
+    (a.keywordGroups ?? '') === (b.keywordGroups ?? '') &&
     a.q === b.q &&
     a.status === b.status &&
     a.category === b.category &&
@@ -268,6 +292,11 @@ export function parseSavedProjectSearchDraft(value: unknown): ProjectSearchDraft
     ? raw.skills.filter((id): id is string => typeof id === 'string')
     : [];
   return {
+    ...(Array.isArray(raw.developmentPhases) ? { developmentPhases: raw.developmentPhases.filter((value): value is string => typeof value === 'string') } : {}),
+    ...(text('developmentMethod') ? { developmentMethod: text('developmentMethod') } : {}),
+    ...(text('utilizationMin') ? { utilizationMin: text('utilizationMin') } : {}),
+    ...(text('utilizationMax') ? { utilizationMax: text('utilizationMax') } : {}),
+    ...(validKeywordGroups(text('keywordGroups')) ? { keywordGroups: text('keywordGroups') } : {}),
     q: text('q'),
     status: text('status'),
     category: text('category'),
@@ -279,3 +308,5 @@ export function parseSavedProjectSearchDraft(value: unknown): ProjectSearchDraft
     startWithin: text('startWithin'),
   };
 }
+
+function validKeywordGroups(value: string): boolean { try { const groups: unknown = JSON.parse(value); return value.length <= 4000 && Array.isArray(groups) && groups.length <= 10 && groups.every(group => Array.isArray(group) && group.length <= 10 && group.every(term => typeof term === 'string' && term.length <= 200)); } catch { return false; } }
