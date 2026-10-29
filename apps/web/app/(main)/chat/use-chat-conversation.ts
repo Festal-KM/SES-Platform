@@ -11,8 +11,9 @@
 //      **押して何も起きない導線を作らない**（絵文字 / メンション / 書式 / 通話も同じ理由で描かない）。
 //   ② 🔴 **投稿できないロールにはボタンを描かず、理由テキストを置く**（`UI_GUIDELINES` §7 / `BR-44`。
 //      `disabled` で残すのは分離・権限の後退である）。
-//   ③ 🔴 **二重送信を作らない** —— `createSubmitGuard` で実行を 1 回に畳み、送信中はボタンを
-//      送信中表示に置き換える（`docs/04` の共通規律）。
+//   ③ 🔴 **二重送信を作らない** —— 押した 1 回を送信箱（`lib/chat/outbox.ts`）の 1 件にし、`createSubmitGuard` で
+//      同時に送るのを 1 件に畳む。✅ 2026-10-29（F-038 ⑮）: 押したその場で「送信中」の吹き出しを出す（取り消し待ちをやめた）。
+//      🔴 吹き出しは手元だけ（他の人には見えない）。正はサーバの応答で、届いたら仮の ID の吹き出しをサーバの発言に置き換える。
 //   ④ ~~既読・未読を描かない~~ → ✅ 2026-10-16 に自分の既読位置（`chat_read_states`）、2026-10-19（#128）に
 //      DM の相手の既読（`peerReadMessageId`）ができた。🔴 相手の既読は **DM だけ**（グループ等には渡さない）。
 //   ⑤ 🔴 **接続状態インジケータ（SSE の `接続中` / `再接続中`）を描かない。** `docs/04` §S-031 は
@@ -26,9 +27,20 @@
 //      **本文を URL に載せる**のを塞ぐ（`tests/static/form-method-required.test.ts`。実害が 1 度出ている）。
 import { CHAT_MESSAGE_MAX_LENGTH } from '@ses/config';
 import { useEffect, useRef, useState } from 'react';
-import { CHAT_UNDO_SEND_MS, mergeLatestMessages } from '../../../lib/chat/live';
 import { applyChatFormat, insertChatMention, type ChatEdit, type ChatFormat } from '../../../lib/chat/markdown';
 import { CHAT_DRAFT_EVENT, chatDraftKey, restoreUnsentText } from '../../../lib/chat/message-text';
+import {
+  chatTempId,
+  enqueueOutbox,
+  isOutboxShadowed,
+  nextOutboxToSend,
+  placeSentMessage,
+  removeOutbox,
+  requeueOutbox,
+  updateOutbox,
+  type ChatOutboxEntry,
+  type ChatOutboxFailure,
+} from '../../../lib/chat/outbox';
 import { appendQuote, slashCommandRange } from '../../../lib/chat/project-card-text';
 import { buildQuotedBody, chatQuoteDraft, replyMaxLength, type ChatQuoteDraft } from '../../../lib/chat/quote';
 import { mentionsName } from '../../../lib/chat/mention';
@@ -42,15 +54,18 @@ import type { ChatConversationProps } from './chat-conversation';
 import { type ChatPickedProject } from './chat-project-picker';
 import { useChatMessages } from './use-chat-messages';
 import { useChatRead } from './use-chat-read';
+import { useChatSearch } from './use-chat-search';
 
 /** 開いたときに「ここから未読」の線を会話の上端からどれだけ下に置くか（直前の発言が少し見える）。 */
 const UNREAD_MARKER_TOP_GAP_PX = 48;
+/** ✅ 2026-10-29: 検索・一覧から移った発言を目立たせておく時間。 */
+const JUMP_HIGHLIGHT_MS = 2_000;
 
 /** ✅ 2026-10-27: 添えるファイル（送るまで手元に持つ。🔴 名前は送らない・保存しない）。 */
 export type ChatPickedFile = { readonly file: File; readonly contentType: ChatAttachmentContentType };
 
 /** ✅ 2026-10-23: 送信待ちの中身（本文と、貼る案件）。✅ 2026-10-27: 添えるファイル・引用（F-038 ⑬）。 */
-type PendingSend = {
+export type PendingSend = {
   readonly body: string;
   readonly project: ChatPickedProject | null;
   readonly file: ChatPickedFile | null;
@@ -59,6 +74,9 @@ type PendingSend = {
 
 /** 投稿の応答（`docs/05` §6.5 #51 の上位互換。`route.ts` の 🔴）。 */
 type SendResponseBody = { readonly message: ChatMessageView };
+
+/** ✅ 2026-10-29（F-038 ⑮）: 送信箱の 1 件（手元だけの「送信中」の吹き出し）。 */
+export type ChatOutboxItem = ChatOutboxEntry<PendingSend>;
 
 export function useChatConversation({
   layout = 'topic',
@@ -80,10 +98,11 @@ export function useChatConversation({
   announcement: initialAnnouncement = null,
   canAttach = false,
   selfName = null,
+  jumpToMessageId = null,
 }: ChatConversationProps) {
   // 🔴 ガードは**インスタンスごと**に持つ（モジュール変数にすると、別のスレッドを開いた島が
   //    同じガードを共有し「前の送信が終わるまで送れない」状態になる）。
-  const [sendGuard] = useState(() => createSubmitGuard<'SENT' | 'MISSING' | 'FAILED' | 'PROJECT' | 'ATTACHMENT'>());
+  const [sendGuard] = useState(() => createSubmitGuard<void>());
   const [items, setItems] = useState<readonly ChatMessageView[]>(initialMessages);
   /**
    * ✅ 2026-10-26（#164 の 2）: 開いている間に読めなくなった（部屋から外れた・公開が取り消された等）。
@@ -93,8 +112,13 @@ export function useChatConversation({
   /** ✅ 2026-10-26（#166 の 3）: この会話の列が実際に画面に見えているか（スマホで隠れた列・横スクロールの外は false）。 */
   const [onScreen, setOnScreen] = useState(true);
   const [body, setBody] = useState('');
-  const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<'NONE' | 'FAILED' | 'MISSING' | 'PROJECT' | 'ATTACHMENT'>('NONE');
+  // ✅ 2026-10-29（F-038 ⑮）: 送信箱（押した順。🔴 `outboxRef` が正で、state は描画のため）。
+  const [outbox, setOutbox] = useState<readonly ChatOutboxItem[]>([]);
+  const outboxRef = useRef<readonly ChatOutboxItem[]>([]);
+  const outboxSequence = useRef(0);
+  /** 同じ押下・Enter の繰り返しを 1 件に畳む（次の描画まで閉じる）。 */
+  const submitLock = useRef(false);
+  const unavailableRef = useRef(false);
   // ✅ 2026-10-27（改訂 44）: 添えるファイルと、選んだファイルを受け付けなかったときの印。
   const [attachedFile, setAttachedFile] = useState<ChatPickedFile | null>(null);
   const [attachRejected, setAttachRejected] = useState(false);
@@ -107,9 +131,11 @@ export function useChatConversation({
   const [awayFromLatest, setAwayFromLatest] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const scrollToLatestOnRender = useRef(true);
-  // ✅ 2026-10-14: 新着の自動表示（`lib/chat/live.ts`）と送信の取り消し。
+  // ✅ 2026-10-14: 新着の自動表示（`lib/chat/live.ts`）。
   const [newArrived, setNewArrived] = useState(false);
-  const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
+  // ✅ 2026-10-29（F-038 ⑰）: 検索・一覧から移った発言（少しの間だけ目立たせる）と、移れなかったときの一言。
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [jumpNotLoaded, setJumpNotLoaded] = useState(false);
   // ✅ 2026-10-23（紺野）: 案件を貼る。行頭の「/」で出るメニュー・案件を選ぶ小窓・貼る案件。
   const [slashRange, setSlashRange] = useState<{ readonly start: number; readonly end: number } | null>(null);
   const [slashTemplatesOpen, setSlashTemplatesOpen] = useState(false);
@@ -124,7 +150,6 @@ export function useChatConversation({
   // ✅ 2026-10-22: 書式ボタンの帯の開閉（既定は閉じる = 入力欄は細い 1 行）。
   const [formatOpen, setFormatOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
-  const pendingTimer = useRef<number | null>(null);
   const itemsRef = useRef(items);
   const bodyRef = useRef(body);
   useEffect(() => {
@@ -156,14 +181,14 @@ export function useChatConversation({
   function markUnavailable(): void {
     // ✅ 2026-10-26（レビュー）: 取得をその場で止める（送信の 404 から来たときも、届きかけの応答で行を戻さない）。
     stopMessages();
-    if (pendingTimer.current !== null) window.clearTimeout(pendingTimer.current);
-    pendingTimer.current = null;
+    unavailableRef.current = true;
     setUnavailable(true);
     setItems([]);
     itemsRef.current = [];
     setBody('');
     bodyRef.current = '';
-    setPendingSend(null);
+    commitOutbox([]);
+    closeSearch();
     setAttachedProject(null);
     setAttachedFile(null);
     setQuoteDraft(null);
@@ -184,13 +209,10 @@ export function useChatConversation({
     setItems, setNewArrived, initialAnnouncement, active, onUnavailable: markUnavailable,
   });
 
-  // 待っている送信は、画面を離れたら取りやめる（🔴 下書きは送れるまで消さないので、戻れば文章は残っている）。
-  useEffect(
-    () => () => {
-      if (pendingTimer.current !== null) window.clearTimeout(pendingTimer.current);
-    },
-    [],
-  );
+  const { searchOpen, searchQuery, setSearchQuery, searchResult, toggleSearch, closeSearch } = useChatSearch({
+    threadId,
+    onUnavailable: markUnavailable,
+  });
   const composeId = `chat-compose-body-${threadId}`;
 
   // 開いたとき・自分が送ったときは一番下（最新）を見せる。🔴 過去を読み込んだとき（上に足す）は動かさない。
@@ -297,7 +319,6 @@ export function useChatConversation({
       return;
     }
     setAttachRejected(false);
-    if (sendError === 'ATTACHMENT') setSendError('NONE');
     setAttachedFile({ file, contentType });
   }
 
@@ -309,14 +330,29 @@ export function useChatConversation({
 
   function updateBody(value: string): void {
     setBody(value);
+    bodyRef.current = value;
+    writeDraft(value);
+  }
+
+  /**
+   * 下書き（`sessionStorage`）を書く。✅ 2026-10-29: 入力欄が空なら、まだ届いていない送信箱の本文を残す
+   * （読み込み直すと「送信中」「送れませんでした」の吹き出しは消えるので、文章を失わないように）。
+   */
+  function writeDraft(value: string): void {
+    const kept = value !== '' ? value : (outboxRef.current.find((entry) => entry.payload.body !== '')?.payload.body ?? '');
     try {
-      if (value === '') window.sessionStorage.removeItem(chatDraftKey(threadId));
-      else window.sessionStorage.setItem(chatDraftKey(threadId), value);
+      if (kept === '') window.sessionStorage.removeItem(chatDraftKey(threadId));
+      else window.sessionStorage.setItem(chatDraftKey(threadId), kept);
     } catch {
       // 同上。
     }
     // ✅ 2026-10-16: 一覧の「下書き」の印に知らせる（同じタブには `storage` イベントが届かない）。
     window.dispatchEvent(new Event(CHAT_DRAFT_EVENT));
+  }
+
+  function commitOutbox(next: readonly ChatOutboxItem[]): void {
+    outboxRef.current = next;
+    setOutbox(next);
   }
 
   // キーボードの近道: Cmd / Ctrl + K でスレッド一覧の検索欄へ（一覧に検索欄があるときだけ）。
@@ -489,6 +525,28 @@ export function useChatConversation({
     });
   }
 
+  /**
+   * ✅ 2026-10-29（F-038 ⑰）: 検索の結果・一覧の「本文で見つかった発言」からこの部屋の発言へ移り、少しの間だけ目立たせる。
+   * 🔴 探すのはこの部屋の中だけ（`jumpToMessage`）。移れなければ一言出す（消えた・遠すぎる・読めないを区別しない）。
+   */
+  async function jumpAndHighlight(targetId: string): Promise<void> {
+    const found = await jumpToMessage(targetId);
+    setJumpNotLoaded(!found);
+    if (!found) return;
+    setHighlightId(targetId);
+    window.setTimeout(() => setHighlightId((current) => (current === targetId ? null : current)), JUMP_HIGHLIGHT_MS);
+  }
+
+  // ✅ 2026-10-29: 一覧の「本文で見つかった発言」から開いた（`?msg=`）。開いた直後の位置決め（上の効果）の後に移る。
+  //    同じ部屋のまま別の発言を選び直したとき（`msg` だけが変わる）も移る。同じ発言へは 1 度だけ。
+  const jumpedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (jumpToMessageId === null || jumpedFor.current === jumpToMessageId) return;
+    jumpedFor.current = jumpToMessageId;
+    window.requestAnimationFrame(() => void jumpAndHighlight(jumpToMessageId));
+    // 移る先が変わったときだけ動かす（`jumpAndHighlight` は描画ごとに作り直される）。
+  }, [jumpToMessageId]);
+
   /** ✅ 2026-10-27（F-038 ⑬）: この発言を引用して入力欄に札を出す（送った時点の写し）。 */
   function quoteMessage(item: ChatMessageView): void {
     if (!canPost || item.body === null || item.deleted === true) return;
@@ -553,118 +611,134 @@ export function useChatConversation({
   }
 
   /**
-   * 送信を予約する。✅ 2026-10-14: **押してから `CHAT_UNDO_SEND_MS` 待ってから送る**（その間は取り消せる）。
-   * 🔴 待っている間に下書き（`sessionStorage`）は消さない —— 画面を離れても文章が失われない。
+   * 送る。✅ 2026-10-29（F-038 ⑮）: **押したその場で**送信箱に入れて「送信中」の吹き出しを出し、すぐに送る（取り消し待ちをやめた）。
+   * 🔴 下書き（`sessionStorage`）は届くまで消さない —— 画面を離れても文章が失われない（`writeDraft`）。
    */
   function submit(): void {
-    const trimmed = body.trim();
+    const trimmed = bodyRef.current.trim();
+    const file = canAttach ? attachedFile : null;
     // ✅ 2026-10-23: 案件を貼っていれば本文は空でも送れる（カードだけの発言）。
-    if (!canPost || (trimmed === '' && attachedProject === null && attachedFile === null) || sending || pendingSend !== null) return;
-    const next: PendingSend = { body: trimmed, project: attachedProject, file: canAttach ? attachedFile : null, quote: trimmed === '' ? null : quoteDraft };
-    setSendError('NONE');
-    setPendingSend(next);
+    if (!canPost || unavailableRef.current || submitLock.current || (trimmed === '' && attachedProject === null && file === null)) return;
+    submitLock.current = true;
+    window.requestAnimationFrame(() => {
+      submitLock.current = false;
+    });
+    const payload: PendingSend = { body: trimmed, project: attachedProject, file, quote: trimmed === '' ? null : quoteDraft };
+    outboxSequence.current += 1;
+    commitOutbox(
+      enqueueOutbox(outboxRef.current, {
+        tempId: chatTempId(outboxSequence.current, Date.now()),
+        // ✅ 2026-10-27（F-038 ⑬）: 引用は本文の頭に決まった形で置く（`lib/chat/quote.ts`）。
+        text: payload.quote === null ? trimmed : buildQuotedBody(payload.quote, trimmed),
+        items: itemsRef.current,
+        payload,
+      }),
+    );
     setBody('');
+    bodyRef.current = '';
+    writeDraft('');
     setAttachedProject(null);
     setAttachedFile(null);
-    if (next.quote !== null) setQuoteDraft(null);
+    if (payload.quote !== null) setQuoteDraft(null);
     setSlashRange(null);
     setPickerOpen(false);
-    pendingTimer.current = window.setTimeout(() => {
-      pendingTimer.current = null;
-      void deliver(next);
-    }, CHAT_UNDO_SEND_MS);
+    scrollToLatestOnRender.current = true;
+    void pumpOutbox();
   }
 
-  /** 送信の取り消し（文章を入力欄に戻す）。 */
-  function undoSend(): void {
-    if (pendingTimer.current !== null) window.clearTimeout(pendingTimer.current);
-    pendingTimer.current = null;
-    if (pendingSend !== null) {
-      // ✅ 2026-10-26（#166 の 6）: 🔴 待っている間に書いた次の文章を上書きしない（両方残す）。
-      updateBody(restoreUnsentText(pendingSend.body, bodyRef.current));
-      setAttachedProject((current) => current ?? pendingSend.project);
-      setAttachedFile((current) => current ?? pendingSend.file);
-      setQuoteDraft((current) => current ?? pendingSend.quote);
-    }
-    setPendingSend(null);
-    document.getElementById(composeId)?.focus();
+  /** 送信箱の次の 1 件を送る（🔴 同時に送るのは 1 件だけ。押した順に会話へ並ぶ）。 */
+  async function pumpOutbox(): Promise<void> {
+    if (unavailableRef.current) return;
+    const entry = nextOutboxToSend(outboxRef.current);
+    if (entry === null) return;
+    const ran = await sendGuard.run(() => deliver(entry));
+    if (ran !== null) void pumpOutbox();
   }
 
-  /** 待たずに今すぐ送る。 */
-  function sendNow(): void {
-    if (pendingSend === null) return;
-    if (pendingTimer.current !== null) window.clearTimeout(pendingTimer.current);
-    pendingTimer.current = null;
-    void deliver(pendingSend);
+  /** 送れなかった発言をもう一度送る（貼れない案件で断られた発言は送り直させない）。 */
+  function resendOutbox(tempId: string): void {
+    const next = requeueOutbox(outboxRef.current, tempId);
+    if (next === outboxRef.current) return;
+    commitOutbox(next);
+    void pumpOutbox();
   }
 
-  async function deliver(pending: PendingSend): Promise<void> {
-    const trimmed = pending.body;
-    setPendingSend(null);
-    setSending(true);
-    setSendError('NONE');
-    const outcome = await sendGuard.run(async () => {
+  /** 送れなかった発言を取り消す（文章・案件・ファイル・引用を入力欄に戻す）。 */
+  function discardOutbox(tempId: string): void {
+    const entry = outboxRef.current.find((candidate) => candidate.tempId === tempId);
+    if (entry === undefined || entry.status !== 'FAILED') return;
+    commitOutbox(removeOutbox(outboxRef.current, tempId));
+    // ✅ 2026-10-26（#166 の 6）: 🔴 その後に書いた次の文章を上書きしない（両方残す）。
+    updateBody(restoreUnsentText(entry.payload.body, bodyRef.current));
+    // ✅ 2026-10-23: 🔴 「貼れない案件」だったときだけは戻さない（同じ失敗を繰り返さない）。
+    if (entry.failure !== 'PROJECT' && entry.payload.project !== null) setAttachedProject((current) => current ?? entry.payload.project);
+    if (entry.payload.file !== null) setAttachedFile((current) => current ?? entry.payload.file);
+    if (entry.payload.quote !== null) setQuoteDraft((current) => current ?? entry.payload.quote);
+    window.requestAnimationFrame(() => composeTextarea()?.focus());
+  }
+
+  async function deliver(entry: ChatOutboxItem): Promise<void> {
+    const { tempId, payload, text } = entry;
+    commitOutbox(updateOutbox(outboxRef.current, tempId, payload.file === null ? 'SENDING' : 'UPLOADING'));
+    const outcome = await (async (): Promise<{ readonly sent: ChatMessageView } | 'MISSING' | ChatOutboxFailure> => {
       try {
         // ✅ 2026-10-27: ファイルがあれば先に置いて札を受け取る（#51p → ストレージ）。置けなければ送らない。
         let attachmentUploadToken: string | null = null;
-        if (pending.file !== null) {
+        if (payload.file !== null) {
           const uploaded = await uploadChatAttachment(
-            { threadId, contentType: pending.file.contentType, body: pending.file.file },
+            { threadId, contentType: payload.file.contentType, body: payload.file.file },
             { fetch: browserFetch },
           );
-          if (!uploaded.ok) return uploaded.reason === 'MISSING' ? ('MISSING' as const) : ('ATTACHMENT' as const);
+          if (!uploaded.ok) return uploaded.reason === 'MISSING' ? 'MISSING' : 'ATTACHMENT';
           attachmentUploadToken = uploaded.uploadToken;
+          commitOutbox(updateOutbox(outboxRef.current, tempId, 'SENDING'));
         }
         const response = await fetch(chatMessagesApiPath(threadId), {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
-            // ✅ 2026-10-27（F-038 ⑬）: 引用は本文の頭に決まった形で置く（`lib/chat/quote.ts`）。
-            body: pending.quote === null ? trimmed : buildQuotedBody(pending.quote, trimmed),
-            ...(pending.project === null ? {} : { projectId: pending.project.id }),
+            body: text,
+            ...(payload.project === null ? {} : { projectId: payload.project.id }),
             ...(attachmentUploadToken === null ? {} : { attachmentUploadToken }),
           }),
         });
         // ✅ 2026-10-27: 添付つきで断られた（部屋が変わった・札の期限切れなど）。
-        if (attachmentUploadToken !== null && (response.status === 400 || response.status === 409)) return 'ATTACHMENT' as const;
+        if (attachmentUploadToken !== null && (response.status === 400 || response.status === 409)) return 'ATTACHMENT';
         // 🔴 404 = スレッドが見えなくなった（不存在・退出・他社化を区別しない。`docs/05` §4.8）。
-        if (response.status === 404) return 'MISSING' as const;
+        if (response.status === 404) return 'MISSING';
         // ✅ 2026-10-23: 400 で `body.projectId` = この部屋に貼れない案件（理由はサーバが書き分けない）。
-        if (response.status === 400 && pending.project !== null) {
+        if (response.status === 400 && payload.project !== null) {
           const failure = (await response.json().catch(() => null)) as { readonly error?: { readonly details?: readonly string[] } } | null;
-          if (failure?.error?.details?.includes('body.projectId') === true) return 'PROJECT' as const;
+          if (failure?.error?.details?.includes('body.projectId') === true) return 'PROJECT';
         }
-        if (!response.ok) return 'FAILED' as const;
-        const payload = (await response.json()) as SendResponseBody;
-        // 🔴 手元で先に書き換える楽観更新をしない（サーバの応答だけが正。`S-015` の ⑦ と同じ規律）。
-        scrollToLatestOnRender.current = true;
-        setItems((current) => mergeLatestMessages(current, [payload.message]).items);
-        // 下書きは送れた時点で消す（待っている間に次の文章を書き始めていたら、そちらを残す）。
-        if (bodyRef.current === '') updateBody('');
-        return 'SENT' as const;
+        if (!response.ok) return 'FAILED';
+        return { sent: ((await response.json()) as SendResponseBody).message };
       } catch {
-        return 'FAILED' as const;
+        return 'FAILED';
       }
-    });
-    setSending(false);
-    // 🔴 送れなかった文章は入力欄に戻す（再送・修正ができるように）。
-    // ✅ 2026-10-26（#166 の 6）: 🔴 待っている間に次の文章を書いていても、送れなかった文章を捨てない（両方残す）。
-    if (outcome !== 'SENT' && outcome !== 'MISSING') updateBody(restoreUnsentText(trimmed, bodyRef.current));
-    // ✅ 2026-10-23: 貼る案件も戻す。🔴 「貼れない案件」だったときだけは戻さない（同じ失敗を繰り返さない）。
-    if (outcome !== 'SENT' && outcome !== 'PROJECT' && pending.project !== null) setAttachedProject((current) => current ?? pending.project);
-    // ✅ 2026-10-27: 送れなかったファイルも戻す（選び直さずにもう一度送れる）。
-    if (outcome !== 'SENT' && outcome !== 'MISSING' && pending.file !== null) setAttachedFile((current) => current ?? pending.file);
-    if (outcome !== 'SENT' && outcome !== 'MISSING' && pending.quote !== null) setQuoteDraft((current) => current ?? pending.quote);
-    // ✅ 2026-10-26（#164 の 2）: 🔴 送ろうとして 404 = 読めなくなった。戻した文章も含めて画面から消す。
+    })();
+    if (unavailableRef.current) return;
+    // ✅ 2026-10-26（#164 の 2）: 🔴 送ろうとして 404 = 読めなくなった。手元の吹き出し・文章も含めて画面から消す。
     if (outcome === 'MISSING') {
       markUnavailable();
       return;
     }
-    else if (outcome === 'FAILED') setSendError('FAILED');
-    else if (outcome === 'PROJECT') setSendError('PROJECT');
-    else if (outcome === 'ATTACHMENT') setSendError('ATTACHMENT');
+    if (typeof outcome === 'string') {
+      // 🔴 送れなかった発言は吹き出しに残す（「再送」「取り消す」。文章は取り消すと入力欄に戻る）。
+      commitOutbox(updateOutbox(outboxRef.current, tempId, 'FAILED', outcome));
+      writeDraft(bodyRef.current);
+      return;
+    }
+    // 🔴 正はサーバの応答。仮の吹き出しを外し、サーバの発言を置く（新着の取得が先に持ってきていても 1 行）。
+    scrollToLatestOnRender.current = true;
+    setItems((current) => placeSentMessage(current, outcome.sent));
+    commitOutbox(removeOutbox(outboxRef.current, tempId));
+    // 下書きは届いた時点で消す（入力欄に次の文章・まだ届いていない発言があれば、そちらを残す）。
+    writeDraft(bodyRef.current);
   }
 
+  /** 描く送信箱（🔴 新着の取得が応答より先に同じ発言を持ってきたものは隠す = 二重に見せない）。 */
+  const visibleOutbox = outbox.filter((entry) => !isOutboxShadowed(entry, items));
 
   return {
     unavailable,
@@ -683,9 +757,9 @@ export function useChatConversation({
     items,
     nextCursor,
     body,
-    sending,
-    sendError,
-    setSendError,
+    outbox: visibleOutbox,
+    resendOutbox,
+    discardOutbox,
     loadingOlder,
     olderFailed,
     copiedId,
@@ -694,7 +768,6 @@ export function useChatConversation({
     setAwayFromLatest,
     scrollRef,
     newArrived,
-    pendingSend,
     slashRange,
     setSlashRange,
     slashTemplatesOpen,
@@ -768,9 +841,17 @@ export function useChatConversation({
     toggleExpanded,
     scrollToLatest,
     submit,
-    undoSend,
-    sendNow,
     loadOlder,
+    selfName,
+    highlightId,
+    jumpNotLoaded,
+    jumpAndHighlight,
+    searchOpen,
+    searchQuery,
+    setSearchQuery,
+    searchResult,
+    toggleSearch,
+    closeSearch,
   };
 }
 

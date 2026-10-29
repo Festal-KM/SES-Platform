@@ -679,7 +679,8 @@ export function ChatThreadList({
                 {messageHits.map((hit) => (
                   <li key={hit.messageId} className={ROW_HOVER_CLASSES}>
                     <Link
-                      href={chatHref({ ...withThreadSelected(context.paneState, hit.threadId), ...context.listQuery })}
+                      // ✅ 2026-10-29（F-038 ⑰）: その部屋を開き、当たった発言へ移る（`msg=`。移る先はその部屋の中だけ）。
+                      href={chatHref({ ...withThreadSelected(context.paneState, hit.threadId), ...context.listQuery, message: hit.messageId })}
                       className="flex flex-col gap-1 px-3 py-2"
                       data-testid={`chat-threads-message-hit-${hit.messageId}`}
                     >

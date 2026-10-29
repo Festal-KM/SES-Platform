@@ -488,6 +488,18 @@ export type ChatMessageRow = {
 };
 
 /**
+ * ✅ 2026-10-29（F-038 ⑰ / #51s）: この会話の中の検索の 1 件。🔴 件数・本文の全文・添付・会社・ほかの識別子を持たない。
+ */
+export type ChatMessageSearchHitView = {
+  readonly messageId: string;
+  readonly sentAt: string;
+  /** 送った人の表示名（読めなければ `null`）。 */
+  readonly senderName: string | null;
+  /** 当たった箇所の前後だけ（引用は除く）。 */
+  readonly snippet: string;
+};
+
+/**
  * ✅ 2026-10-27（AC-14）: この発言を読み手に返してよいか。🔴 `CLEAN` でない添付の発言は送った本人だけ。
  *    本体は RLS の RESTRICTIVE ポリシー（migration 20261027010000）であり、これは写しの段の二重の守り。
  */

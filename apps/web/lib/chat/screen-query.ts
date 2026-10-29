@@ -42,6 +42,11 @@ export const CHAT_UNREAD_PARAM = 'unread';
 export const CHAT_FILTER_PARAM = 'f';
 /** ✅ 2026-10-19（v2）: 右の情報欄を開く（`info=1`）。既定は閉じる（会話の幅を確保する）。 */
 export const CHAT_INFO_PARAM = 'info';
+/**
+ * ✅ 2026-10-29（F-038 ⑰）: 開いたときに移る発言（`msg=<発言の ID>`。一覧の「本文で見つかった発言」から）。
+ * 🔴 移る先は `thread` の部屋の中だけ（会話の島が、その部屋の過去を読んで探す）。見つからなければ移らずに一言出す。
+ */
+export const CHAT_MESSAGE_PARAM = 'msg';
 const UUID_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 export const CHAT_FILTER_PATTERN = new RegExp(
   '^(unread|awaiting|dm|group|contacts|newgroup|saved|templates|co\\.' + UUID_PATTERN + '|person\\.' + UUID_PATTERN + ')$',
@@ -106,6 +111,7 @@ export const chatScreenQuerySchema = z
     [CHAT_UNREAD_PARAM]: z.literal('1').optional(),
     [CHAT_FILTER_PARAM]: z.string().regex(CHAT_FILTER_PATTERN).optional(),
     [CHAT_INFO_PARAM]: z.literal('1').optional(),
+    [CHAT_MESSAGE_PARAM]: z.uuid().optional(),
   })
   .refine((query) => {
     const panes = query.pane ?? [];
@@ -132,6 +138,8 @@ export function chatHref(input: {
   readonly filter?: ChatListFilter | null;
   /** ✅ 2026-10-19: 右の情報欄を開く。 */
   readonly info?: boolean;
+  /** ✅ 2026-10-29: 開いたときに移る発言（`thread` があるときだけ載せる）。 */
+  readonly message?: string | null;
 }): string {
   const params = new URLSearchParams();
   if (input.thread !== null && input.thread !== undefined) {
@@ -149,6 +157,9 @@ export function chatHref(input: {
   const filter = input.filter === null || input.filter === undefined ? null : chatFilterValue(input.filter);
   if (filter !== null) params.set(CHAT_FILTER_PARAM, filter);
   if (input.info === true) params.set(CHAT_INFO_PARAM, '1');
+  if (input.message !== null && input.message !== undefined && input.thread !== null && input.thread !== undefined) {
+    params.set(CHAT_MESSAGE_PARAM, input.message);
+  }
   const query = params.toString();
   return query === '' ? CHAT_PATH : `${CHAT_PATH}?${query}`;
 }
@@ -156,6 +167,11 @@ export function chatHref(input: {
 /** 会話の取得・投稿先（`docs/05` §6.5 #50 / #51）。🔴 画面に URL を書き写さない。 */
 export function chatMessagesApiPath(threadId: string): string {
   return `/api/threads/${threadId}/messages`;
+}
+
+/** ✅ 2026-10-29（#51s）: この会話の中の検索。 */
+export function chatMessageSearchApiPath(threadId: string, q: string): string {
+  return `/api/threads/${threadId}/messages/search?q=${encodeURIComponent(q.trim())}`;
 }
 
 /** ✅ 2026-10-16: 既読・未読の API（`PUT`）。🔴 画面に URL を書き写さない。 */

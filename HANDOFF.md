@@ -1,5 +1,9 @@
 # HANDOFF.md — 作業の引き継ぎ
 
+## 2026-10-29 ⏳ チャット: 送った発言をその場で出す・左の列の並び替え・会話の中の検索（ブランチ `chat/search-reorder-fast`。PR 前）
+
+紺野の決定（F-038 改訂 14 ⑮⑯⑰ / S-031 改訂 46 / docs/05 #51s）。DB は変えていない。⑮ 5 秒の取り消し待ちをやめ、送信箱（`apps/web/lib/chat/outbox.ts`。手元だけ）で「送信中」の吹き出しを先に出す。旧 `CHAT_UNDO_SEND_MS` と入力欄の「取り消す／今すぐ送る」は消した（文言キーは追加のみの約束で残す）。E2E `chat.compose.spec.ts` を書き直し、`chat.project-card.spec.ts` の「今すぐ送る」を外した。⑯ 並びは `localStorage` の `ses.chat.rail.order`（鍵の配列だけ）。⑰ 新 API `GET /api/threads/{id}/messages/search`（`lib/chat/search.ts`）。🔴 照合は `freeWordFilter` で絞り、引用の見出し・写しは `search-text.ts` で除く。分離テスト `tests/isolation/chat-search.test.ts`（ローカル緑）。E2E `chat.search.spec.ts` は手元で回していない（CI で確認）。
+
 ## 2026-10-28 共通ヘッダーのモバイル重なりを修正
 
 PR #172のE2E run 40683320177はチャットのモバイル操作2件が失敗。共通TopBarが複数行なのに56px固定で、検索・所属表示が会話の戻る操作やメニューへ重なっていた。共通部品だけでモバイルの高さを内容に合わせ、固定はmd以上に限定する。モバイルは本文とスクロールし、常設のボトムナビは維持する。チャットの画面・API・読み書き・権限は変更しない。desktopの56pxと固定は維持。幅375pxの案件画面もAWSで確認する。

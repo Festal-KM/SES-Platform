@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, Button, CHAT_COMPOSER_HEIGHT_CLASS, CHAT_COMPOSER_FOCUS_CLASSES, CHAT_COMPOSER_INPUT_FOCUS_CLASSES, Field, Icon, IconButton, Input, Select, Textarea, cn } from '@ses/ui';
+import { Button, CHAT_COMPOSER_HEIGHT_CLASS, CHAT_COMPOSER_FOCUS_CLASSES, CHAT_COMPOSER_INPUT_FOCUS_CLASSES, Field, Icon, IconButton, Input, Select, Textarea, cn } from '@ses/ui';
 import { useRef } from 'react';
 
 import { CHAT_ATTACHMENT_ACCEPT, chatAttachmentSummary } from '../../../lib/chat/attachment-client';
@@ -26,10 +26,6 @@ type ChatComposerState = Pick<ChatConversationState,
   | 'messages'
   | 'ownTemplates'
   | 'body'
-  | 'sending'
-  | 'sendError'
-  | 'setSendError'
-  | 'pendingSend'
   | 'slashRange'
   | 'setSlashRange'
   | 'slashTemplatesOpen'
@@ -61,8 +57,6 @@ type ChatComposerState = Pick<ChatConversationState,
   | 'insertTemplateFromSlash'
   | 'updateBody'
   | 'submit'
-  | 'undoSend'
-  | 'sendNow'
   | 'quoteDraft'
   | 'setQuoteDraft'
   | 'composeMaxLength'
@@ -77,10 +71,6 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
     messages,
     ownTemplates,
     body,
-    sending,
-    sendError,
-    setSendError,
-    pendingSend,
     slashRange,
     setSlashRange,
     slashTemplatesOpen,
@@ -112,8 +102,6 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
     insertTemplateFromSlash,
     updateBody,
     submit,
-    undoSend,
-    sendNow,
     quoteDraft,
     setQuoteDraft,
     composeMaxLength,
@@ -274,7 +262,6 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
                   onPick={(project) => {
                     setAttachedProject(project);
                     setPickerOpen(false);
-                    if (sendError === 'PROJECT') setSendError('NONE');
                     composeTextarea()?.focus();
                   }}
                   onClose={() => setPickerOpen(false)}
@@ -463,16 +450,11 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
                   </>
                 ) : null}
                 <IconButton type="button" variant={templateOpen ? 'secondary' : 'ghost'} className="h-11 w-11" icon={<Icon name="chat-template" />} aria-label={messages.templateLabel} title={messages.templateLabel} aria-expanded={templateOpen} aria-controls={`chat-compose-template-${threadId}`} onClick={() => setTemplateOpen((open) => !open)} data-testid="chat-compose-template-toggle" />
-                {/* ✅ 2026-10-14: 送信に失敗したら、書いた文章を残したまま、その場で送り直せる
-                    （🔴 二重送信の防止は `createSubmitGuard` のまま。見えなくなったスレッドには再送を出さない）。 */}
-                {sendError === 'FAILED' && !sending ? (
-                  <Button type="button" variant="secondary" onClick={submit} data-testid="chat-compose-retry">
-                    {messages.retry}
-                  </Button>
-                ) : null}
+                {/* ✅ 2026-10-29（F-038 ⑮）: 送るとその場で会話に「送信中」の吹き出しが出る。送れなかったときの「再送」「取り消す」は
+                    その吹き出しに付く（入力欄はすぐ次の文章を書ける）。 */}
                 <Button type="submit" variant="primary" className="ml-auto min-h-11 shrink-0 gap-1" data-testid="chat-compose-submit">
                   <Icon name="chat-send" />
-                  {sending ? messages.composeSubmitting : messages.composeSubmit}
+                  {messages.composeSubmit}
                 </Button>
                 {/* ✅ 2026-10-14: 定型文（固定の文面）を入力欄の末尾に入れる。 */}
                 <label className="sr-only" htmlFor={`chat-compose-template-${threadId}`}>
@@ -545,29 +527,6 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
               {messages.attachment.unsupported}
             </p>
           ) : null}
-          {/* ✅ 2026-10-14: 送信の取り消し（押してから数秒は送らずに待つ）。 */}
-          {pendingSend === null ? null : (
-            <div className="mb-2 flex flex-wrap items-center gap-2" aria-live="polite" data-testid="chat-compose-pending">
-              <span className="text-body text-fg-muted">{messages.pending}</span>
-              <Button type="button" variant="secondary" size="sm" className="min-h-11 md:min-h-8" onClick={undoSend} data-testid="chat-compose-undo">
-                {messages.undo}
-              </Button>
-              <Button type="button" variant="ghost" size="sm" className="min-h-11 md:min-h-8" onClick={sendNow} data-testid="chat-compose-send-now">
-                {messages.sendNow}
-              </Button>
-            </div>
-          )}
-          {sendError === 'NONE' ? null : (
-            <Alert variant="danger" data-testid="chat-compose-error">
-              {sendError === 'MISSING'
-                ? messages.composeThreadMissing
-                : sendError === 'PROJECT'
-                  ? messages.pasteProject.notPastable
-                  : sendError === 'ATTACHMENT'
-                    ? messages.attachment.uploadFailed
-                    : messages.composeFailed}
-            </Alert>
-          )}
 
         </form>
       ) : (

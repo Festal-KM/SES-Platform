@@ -228,10 +228,11 @@ describe('🔴 ②: 投稿できないロールにボタンを描かない（BR-
     const html = renderConversation({ canPost: false, initialNextCursor: null });
     // ✅ 2026-10-14: 発言の操作（コピー・続きを読む・2026-10-16 から「ここから未読にする」）は閲覧専用でも**押せて働く**
     //    （自分の表示の状態を変えるだけ）ので在ってよい。
+    //    ✅ 2026-10-29（F-038 ⑰）: 会話の中の検索も閲覧専用で押せて働く（読むだけ）ので在ってよい。
     //    🔴 それ以外の `<button>`（送信・再送・定型文・過去の読み込み）は 1 つも無い。
     const buttons = [...html.matchAll(/<button[^>]*>/g)].map((match) => match[0]);
     for (const button of buttons) {
-      expect(button, `発言の操作ではないボタンがあります: ${button}`).toMatch(/data-testid="chat-message-(copy|expand|mark-unread)-/);
+      expect(button, `発言の操作ではないボタンがあります: ${button}`).toMatch(/data-testid="chat-(message-(copy|expand|mark-unread)|search-toggle)-/);
     }
     expect(html).not.toContain('chat-compose-submit');
     expect(html).not.toContain('chat-compose-template');
