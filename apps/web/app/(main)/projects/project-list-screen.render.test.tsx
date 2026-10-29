@@ -464,7 +464,7 @@ describe('検索エリア（改修指示書 §2 の 3 層）', () => {
 
     // A. ヘッダ（タブ + 条件を保存 + 折りたたむ）
     expect(html).toContain('role="tablist"');
-    expect(html).toContain('検索条件');
+    expect(html).toContain('案件検索');
     expect(html).toContain('保存した条件');
     expect(html).toContain('data-testid="project-list-search-save"');
     expect(html).toContain('data-testid="project-list-search-toggle"');
