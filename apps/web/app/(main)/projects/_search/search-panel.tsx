@@ -80,6 +80,7 @@
 import { useEffect, useId, useRef, useState, useTransition } from 'react';
 // 🔴 **クライアント遷移の入口**（ファイル冒頭の 🔴🔴）。`next/navigation` の router は
 //    App Router のクライアント側であり、文書を読み込み直さず RSC の差分だけを取りに行く。
+import { t } from '@ses/i18n';
 import { useRouter } from 'next/navigation';
 import {
   Badge,
@@ -95,6 +96,7 @@ import {
   Icon,
   IconButton,
   Input,
+  Select,
   cn,
 } from '@ses/ui';
 // 🔴 overlay 部品（Radix）は `@ses/ui/client` に分かれている。
@@ -154,9 +156,7 @@ type SubmitMode = 'PUSH' | 'REPLACE';
  * ⚠️ 短くすると 1 文字ごとに検索が走り、長くすると「打ったのに効かない」と感じる。
  *    400ms は「次の文字を打つ間隔より長く、手が止まったと分かる最短」である。
  */
-const AUTO_APPLY_TYPING_DELAY_MS = 400;
 /** 🔴 **選ぶ欄は待たない**（1 回の操作で確定するため）。 */
-const AUTO_APPLY_PICK_DELAY_MS = 0;
 
 /** どのダイアログが開いているか。🔴 **同時に 2 枚開かない**（`Dialog` の 🔴）。 */
 type DialogState =
@@ -309,52 +309,7 @@ export function SearchPanel({
     formRef.current?.requestSubmit();
   }, [pendingSubmit]);
 
-  // ==========================================================================
-  // 🔴🔴 条件を入れた端から絞り込む（ファイル冒頭の 🔴🔴）
-  // ==========================================================================
-  // 🔴 **止める条件を 1 か所に集める。** 散らすと「なぜ今は走らないのか」が追えなくなる。
-  const autoApplyBlocked =
-
-    // 変換の最中（未確定の綴りで検索しない）
-    composing ||
-    // すでに遷移している（終わってから次を考える。同じ URL へ二度行かない）
-    navigating ||
-    // 送信待ちの旗が立っている（`×` / クリア / 保存条件の適用が先に立てた）
-    pendingSubmit !== null ||
-    // 単価の下限 > 上限（打ち直しの途中で必ず一度は逆転する）
-    isProjectPriceRangeInverted(draft);
-
-  useEffect(() => {
-    if (autoApplyBlocked) return;
-    // 🔴 もう効いている条件なら何もしない（遷移が着いた直後がここに来る）。
-    if (isSameProjectSearchDraft(draft, applied)) return;
-
-    // 🔴 **「まだ動いている最中の欄」が変わったか**で待ち時間を分ける。
-    //    スキルは**順序を見ない**（`isSameProjectSearchDraft` と同じ扱い）。
-    const sameSkills =
-      draft.skills.length === applied.skills.length &&
-      draft.skills.every((id) => applied.skills.includes(id));
-    const settling =
-      (draft.keywordGroups ?? '') !== (applied.keywordGroups ?? '') ||
-      (draft.utilizationMin ?? '') !== (applied.utilizationMin ?? '') ||
-      (draft.utilizationMax ?? '') !== (applied.utilizationMax ?? '') ||
-      draft.q !== applied.q ||
-      draft.priceMin !== applied.priceMin ||
-      draft.priceMax !== applied.priceMax ||
-      !sameSkills;
-
-    const timer = window.setTimeout(
-      () => {
-        // 🔴 **履歴に積まない。** 1 文字打つたびに履歴が増えると `戻る` が使えなくなる。
-        setPendingSubmit('REPLACE');
-      },
-      settling ? AUTO_APPLY_TYPING_DELAY_MS : AUTO_APPLY_PICK_DELAY_MS,
-    );
-    // 🔴 **次の打鍵で必ず取り消す**（これが「打ち終わるまで待つ」の本体である）。
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [autoApplyBlocked, draft, applied]);
+  // 2026-10-29: 編集中の条件は、検索ボタンまたは送信操作で適用する。
 
   // 🔴 遷移が終わるまでだけ `overflow-hidden` にする（開いた後はプルダウンを切らない）。
   useEffect(() => {
@@ -528,7 +483,7 @@ export function SearchPanel({
   const saveFieldError = dialogError ?? (name !== '' && !nameValid ? messages.nameError : undefined);
 
   return (
-    <Card className="w-full rounded-none border-x-0 border-t-0" data-testid="project-list-search-panel">
+    <Card className="w-full" data-testid="project-list-search-panel">
       {/* 🔴 **素の GET フォーム**（ファイル冒頭の 🔴🔴）。 */}
       <form
         // 🔴 **幅を測るのはこの要素である**（= 検索エリア自身の幅。指示書 §2）。
@@ -550,7 +505,7 @@ export function SearchPanel({
           submitModeRef.current = 'PUSH';
 
           // 🔴 **不正な入力は検索前に止める**（指示書 §6）。該当欄に赤が出ている。
-          if (isProjectPriceRangeInverted(draft)) {
+          if (composing || navigating || isProjectPriceRangeInverted(draft)) {
             event.preventDefault();
             return;
           }
@@ -583,7 +538,7 @@ export function SearchPanel({
         }}
       >
         <Tabs
-          className="gap-0 [&_[role=tab]]:text-cell [&_[role=tab][data-state=active]]:border-b-fg [&_[role=tab][data-state=active]]:text-fg"
+          className="gap-0 [&_[role=tablist]]:flex-1 [&_[role=tablist]]:justify-between [&_[role=tab]]:text-cell [&_[role=tab][data-state=active]]:text-fg"
           label={messages.tabsLabel}
           value={tab}
           onValueChange={(value) => {
@@ -593,6 +548,14 @@ export function SearchPanel({
           }}
           headerRight={
             <>
+              <Select className="w-44" aria-label={t('projects.search.saved')} value={activeId ?? ''} data-testid="project-list-search-saved-select" onChange={event => {
+                const item = items.find(item => item.id === event.currentTarget.value);
+                if (!item) return;
+                setDraft(item.filters); selectSaved(item.id); setTab('SEARCH');
+                persist(items.map(saved => saved.id === item.id ? { ...saved, lastUsedAt: new Date().toISOString() } : saved));
+              }}>
+                <option value="">{t('projects.search.saved')}</option>{items.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </Select>
               {activeItem === null ? null : (
                 <div className="flex min-w-0 items-center gap-2 text-xs" data-testid="project-list-search-selected">
                   <span className="sr-only">{messages.selectedSavedLabel}</span>
@@ -610,10 +573,10 @@ export function SearchPanel({
                 </Tooltip>
               )}
               <Tooltip content={messages.save}>
-                <IconButton type="button" variant="ghost" size="sm"
-                  aria-label={messages.save} icon={<Icon name="list-plus" />}
+                <Button type="button" variant="secondary" size="sm"
+                  aria-label={messages.save}
                   data-testid="project-list-search-save"
-                  onClick={() => { openDialog({ kind: 'SAVE' }); }} />
+                  onClick={() => { openDialog({ kind: 'SAVE' }); }}><Icon name="list-plus" />{t('projects.search.save')}</Button>
               </Tooltip>
               <Tooltip content={expanded ? messages.collapse : messages.expand}>
                 <IconButton type="button" variant="ghost" size="sm"
@@ -625,7 +588,7 @@ export function SearchPanel({
             </>
           }
           items={[
-            { value: 'SEARCH', label: messages.tabSearch, content: collapsible },
+            { value: 'SEARCH', label: <span className="flex items-center gap-2 text-lg font-semibold"><Icon name="search" />{t('projects.search.title')}</span>, content: collapsible },
             {
               value: 'SAVED',
               // 🔴 **件数はタブの語に入れる**（指示書 §2「保存した条件 N」）。
@@ -670,7 +633,7 @@ export function SearchPanel({
 
         {/* ② 自前の引き金の値（🔴 **常に出す**。上の 🔴🔴） */}
         {(draft.developmentPhases ?? []).map(phase => <input key={phase} type="hidden" name="developmentPhases" value={phase} />)}
-        {(['developmentMethod', 'utilizationMin', 'utilizationMax'] as const).map(key => draft[key] ? <input key={key} type="hidden" name={key} value={draft[key]} /> : null)}
+        {(['developmentMethod', 'utilizationBand', 'utilizationMin', 'utilizationMax'] as const).map(key => draft[key] ? <input key={key} type="hidden" name={key} value={draft[key]} /> : null)}
         {formFieldsSubmit && projectDraftKeywordGroups(draft).length ? <input type="hidden" name="keywordGroups" value={JSON.stringify(projectDraftKeywordGroups(draft))} /> : !formFieldsSubmit && draft.keywordGroups ? <input type="hidden" name="keywordGroups" value={draft.keywordGroups} /> : null}
         {draft.status === '' ? null : (
           <input type="hidden" name={PROJECT_SEARCH_FIELD_NAMES.status} value={draft.status} />
@@ -702,18 +665,19 @@ export function SearchPanel({
         <ActiveFilterBar
           chips={chips}
           pending={pending}
+          submitting={navigating}
           onRemove={(key) => {
             // ✅✅ **2026-10-19 の人間の指示「選択条件を部分的に削除した場合も
             //    すぐに適用されるようにして」** —— 外した時点で一覧に効く。
             // 🔴 **履歴は積まない**（`REPLACE`。`SubmitMode` の 🔴）。
             setDraft((current) => removeProjectSearchChip(current, key));
-            setPendingSubmit('REPLACE');
+
           }}
           onClear={() => {
             // 🔴 **全条件を初期値に戻して再検索**（保存した条件は消さない。指示書 §4）。
             selectSaved(null);
             setDraft(EMPTY_PROJECT_SEARCH_DRAFT);
-            setPendingSubmit('REPLACE');
+
           }}
           messages={messages.bar}
           testIdPrefix="project-list-"

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { t } from '@ses/i18n';
 import { type ProjectKeywordGroup } from '@ses/domain';
-import { Button, Field, Icon, IconButton, Input, Select } from '@ses/ui';
+import { Button, Field, Icon, IconButton, Input, Radio } from '@ses/ui';
 import { projectDraftKeywordGroups, type ProjectSearchDraft } from './filters';
 
 function readGroups(draft: ProjectSearchDraft): ProjectKeywordGroup[] {
@@ -58,9 +58,17 @@ export function KeywordGroups({ draft, onChange, onComposingChange, testIdPrefix
     <div className="flex min-w-0 flex-col gap-3 py-3">
       <p className="m-0 text-xs text-fg-muted">{t('projects.search.advancedTargets')}<br />{t('projects.search.advancedHint')}</p>
       {groups.map((group, index) => <div key={index}>
-        {index > 0 ? <p className="my-2 text-xs font-semibold text-brand">{t('projects.search.and')}</p> : null}
-        <div className="flex min-w-0 flex-wrap items-start gap-3 rounded-md border border-border p-3" data-testid={`${testIdPrefix}keyword-row-${index}`}>
-          <Field as="div" className="min-w-0 flex-1" label={`${t('projects.search.keywordGroup')}${index + 1}`}>
+        <div className="flex min-w-0 flex-wrap items-center gap-3 rounded-md border border-border p-3" data-testid={`${testIdPrefix}keyword-row-${index}`}>
+          <strong className="shrink-0 text-cell">{t('projects.search.group')}{index + 1}</strong>
+          <fieldset className="flex min-w-0 flex-wrap items-center gap-3">
+            <legend className="sr-only">{t('projects.search.groupMode')}{index + 1}</legend>
+            {(['OR', 'AND'] as const).map(mode => <label key={mode} className="flex cursor-pointer items-center gap-1 text-xs">
+              <Radio form="" name={`${testIdPrefix}mode-${index}`} value={mode} checked={group.mode === mode}
+                onChange={() => update(groups.map((item, i) => i === index ? { ...item, mode } : item))} data-testid={`${testIdPrefix}keyword-mode-${index}-${mode}`} />
+              {t(mode === 'OR' ? 'projects.search.modeOR' : 'projects.search.modeAND')}
+            </label>)}
+          </fieldset>
+          <Field as="div" className="min-w-0 flex-1" labelClassName="sr-only" label={`${t('projects.search.group')}${index + 1}`}>
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               {group.terms.map((term, termIndex) => <span key={term} className="flex min-w-0 items-center gap-2">
                 {termIndex > 0 ? <span className="text-xs text-brand">{group.mode}</span> : null}
@@ -68,20 +76,14 @@ export function KeywordGroups({ draft, onChange, onComposingChange, testIdPrefix
                   onClick={() => update(groups.map((item, i) => i === index ? { ...item, terms: item.terms.filter(value => value !== term) } : item))}
                   data-testid={`${testIdPrefix}keyword-term-${index}-${termIndex}`}><span className="break-all">{term}</span><Icon name="x" /></Button>
               </span>)}
-              <Input name={index === 0 ? 'q' : undefined} value={pending[index] ?? ''} maxLength={200} placeholder={t('projects.search.addKeywordHint')}
+              <Input className="w-auto min-w-24 flex-1" name={index === 0 ? 'q' : undefined} value={pending[index] ?? ''} maxLength={200} placeholder={t('projects.search.addKeywordHint')}
                 aria-label={`${t('projects.search.addKeyword')} ${index + 1}`} data-testid={index === 0 ? `${testIdPrefix}q` : `${testIdPrefix}keyword-group-${index}`}
                 onChange={event => setPending(current => ({ ...current, [index]: event.currentTarget.value }))}
                 onCompositionStart={() => onComposingChange(true)} onCompositionEnd={() => onComposingChange(false)}
                 onBlur={() => addTerm(index)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); addTerm(index); } }} />
             </div>
           </Field>
-          <Field label={t('projects.search.groupMode')}>
-            <Select value={group.mode} onChange={event => update(groups.map((item, i) => i === index ? { ...item, mode: event.currentTarget.value as 'AND' | 'OR' } : item))}
-              data-testid={`${testIdPrefix}keyword-mode-${index}`}>
-              <option value="OR">{t('projects.search.modeOR')}</option><option value="AND">{t('projects.search.modeAND')}</option>
-            </Select>
-          </Field>
-          <IconButton type="button" variant="ghost" size="sm" icon={<Icon name="x" />} aria-label={`${t('projects.search.removeGroup')} ${index + 1}`}
+          <IconButton type="button" variant="ghost" size="sm" icon={<Icon name="trash" />} aria-label={`${t('projects.search.removeGroup')} ${index + 1}`}
             onClick={() => { const next = groups.filter((_, i) => i !== index); update(next.length ? next : [{ mode: 'OR', terms: [] }]); setPending({}); }}
             data-testid={`${testIdPrefix}remove-group-${index}`} />
         </div>

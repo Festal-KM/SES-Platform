@@ -38,7 +38,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 import {
   Badge,
-  IconButton,
+  Button,
   FILTER_SUMMARY_BAR_CLASSES,
   FILTER_SUMMARY_CHIPS_CLASSES,
   Icon,
@@ -51,6 +51,7 @@ import {
   POPOVER_PANEL_END_CLASSES,
   cn,
 } from '@ses/ui';
+import { t } from '@ses/i18n';
 import { Tooltip } from '@ses/ui/client';
 import type { ProjectSearchChip } from './filters';
 
@@ -101,6 +102,7 @@ export type ActiveFilterBarMessages = {
 export function ActiveFilterBar({
   chips,
   pending,
+  submitting = false,
   onRemove,
   onClear,
   messages,
@@ -108,6 +110,7 @@ export function ActiveFilterBar({
 }: {
   readonly chips: readonly ProjectSearchChip[];
   readonly pending: boolean;
+  readonly submitting?: boolean;
   readonly onRemove: (key: string) => void;
   readonly onClear: () => void;
   readonly messages: ActiveFilterBarMessages;
@@ -277,7 +280,7 @@ export function ActiveFilterBar({
           </div>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-3">
+      <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
         {/* 🔴 **未適用**（指示書 §6「検索結果がまだ以前の条件であることを示します」）。 */}
         {pending ? (
           <span
@@ -289,12 +292,12 @@ export function ActiveFilterBar({
           </span>
         ) : null}
         <Tooltip content={messages.clear}>
-          <IconButton type="button" variant="ghost" size="sm" aria-label={messages.clear}
-            icon={<Icon name="filter-x" />} data-testid={`${testIdPrefix}clear`} onClick={onClear} />
+          <Button type="button" variant="secondary" size="sm" aria-label={messages.clear}
+            data-testid={`${testIdPrefix}clear`} onClick={onClear}><Icon name="filter-x" />{t('projects.search.clearAll')}</Button>
         </Tooltip>
         <Tooltip content={messages.submit}>
-          <IconButton type="submit" variant="secondary" size="sm" aria-label={messages.submit}
-            icon={<Icon name="search" />} data-testid={`${testIdPrefix}search`} />
+          <Button type="submit" variant="primary" size="sm" aria-label={messages.submit} aria-busy={submitting}
+            data-testid={`${testIdPrefix}search`}><Icon name="search" />{t('projects.search.submit')}</Button>
         </Tooltip>
       </div>
     </div>

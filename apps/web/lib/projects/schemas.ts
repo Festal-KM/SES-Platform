@@ -35,7 +35,7 @@ import {
   REMOTE_MODES,
   REQUIREMENT_KINDS,
 } from '@ses/db';
-import { PROJECT_DEVELOPMENT_PHASES, PROJECT_DEVELOPMENT_METHODS, parseProjectKeywordGroups } from '@ses/domain';
+import { PROJECT_DEVELOPMENT_PHASES, PROJECT_DEVELOPMENT_METHODS, PROJECT_UTILIZATION_BANDS, parseProjectKeywordGroups } from '@ses/domain';
 import { PREFECTURE_CODES } from '@ses/domain';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 import { idCursorPageQuerySchema } from '../api/pagination';
@@ -343,6 +343,7 @@ const SKILL_FILTER_MAX = 20;
 export const projectListQuerySchema = idCursorPageQuerySchema.extend({
   developmentPhases: optionalListFilter(z.array(z.enum(PROJECT_DEVELOPMENT_PHASES)).max(7)),
   developmentMethod: optionalFilter(z.enum(PROJECT_DEVELOPMENT_METHODS)),
+  utilizationBand: optionalFilter(z.enum(PROJECT_UTILIZATION_BANDS)),
   utilizationMin: optionalFilter(z.coerce.number().int().min(1).max(100)),
   utilizationMax: optionalFilter(z.coerce.number().int().min(1).max(100)),
   keywordGroups: optionalFilter(z.string().max(4000).refine(value => {

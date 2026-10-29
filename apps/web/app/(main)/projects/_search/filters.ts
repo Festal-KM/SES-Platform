@@ -38,6 +38,7 @@ import { parseProjectKeywordGroups } from '@ses/domain';
 export type ProjectSearchDraft = {
   readonly developmentPhases?: readonly string[];
   readonly developmentMethod?: string;
+  readonly utilizationBand?: string;
   readonly utilizationMin?: string;
   readonly utilizationMax?: string;
   readonly keywordGroups?: string;
@@ -68,7 +69,7 @@ export const EMPTY_PROJECT_SEARCH_DRAFT: ProjectSearchDraft = {
 /** `<form>` が送るキー（`name` 属性）。🔴 **既存の query と 1 文字も違わない。** */
 export const PROJECT_SEARCH_FIELD_NAMES = {
   developmentPhases: 'developmentPhases', developmentMethod: 'developmentMethod',
-  utilizationMin: 'utilizationMin', utilizationMax: 'utilizationMax', keywordGroups: 'keywordGroups',
+  utilizationBand: 'utilizationBand', utilizationMin: 'utilizationMin', utilizationMax: 'utilizationMax', keywordGroups: 'keywordGroups',
   q: 'q',
   status: 'status',
   category: 'category',
@@ -90,6 +91,7 @@ export type ProjectSearchChip = {
 
 /** バッジの語を組むために要る選択肢（`value` → `label`）。 */
 export type ProjectSearchOption = {
+  readonly shortLabel?: string;
   readonly value: string;
   readonly label: string;
 };
@@ -188,7 +190,7 @@ export function projectSearchChips(
     const label = labelOf(labels.phaseOptions ?? [], phase);
     if (label) chips.push({ key: `phase:${phase}`, label });
   }
-  for (const key of ['developmentMethod', 'utilizationMin', 'utilizationMax', 'keywordGroups'] as const) {
+  for (const key of ['developmentMethod', 'utilizationBand', 'utilizationMin', 'utilizationMax', 'keywordGroups'] as const) {
     const value = draft[key];
     if (value && labels.extraLabels?.[key]) chips.push({ key, label: prefixed(labels.extraLabels[key], key === 'keywordGroups' ? (parseProjectKeywordGroups(JSON.parse(value)) ?? []).filter(group => group.terms.length).map(group => `(${group.terms.join(` ${group.mode} `)})`).join(' AND ') : labels.extraLabels[value] ?? value) });
   }
@@ -204,7 +206,7 @@ export function removeProjectSearchChip(
   key: string,
 ): ProjectSearchDraft {
   if (key.startsWith('phase:')) return { ...draft, developmentPhases: (draft.developmentPhases ?? []).filter(phase => phase !== key.slice(6)) };
-  if (['developmentMethod', 'utilizationMin', 'utilizationMax', 'keywordGroups'].includes(key)) return { ...draft, [key]: '' };
+  if (['developmentMethod', 'utilizationBand', 'utilizationMin', 'utilizationMax', 'keywordGroups'].includes(key)) return { ...draft, [key]: '' };
   if (key.startsWith('skill:')) {
     const skillId = key.slice('skill:'.length);
     return { ...draft, skills: draft.skills.filter((id) => id !== skillId) };
@@ -235,6 +237,7 @@ export function isSameProjectSearchDraft(a: ProjectSearchDraft, b: ProjectSearch
   return (
     [...(a.developmentPhases ?? [])].sort().join(',') === [...(b.developmentPhases ?? [])].sort().join(',') &&
     (a.developmentMethod ?? '') === (b.developmentMethod ?? '') &&
+    (a.utilizationBand ?? '') === (b.utilizationBand ?? '') &&
     (a.utilizationMin ?? '') === (b.utilizationMin ?? '') &&
     (a.utilizationMax ?? '') === (b.utilizationMax ?? '') &&
     (a.keywordGroups ?? '') === (b.keywordGroups ?? '') &&
@@ -296,6 +299,7 @@ export function parseSavedProjectSearchDraft(value: unknown): ProjectSearchDraft
   return {
     ...(Array.isArray(raw.developmentPhases) ? { developmentPhases: raw.developmentPhases.filter((value): value is string => typeof value === 'string') } : {}),
     ...(text('developmentMethod') ? { developmentMethod: text('developmentMethod') } : {}),
+    ...(text('utilizationBand') ? { utilizationBand: text('utilizationBand') } : {}),
     ...(text('utilizationMin') ? { utilizationMin: text('utilizationMin') } : {}),
     ...(text('utilizationMax') ? { utilizationMax: text('utilizationMax') } : {}),
     ...(validKeywordGroups(text('keywordGroups')) ? { keywordGroups: text('keywordGroups') } : {}),

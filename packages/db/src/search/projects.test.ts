@@ -353,3 +353,9 @@ it('グループ内ANDとグループ内ORを混ぜても外側はANDになる',
   expect(where.AND?.[0]?.AND).toHaveLength(2);
   expect(where.AND?.[1]?.OR).toHaveLength(2);
 });
+
+it('稼働率の境界が重ならない', () => {
+  expect(projectSearchWhere({utilizationBand:'FULL'}).AND).toEqual([{utilizationRate:{gte:100,lte:100}}]);
+  expect(projectSearchWhere({utilizationBand:'HALF_TO_FULL'}).AND).toEqual([{utilizationRate:{gte:50,lte:99}}]);
+  expect(projectSearchWhere({utilizationBand:'UNDER_HALF'}).AND).toEqual([{utilizationRate:{gte:1,lte:49}}]);
+});

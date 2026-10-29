@@ -16,3 +16,5 @@ export function parseProjectKeywordGroups(value: unknown): readonly ProjectKeywo
   }
   return result;
 }
+
+export const PROJECT_UTILIZATION_BANDS = ['FULL', 'HALF_TO_FULL', 'UNDER_HALF'] as const;

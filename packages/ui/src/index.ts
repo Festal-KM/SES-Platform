@@ -465,3 +465,7 @@ export {
   POPOVER_SEGMENT_ITEM_SELECTED_CLASSES,
 } from './lib/overlay-classes.js';
 export { BrandLogo } from './components/sidebar.js';
+
+export { SegmentedControl } from './components/segmented-control.js';
+
+export { POPOVER_PANEL_ABOVE_CLASSES } from './lib/overlay-classes.js';

@@ -823,7 +823,7 @@ describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
     const html = render();
     expect(html).toContain('基本検索');
     expect(html).toContain('詳細検索');
-    expect(html).toContain('キーワード1');
+    expect(html).toContain('グループ1');
     expect(html).toContain('aria-label="キーワードを追加 1"');
     expect(html.indexOf('詳細検索')).toBeGreaterThan(html.indexOf('基本検索'));
   });

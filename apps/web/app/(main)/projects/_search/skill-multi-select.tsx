@@ -38,6 +38,9 @@
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import {
+  Checkbox,
+  POPOVER_PANEL_END_CLASSES,
+  POPOVER_PANEL_ABOVE_CLASSES,
   Badge,
   FOCUS_RING_CLASSES,
   Icon,
@@ -162,7 +165,11 @@ export function SkillMultiSelect({
   onChange,
   messages,
   testIdPrefix,
+  checklist = false,
+  topHint,
 }: {
+  readonly checklist?: boolean;
+  readonly topHint?: string;
   readonly options: readonly ProjectSearchOption[];
   readonly values: readonly string[];
   readonly onChange: (next: readonly string[]) => void;
@@ -170,6 +177,9 @@ export function SkillMultiSelect({
   readonly testIdPrefix: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [alignEnd, setAlignEnd] = useState(false);
+  const [above, setAbove] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<SkillPopoverMode>('ALL');
   const [keyword, setKeyword] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
@@ -178,6 +188,18 @@ export function SkillMultiSelect({
   const searchRef = useRef<HTMLInputElement>(null);
   const panelId = useId();
   const [visible, setVisible] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const position = (): void => {
+      const rect = triggerRef.current?.getBoundingClientRect(); const panel = panelRef.current;
+      if (!rect || !panel) return;
+      setAlignEnd(rect.left + panel.offsetWidth > window.innerWidth - 16);
+      setAbove(window.innerHeight - rect.bottom < panel.offsetHeight && rect.top > panel.offsetHeight);
+    };
+    position(); window.addEventListener('resize', position); window.addEventListener('scroll', position, true);
+    return () => { window.removeEventListener('resize', position); window.removeEventListener('scroll', position, true); };
+  }, [open]);
 
   // 🔴 **並びは辞書の順のまま**（指示書「選択するたびに行順を並べ替えて、クリック対象を
   //    移動させないでください」）。選んだ順にしない。
@@ -285,7 +307,7 @@ export function SkillMultiSelect({
       //    ホバーまたはキーボード操作で全文を確認できるようにします」）。
       title={measuring ? undefined : option.label}
     >
-      <span className={MULTI_SELECT_BADGE_LABEL_CLASSES}>{option.label}</span>
+      <span className={MULTI_SELECT_BADGE_LABEL_CLASSES}>{option.shortLabel ?? option.label}</span>
       {measuring ? (
         <span className={MULTI_SELECT_BADGE_REMOVE_CLASSES}>
           <Icon name="x" size="sm" />
@@ -398,7 +420,8 @@ export function SkillMultiSelect({
       {open ? (
         <div
           id={panelId}
-          className={POPOVER_PANEL_CLASSES}
+          ref={panelRef}
+          className={cn(alignEnd ? POPOVER_PANEL_END_CLASSES : POPOVER_PANEL_CLASSES, above ? POPOVER_PANEL_ABOVE_CLASSES : null)}
           data-testid={`${testIdPrefix}skills-panel`}
         >
           {/* 上部: 32px の検索欄（指示書 §3）。🔴 `name` を持たせない（URL に乗せない）。 */}
@@ -447,6 +470,7 @@ export function SkillMultiSelect({
             ))}
           </div>
           {/* 中央: 一覧（1 行 36px / 最大 240px でスクロール）。 */}
+          {topHint ? <p className="m-0 px-3 py-2 text-xs text-fg-muted">{topHint}</p> : null}
           <div className={POPOVER_LIST_CLASSES} role="listbox" aria-multiselectable="true">
             {listed.length === 0 ? (
               <p className={MULTI_SELECT_EMPTY_CLASSES} data-testid={`${testIdPrefix}skills-no-match`}>
@@ -471,9 +495,9 @@ export function SkillMultiSelect({
                       toggle(option.value);
                     }}
                   >
-                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                    <>{checklist ? <Checkbox checked={checked} readOnly tabIndex={-1} aria-hidden className="pointer-events-none" /> : null}<span className="min-w-0 flex-1 truncate">{option.label}</span></>
                     {/* 🔴 選んである行だけ**右端に小さなチェック**（未選択の行に空の箱を置かない）。 */}
-                    {checked ? <Icon name="check" size="sm" className="shrink-0" /> : null}
+                    {checked && !checklist ? <Icon name="check" size="sm" className="shrink-0" /> : null}
                   </button>
                 );
               })

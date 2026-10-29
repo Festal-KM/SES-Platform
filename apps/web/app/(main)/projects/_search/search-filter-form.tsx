@@ -40,11 +40,13 @@
 
 import { KeywordGroups } from './keyword-groups';
 import { t } from '@ses/i18n';
-import { PROJECT_DEVELOPMENT_PHASES, PROJECT_DEVELOPMENT_METHODS } from '@ses/domain';
+import { PROJECT_DEVELOPMENT_PHASES, PROJECT_DEVELOPMENT_METHODS, PROJECT_UTILIZATION_BANDS } from '@ses/domain';
 import {
   FILTER_GRID_CLASSES,
+  FILTER_GRID_SPAN_2_CLASSES,
   FILTER_GRID_COLUMN_CLASSES,
   Field,
+  SegmentedControl,
   Input,
   cn,
 } from '@ses/ui';
@@ -53,13 +55,12 @@ import { PROJECT_SEARCH_FIELD_NAMES, type ProjectSearchDraft, type ProjectSearch
 import { SkillMultiSelect, type SkillMultiSelectMessages } from './skill-multi-select';
 
 /** 指示書 §2 の 3 段。🔴 **これ以外の段を作らない。** */
-export type FilterColumnCount = 1 | 2 | 3 | 4 | 5;
+export type FilterColumnCount = 1 | 2 | 3 | 4;
 
 /** 器の幅から段を決める。🔴 **純粋関数**（ユニットテストで固定する）。 */
 export function filterColumnCount(width: number | null): FilterColumnCount {
   // 🔴 測る前は 4 列（サーバ描画と同じ段に留める。`./use-element-width.ts` の 🔴）。
   if (width === null) return 3;
-  if (width >= 1200) return 5;
   if (width >= 960) return 4;
   if (width >= 768) return 3;
   if (width >= 520) return 2;
@@ -133,7 +134,7 @@ export function SearchFilterForm({
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-    <p className="m-0 text-xs text-fg-muted">{t('projects.search.basic')}</p>
+    <p className="m-0 bg-bg-subtle px-3 py-3 text-body font-semibold text-fg">{t('projects.search.basic')}</p>
     <div className={cn(FILTER_GRID_CLASSES, FILTER_GRID_COLUMN_CLASSES[columns])}>
       {/* 🔴 `as="div"` —— 引き金は `role="combobox"` の `<div>` であり、`<label>` では結べない
           （`Field` の既定は `<label>`。スキル欄と同じ扱いである）。読み上げ名は
@@ -179,15 +180,15 @@ export function SearchFilterForm({
       </Field>
 
       <Field as="div" labelClassName="text-xs text-fg-muted" label={t('projects.search.phase')}>
-        <SkillMultiSelect options={PROJECT_DEVELOPMENT_PHASES.map(value => ({ value, label: t(`projects.search.phase.${value}`) }))}
+        <SkillMultiSelect options={PROJECT_DEVELOPMENT_PHASES.map(value => ({ value, label: t(`projects.search.phase.${value}`), shortLabel: t(`projects.search.phaseShort.${value}`) }))}
           values={draft.developmentPhases ?? []} onChange={developmentPhases => onChange({ developmentPhases })}
           messages={{ ...messages.skillMessages, placeholder: t('projects.search.phasePlaceholder'), triggerLabel: t('projects.search.phase'), searchLabel: t('projects.search.phase'), searchPlaceholder: t('projects.search.phasePlaceholder') }}
-          testIdPrefix={`${testIdPrefix}phases-`} />
+          testIdPrefix={`${testIdPrefix}phases-`} checklist topHint={t('projects.search.multiOR')} />
       </Field>
       <Field as="div" labelClassName="text-xs text-fg-muted" label={t('projects.search.method')}>
-        <FilterSelect options={[{ value: '', label: t('projects.search.any') }, ...PROJECT_DEVELOPMENT_METHODS.map(value => ({ value, label: t(`projects.search.method.${value}`) }))]}
-          value={draft.developmentMethod ?? ''} label={t('projects.search.method')} messages={messages.selectMessages}
-          testId={`${testIdPrefix}development-method`} onChange={developmentMethod => onChange({ developmentMethod })} />
+        <SegmentedControl options={[{ value: '', label: t('projects.search.all') }, ...PROJECT_DEVELOPMENT_METHODS.map(value => ({ value, label: t(`projects.search.method.${value}`) }))]}
+          value={draft.developmentMethod ?? ''} label={t('projects.search.method')} testIdPrefix={`${testIdPrefix}development-method-`}
+          onChange={developmentMethod => onChange({ developmentMethod })} />
       </Field>
       <Field as="div" labelClassName="text-xs text-fg-muted" label={messages.remoteMode}>
         <FilterSelect
@@ -272,14 +273,11 @@ export function SearchFilterForm({
           }}
         />
       </Field>
-      <Field as="div" labelClassName="text-xs text-fg-muted" label={t('projects.search.utilization')}>
-        <div className="flex items-center gap-2">
-          <Input type="number" min={1} max={100} value={draft.utilizationMin ?? ''} aria-label={t('projects.search.utilizationMin')}
-            data-testid={`${testIdPrefix}utilization-min`} onChange={event => onChange({ utilizationMin: event.currentTarget.value })} />
-          <span className="text-fg-muted">{messages.priceSeparator}</span>
-          <Input type="number" min={1} max={100} value={draft.utilizationMax ?? ''} aria-label={t('projects.search.utilizationMax')}
-            data-testid={`${testIdPrefix}utilization-max`} onChange={event => onChange({ utilizationMax: event.currentTarget.value })} />
-        </div>
+      <Field as="div" className={columns > 1 ? FILTER_GRID_SPAN_2_CLASSES : undefined} labelClassName="text-xs text-fg-muted" label={t('projects.search.utilization')}>
+        <SegmentedControl options={[{ value: '', label: t('projects.search.all') }, ...PROJECT_UTILIZATION_BANDS.map(value => ({ value, label: t(`projects.search.band.${value}`) }))]}
+          value={draft.utilizationBand ?? ''} label={t('projects.search.utilization')} testIdPrefix={`${testIdPrefix}utilization-`}
+          onChange={utilizationBand => onChange({ utilizationBand, utilizationMin: '', utilizationMax: '' })} />
+        {!draft.utilizationBand && (draft.utilizationMin || draft.utilizationMax) ? <p className="m-0 text-xs text-fg-muted">{t('projects.search.legacyUtilization')}</p> : null}
       </Field>
     </div>
     <KeywordGroups draft={draft} onChange={onChange} onComposingChange={onComposingChange} testIdPrefix={testIdPrefix} />

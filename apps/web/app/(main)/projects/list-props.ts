@@ -450,7 +450,7 @@ export function projectSearchPanelMessages(): SearchPanelMessages {
     },
     chipLabels: {
       phaseOptions: PROJECT_DEVELOPMENT_PHASES.map(value => ({ value, label: t(`projects.search.phase.${value}`) })),
-      extraLabels: { developmentMethod: t('projects.search.method'), utilizationMin: t('projects.search.utilizationMin'), utilizationMax: t('projects.search.utilizationMax'), keywordGroups: t('projects.search.groups'), WATERFALL: t('projects.search.method.WATERFALL'), AGILE: t('projects.search.method.AGILE') },
+      extraLabels: { developmentMethod: t('projects.search.method'), utilizationBand: t('projects.search.utilization'), FULL: t('projects.search.band.FULL'), HALF_TO_FULL: t('projects.search.band.HALF_TO_FULL'), UNDER_HALF: t('projects.search.band.UNDER_HALF'), utilizationMin: t('projects.search.utilizationMin'), utilizationMax: t('projects.search.utilizationMax'), keywordGroups: t('projects.search.groups'), WATERFALL: t('projects.search.method.WATERFALL'), AGILE: t('projects.search.method.AGILE') },
       statusOptions: projectStatusFilterOptions,
       categoryOptions: projectCategoryFilterOptions,
       remoteModeOptions: projectRemoteModeFilterOptions,
@@ -483,6 +483,7 @@ export function projectSearchPanelMessages(): SearchPanelMessages {
 export function projectAppliedSearchDraft(query: {
   readonly developmentPhases?: readonly string[];
   readonly developmentMethod?: string;
+  readonly utilizationBand?: string;
   readonly utilizationMin?: number;
   readonly utilizationMax?: number;
   readonly keywordGroups?: string;
@@ -499,6 +500,7 @@ export function projectAppliedSearchDraft(query: {
   return {
     ...(query.developmentPhases?.length ? { developmentPhases: query.developmentPhases } : {}),
     ...(query.developmentMethod ? { developmentMethod: query.developmentMethod } : {}),
+    ...(query.utilizationBand ? { utilizationBand: query.utilizationBand } : {}),
     ...(query.utilizationMin === undefined ? {} : { utilizationMin: String(query.utilizationMin) }),
     ...(query.utilizationMax === undefined ? {} : { utilizationMax: String(query.utilizationMax) }),
     ...(query.keywordGroups ? { keywordGroups: query.keywordGroups } : {}),

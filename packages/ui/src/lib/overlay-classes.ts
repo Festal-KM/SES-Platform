@@ -321,3 +321,5 @@ export const OVERLAY_FOOTER_CLASSES = 'flex flex-wrap items-center justify-end g
  *    1 行しかないテーブルにしない）。
  */
 export const OVERLAY_DEFINITION_LIST_CLASSES = 'flex flex-col gap-3';
+
+export const POPOVER_PANEL_ABOVE_CLASSES = 'bottom-full top-auto mb-1 mt-0';

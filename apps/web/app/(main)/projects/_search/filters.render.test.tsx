@@ -287,7 +287,7 @@ describe('🔴 条件バーの「＋N」（指示書 §4）', () => {
 
 describe('🔴 段組みは「器の幅」で決まる（指示書 §2）', () => {
   it('768 以上 → 3 列 / 520〜767 → 2 列 / 520 未満 → 1 列', () => {
-    expect(filterColumnCount(1200)).toBe(5);
+    expect(filterColumnCount(1200)).toBe(4);
     expect(filterColumnCount(768)).toBe(3);
     expect(filterColumnCount(767)).toBe(2);
     expect(filterColumnCount(520)).toBe(2);

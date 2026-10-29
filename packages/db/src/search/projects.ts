@@ -95,6 +95,7 @@ export type ProjectWhereFragment = {
 export type ProjectSearchCriteria = {
   readonly developmentPhases?: readonly string[];
   readonly developmentMethod?: string;
+  readonly utilizationBand?: string;
   readonly utilizationMin?: number;
   readonly utilizationMax?: number;
   readonly keywordGroups?: string;
@@ -299,6 +300,9 @@ export function projectSearchWhere(criteria: ProjectSearchCriteria): ProjectWher
     const words = freeWordAllOf(criteria.q, PROJECT_FREE_WORD_COLUMNS);
     if (words) and.push(...words.AND.map(condition => keywordCondition(condition.OR[0]?.name?.contains ?? '')));
   }
+  if (criteria.utilizationBand === 'FULL') and.push({ utilizationRate: { gte: 100, lte: 100 } });
+  if (criteria.utilizationBand === 'HALF_TO_FULL') and.push({ utilizationRate: { gte: 50, lte: 99 } });
+  if (criteria.utilizationBand === 'UNDER_HALF') and.push({ utilizationRate: { gte: 1, lte: 49 } });
   if (criteria.recruitingOnly === true) {
     // 🔴 `status` と独立に積む（併用して矛盾したら 0 件が正しい。`recruitingOnly` の 🔴）。
     and.push({ status: RECRUITING_STATUS });
