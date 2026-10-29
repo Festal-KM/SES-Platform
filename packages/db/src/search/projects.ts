@@ -1,3 +1,4 @@
+import { parseProjectKeywordGroups, type ProjectKeywordGroup } from '@ses/domain';
 // packages/db/src/search/projects.ts
 // 案件の検索と既定の並び（`GET /api/projects`。docs/05 §6.4 #25 / `F-015` / `S-010`）。
 // T-06-03 → 🔴 T-06-05 で `apps/web/lib/projects/list.ts` から**検索に相当する部分だけ**を
@@ -287,11 +288,11 @@ export function projectSearchWhere(criteria: ProjectSearchCriteria): ProjectWher
     { requirements: { some: { OR: [{ freeText: freeWordFilter(term) }, { skill: { name: freeWordFilter(term) } }] } } },
     ...(criteria.searchInternalRemarks === true ? [{ remarks: freeWordFilter(term) }] : []),
   ] });
-  const groups: string[][] = criteria.keywordGroups ? JSON.parse(criteria.keywordGroups) as string[][] : [];
-  if (criteria.q?.includes('|')) groups.unshift(criteria.q.split('|').map(term => term.trim()).filter(Boolean));
+  const groups: ProjectKeywordGroup[] = criteria.keywordGroups ? [...(parseProjectKeywordGroups(JSON.parse(criteria.keywordGroups)) ?? [])] : [];
+  if (criteria.q?.includes('|')) groups.unshift({ mode: 'OR', terms: criteria.q.split('|').map(term => term.trim()).filter(Boolean) });
   for (const group of groups) {
-    const terms = group.map(term => term.trim()).filter(Boolean);
-    if (terms.length) and.push({ OR: terms.map(keywordCondition) });
+    const terms = group.terms.map(term => term.trim()).filter(Boolean);
+    if (terms.length) and.push(group.mode === 'AND' ? { AND: terms.map(keywordCondition) } : { OR: terms.map(keywordCondition) });
   }
   // 従来の空白区切りANDも、新しい検索対象で一貫して照合する。
   if (criteria.q !== undefined && !criteria.q.includes('|')) {

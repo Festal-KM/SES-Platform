@@ -346,3 +346,10 @@ describe('基本検索とグループ検索', () => {
     expect(JSON.stringify(projectSearchWhere({ q: '社内連絡', searchInternalRemarks: true }))).not.toContain('endClientName');
   });
 });
+
+it('グループ内ANDとグループ内ORを混ぜても外側はANDになる', () => {
+  const where = projectSearchWhere({ keywordGroups: JSON.stringify([{ mode: 'AND', terms: ['Java', 'Springboot'] }, { mode: 'OR', terms: ['基本設計','内部設計'] }]) });
+  expect(where.AND).toHaveLength(2);
+  expect(where.AND?.[0]?.AND).toHaveLength(2);
+  expect(where.AND?.[1]?.OR).toHaveLength(2);
+});

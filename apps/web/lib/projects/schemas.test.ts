@@ -200,7 +200,7 @@ describe('🔴 GET /api/projects の query は表示の状態を受け取らな�
 describe('案件の追加検索条件', () => {
   it('グループを正規化し、入力途中の空語を検索条件にしない', () => {
     const parsed = projectListQuerySchema.parse({ keywordGroups: JSON.stringify([[' Java ', '', 'Springboot'], []]), developmentPhases: ['BASIC_DESIGN', 'DETAIL_DESIGN'], developmentMethod: 'AGILE', utilizationMin: '60', utilizationMax: '80', searchInternalRemarks: true });
-    expect(parsed.keywordGroups).toBe(JSON.stringify([['Java', 'Springboot']]));
+    expect(parsed.keywordGroups).toBe(JSON.stringify([{ mode: 'OR', terms: ['Java', 'Springboot'] }]));
     expect(parsed.developmentPhases).toEqual(['BASIC_DESIGN', 'DETAIL_DESIGN']);
     expect(parsed.utilizationMin).toBe(60);
     expect(parsed).not.toHaveProperty('searchInternalRemarks');

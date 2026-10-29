@@ -35,7 +35,7 @@ import {
   REMOTE_MODES,
   REQUIREMENT_KINDS,
 } from '@ses/db';
-import { PROJECT_DEVELOPMENT_PHASES, PROJECT_DEVELOPMENT_METHODS } from '@ses/domain';
+import { PROJECT_DEVELOPMENT_PHASES, PROJECT_DEVELOPMENT_METHODS, parseProjectKeywordGroups } from '@ses/domain';
 import { PREFECTURE_CODES } from '@ses/domain';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 import { idCursorPageQuerySchema } from '../api/pagination';
@@ -345,9 +345,9 @@ export const projectListQuerySchema = idCursorPageQuerySchema.extend({
   developmentMethod: optionalFilter(z.enum(PROJECT_DEVELOPMENT_METHODS)),
   utilizationMin: optionalFilter(z.coerce.number().int().min(1).max(100)),
   utilizationMax: optionalFilter(z.coerce.number().int().min(1).max(100)),
-  keywordGroups: optionalFilter(z.string().max(4000).refine((value) => {
-    try { const groups: unknown = JSON.parse(value); return Array.isArray(groups) && groups.length <= 10 && groups.every(group => Array.isArray(group) && group.length <= 10 && group.every(term => typeof term === 'string' && term.length <= 200)); } catch { return false; }
-  }).transform(value => JSON.stringify((JSON.parse(value) as string[][]).map(group => group.map(term => term.trim()).filter(Boolean)).filter(group => group.length)))),
+  keywordGroups: optionalFilter(z.string().max(4000).refine(value => {
+    try { return parseProjectKeywordGroups(JSON.parse(value)) !== null; } catch { return false; }
+  }).transform(value => JSON.stringify(parseProjectKeywordGroups(JSON.parse(value))?.filter(group => group.terms.length)))),
   /** フリーワード（案件名・外部公開用の記載を対象にする。`lib/projects/list.ts`）。 */
   q: optionalFilter(z.string().trim().min(1).max(FREE_WORD_MAX_LENGTH)),
   /** 案件の状態（募集中 / 充足 / 後任募集）。未指定は「すべて」。 */

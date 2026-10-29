@@ -818,12 +818,13 @@ describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
     expect(summary).toBeGreaterThan(form);
   });
 
-  it('キーワードには見えるラベルがあり、他の検索条件と並ぶ', () => {
+  it('基本検索の下に詳細検索があり、キーワードの追加欄に読み上げ名がある', () => {
     const html = render();
-    const label = /<label class="([^"]*)"[^>]*>\s*<span[^>]*>フリーワード/.exec(html);
-    expect(label).not.toBeNull();
-    expect(label?.[1]).not.toContain('col-span-');
-    expect(html).toContain('aria-label="フリーワード"');
+    expect(html).toContain('基本検索');
+    expect(html).toContain('詳細検索');
+    expect(html).toContain('キーワード1');
+    expect(html).toContain('aria-label="キーワードを追加 1"');
+    expect(html.indexOf('詳細検索')).toBeGreaterThan(html.indexOf('基本検索'));
   });
 
   // ✅✅ **2026-10-19: 「スキル欄の説明の 1 行」を外し、**条件バーの位置**を固定する。

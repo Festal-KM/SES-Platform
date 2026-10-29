@@ -312,9 +312,8 @@ export function SearchPanel({
   // 🔴🔴 条件を入れた端から絞り込む（ファイル冒頭の 🔴🔴）
   // ==========================================================================
   // 🔴 **止める条件を 1 か所に集める。** 散らすと「なぜ今は走らないのか」が追えなくなる。
-  const unfinishedKeywords = draft.q.trimEnd().endsWith('|') || (draft.keywordGroups ? (JSON.parse(draft.keywordGroups) as string[][]).some(group => group.length > 1 && !group.at(-1)?.trim()) : false);
   const autoApplyBlocked =
-    unfinishedKeywords ||
+
     // 変換の最中（未確定の綴りで検索しない）
     composing ||
     // すでに遷移している（終わってから次を考える。同じ URL へ二度行かない）
@@ -658,7 +657,7 @@ export function SearchPanel({
                （画面には選んだ語が出ているのに検索に効かない）。 */}
 
         {/* ① 素の入力欄の控え */}
-        {formFieldsSubmit || draft.q === '' ? null : (
+        {draft.q === '' ? null : (
           <input type="hidden" name={PROJECT_SEARCH_FIELD_NAMES.q} value={draft.q} />
         )}
         {formFieldsSubmit || draft.priceMin === '' ? null : (

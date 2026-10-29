@@ -1,3 +1,4 @@
+import { parseProjectKeywordGroups } from '@ses/domain';
 // 2026-10-29: 人間の最新指示で基本検索10項目と詳細検索へ拡張。以下の8項目の説明は旧仕様の履歴。
 // apps/web/app/(main)/projects/_search/filters.ts
 // `S-010` 自社案件管理の検索エリアの**条件そのもの**（純粋関数だけ。React に依存しない）。
@@ -189,7 +190,7 @@ export function projectSearchChips(
   }
   for (const key of ['developmentMethod', 'utilizationMin', 'utilizationMax', 'keywordGroups'] as const) {
     const value = draft[key];
-    if (value && labels.extraLabels?.[key]) chips.push({ key, label: prefixed(labels.extraLabels[key], key === 'keywordGroups' ? (JSON.parse(value) as string[][]).map(group => `(${group.join(' OR ')})`).join(' AND ') : labels.extraLabels[value] ?? value) });
+    if (value && labels.extraLabels?.[key]) chips.push({ key, label: prefixed(labels.extraLabels[key], key === 'keywordGroups' ? (parseProjectKeywordGroups(JSON.parse(value)) ?? []).filter(group => group.terms.length).map(group => `(${group.terms.join(` ${group.mode} `)})`).join(' AND ') : labels.extraLabels[value] ?? value) });
   }
   return chips;
 }
@@ -310,4 +311,4 @@ export function parseSavedProjectSearchDraft(value: unknown): ProjectSearchDraft
   };
 }
 
-function validKeywordGroups(value: string): boolean { try { const groups: unknown = JSON.parse(value); return value.length <= 4000 && Array.isArray(groups) && groups.length <= 10 && groups.every(group => Array.isArray(group) && group.length <= 10 && group.every(term => typeof term === 'string' && term.length <= 200)); } catch { return false; } }
+function validKeywordGroups(value: string): boolean { try { return value.length <= 4000 && parseProjectKeywordGroups(JSON.parse(value)) !== null; } catch { return false; } }
