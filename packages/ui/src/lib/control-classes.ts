@@ -381,3 +381,5 @@ export const MULTI_SELECT_SEARCH_CLASSES = 'relative mb-2 shrink-0';
 
 /** ポップアップの中の「該当なし」の 1 行。🔴 空のパネルを出さない（壊れて見える）。 */
 export const MULTI_SELECT_EMPTY_CLASSES = 'px-2 py-3 text-body text-fg-muted';
+
+export const SEARCH_KEYWORD_CHIP_CLASSES = 'h-auto min-h-9 min-w-0 max-w-full shrink whitespace-normal';

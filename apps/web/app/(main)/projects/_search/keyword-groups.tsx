@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { t } from '@ses/i18n';
 import { type ProjectKeywordGroup } from '@ses/domain';
-import { Button, Field, Icon, IconButton, Input, Radio } from '@ses/ui';
+import { Button, Field, Icon, IconButton, Input, Radio, SEARCH_KEYWORD_CHIP_CLASSES, cn } from '@ses/ui';
 import { projectDraftKeywordGroups, type ProjectSearchDraft } from './filters';
 
 function readGroups(draft: ProjectSearchDraft): ProjectKeywordGroup[] {
@@ -72,9 +72,9 @@ export function KeywordGroups({ draft, onChange, onComposingChange, testIdPrefix
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               {group.terms.map((term, termIndex) => <span key={term} className="flex min-w-0 items-center gap-2">
                 {termIndex > 0 ? <span className="text-xs text-brand">{group.mode}</span> : null}
-                <Button type="button" variant="ghost" size="sm" className="min-w-0 bg-brand-bg text-brand" aria-label={`${term} ${t('projects.search.removeKeyword')}`}
+                <Button type="button" variant="ghost" size="sm" className={cn(SEARCH_KEYWORD_CHIP_CLASSES, 'bg-brand-bg text-brand')} aria-label={`${term} ${t('projects.search.removeKeyword')}`}
                   onClick={() => update(groups.map((item, i) => i === index ? { ...item, terms: item.terms.filter(value => value !== term) } : item))}
-                  data-testid={`${testIdPrefix}keyword-term-${index}-${termIndex}`}><span className="break-all">{term}</span><Icon name="x" /></Button>
+                  data-testid={`${testIdPrefix}keyword-term-${index}-${termIndex}`}><span className="whitespace-normal break-all">{term}</span><Icon name="x" /></Button>
               </span>)}
               <Input className="w-auto min-w-24 flex-1" name={index === 0 ? 'q' : undefined} value={pending[index] ?? ''} maxLength={200} placeholder={t('projects.search.addKeywordHint')}
                 aria-label={`${t('projects.search.addKeyword')} ${index + 1}`} data-testid={index === 0 ? `project-list-filter-q` : `${testIdPrefix}keyword-group-${index}`}

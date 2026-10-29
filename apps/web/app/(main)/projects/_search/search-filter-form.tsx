@@ -186,7 +186,7 @@ export function SearchFilterForm({
           testIdPrefix={`${testIdPrefix}phases-`} checklist topHint={t('projects.search.multiOR')} />
       </Field>
       <Field as="div" labelClassName="text-xs text-fg-muted" label={t('projects.search.method')}>
-        <SegmentedControl options={[{ value: '', label: t('projects.search.all') }, ...PROJECT_DEVELOPMENT_METHODS.map(value => ({ value, label: t(`projects.search.method.${value}`) }))]}
+        <SegmentedControl compact={columns === 1} options={[{ value: '', label: t('projects.search.all') }, ...PROJECT_DEVELOPMENT_METHODS.map(value => ({ value, label: t(`projects.search.method.${value}`) }))]}
           value={draft.developmentMethod ?? ''} label={t('projects.search.method')} testIdPrefix={`${testIdPrefix}development-method-`}
           onChange={developmentMethod => onChange({ developmentMethod })} />
       </Field>
@@ -274,7 +274,7 @@ export function SearchFilterForm({
         />
       </Field>
       <Field as="div" className={columns > 1 ? FILTER_GRID_SPAN_2_CLASSES : undefined} labelClassName="text-xs text-fg-muted" label={t('projects.search.utilization')}>
-        <SegmentedControl options={[{ value: '', label: t('projects.search.all') }, ...PROJECT_UTILIZATION_BANDS.map(value => ({ value, label: t(`projects.search.band.${value}`) }))]}
+        <SegmentedControl compact={columns === 1} options={[{ value: '', label: t('projects.search.all') }, ...PROJECT_UTILIZATION_BANDS.map(value => ({ value, label: t(`projects.search.band.${value}`) }))]}
           value={draft.utilizationBand ?? ''} label={t('projects.search.utilization')} testIdPrefix={`${testIdPrefix}utilization-`}
           onChange={utilizationBand => onChange({ utilizationBand, utilizationMin: '', utilizationMax: '' })} />
         {!draft.utilizationBand && (draft.utilizationMin || draft.utilizationMax) ? <p className="m-0 text-xs text-fg-muted">{t('projects.search.legacyUtilization')}</p> : null}
