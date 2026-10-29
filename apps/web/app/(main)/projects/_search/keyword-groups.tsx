@@ -2,14 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { t } from '@ses/i18n';
-import { parseProjectKeywordGroups, type ProjectKeywordGroup } from '@ses/domain';
+import { type ProjectKeywordGroup } from '@ses/domain';
 import { Button, Field, Icon, IconButton, Input, Select } from '@ses/ui';
-import type { ProjectSearchDraft } from './filters';
+import { projectDraftKeywordGroups, type ProjectSearchDraft } from './filters';
 
 function readGroups(draft: ProjectSearchDraft): ProjectKeywordGroup[] {
-  let groups: ProjectKeywordGroup[] = [];
-  try { groups = [...(parseProjectKeywordGroups(JSON.parse(draft.keywordGroups || '[]')) ?? [])]; } catch { /* 壊れた保存条件は採用しない。 */ }
-  if (draft.q.trim()) groups.unshift({ mode: draft.q.includes('|') ? 'OR' : 'AND', terms: draft.q.split(draft.q.includes('|') ? '|' : /[\s　]+/).map(term => term.trim()).filter(Boolean) });
+  const groups = projectDraftKeywordGroups(draft);
   return groups.length ? groups : [{ mode: 'OR', terms: [] }];
 }
 
@@ -70,7 +68,7 @@ export function KeywordGroups({ draft, onChange, onComposingChange, testIdPrefix
                   onClick={() => update(groups.map((item, i) => i === index ? { ...item, terms: item.terms.filter(value => value !== term) } : item))}
                   data-testid={`${testIdPrefix}keyword-term-${index}-${termIndex}`}><span className="break-all">{term}</span><Icon name="x" /></Button>
               </span>)}
-              <Input value={pending[index] ?? ''} maxLength={200} placeholder={t('projects.search.addKeywordHint')}
+              <Input name={index === 0 ? 'q' : undefined} value={pending[index] ?? ''} maxLength={200} placeholder={t('projects.search.addKeywordHint')}
                 aria-label={`${t('projects.search.addKeyword')} ${index + 1}`} data-testid={index === 0 ? `${testIdPrefix}q` : `${testIdPrefix}keyword-group-${index}`}
                 onChange={event => setPending(current => ({ ...current, [index]: event.currentTarget.value }))}
                 onCompositionStart={() => onComposingChange(true)} onCompositionEnd={() => onComposingChange(false)}

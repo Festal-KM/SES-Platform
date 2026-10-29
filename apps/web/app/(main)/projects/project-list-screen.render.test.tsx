@@ -545,7 +545,8 @@ describe('検索エリア（改修指示書 §2 の 3 層）', () => {
       },
     });
 
-    expect(html).toContain('value="基幹"');
+    expect(html).toContain('基幹');
+    expect(html).toContain('name="keywordGroups"');
     expect(html).toContain('value="600000"');
     expect(html).toContain('value="800000"');
     // ✅✅ 2026-10-19: 自前の引き金になったので **`<option selected>` ではなく
@@ -951,4 +952,11 @@ describe('🔴 SP-22 段④: 操作列から副カラム（案件の要点パネ
   it('🔴 どの行も選ばれていないときは印が 1 つも付かない', () => {
     expect(render({ selectedId: null })).not.toContain('data-selected="true"');
   });
+});
+
+it('追加した基本条件と詳細グループがフォーム送信に載る', () => {
+  const html = render({ applied: { ...emptyApplied, developmentPhases: ['BASIC_DESIGN'], developmentMethod: 'AGILE', utilizationMin: '80', utilizationMax: '100', keywordGroups: JSON.stringify([{mode:'OR',terms:['Java','Springboot']}]) } });
+  for (const [name, value] of [['developmentPhases','BASIC_DESIGN'],['developmentMethod','AGILE'],['utilizationMin','80'],['utilizationMax','100']]) expect(html).toContain(`name="${name}" value="${value}"`);
+  expect(html).toContain('name="keywordGroups"');
+  expect(html).toContain('(Java OR Springboot)');
 });

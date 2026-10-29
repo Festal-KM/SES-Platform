@@ -103,6 +103,7 @@ import {
 import { Dialog, Tabs, Tooltip } from '@ses/ui/client';
 import { ActiveFilterBar, type ActiveFilterBarMessages } from './active-filter-bar';
 import {
+  projectDraftKeywordGroups,
   EMPTY_PROJECT_SEARCH_DRAFT,
   PROJECT_SEARCH_FIELD_NAMES,
   isProjectPriceRangeInverted,
@@ -657,7 +658,7 @@ export function SearchPanel({
                （画面には選んだ語が出ているのに検索に効かない）。 */}
 
         {/* ① 素の入力欄の控え */}
-        {draft.q === '' ? null : (
+        {formFieldsSubmit || draft.q === '' ? null : (
           <input type="hidden" name={PROJECT_SEARCH_FIELD_NAMES.q} value={draft.q} />
         )}
         {formFieldsSubmit || draft.priceMin === '' ? null : (
@@ -668,6 +669,9 @@ export function SearchPanel({
         )}
 
         {/* ② 自前の引き金の値（🔴 **常に出す**。上の 🔴🔴） */}
+        {(draft.developmentPhases ?? []).map(phase => <input key={phase} type="hidden" name="developmentPhases" value={phase} />)}
+        {(['developmentMethod', 'utilizationMin', 'utilizationMax'] as const).map(key => draft[key] ? <input key={key} type="hidden" name={key} value={draft[key]} /> : null)}
+        {formFieldsSubmit && projectDraftKeywordGroups(draft).length ? <input type="hidden" name="keywordGroups" value={JSON.stringify(projectDraftKeywordGroups(draft))} /> : !formFieldsSubmit && draft.keywordGroups ? <input type="hidden" name="keywordGroups" value={draft.keywordGroups} /> : null}
         {draft.status === '' ? null : (
           <input type="hidden" name={PROJECT_SEARCH_FIELD_NAMES.status} value={draft.status} />
         )}
