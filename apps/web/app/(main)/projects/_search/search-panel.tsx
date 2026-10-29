@@ -1,5 +1,6 @@
 'use client';
 
+// 2026-10-29: 最新指示は検索ボタンで適用。以下の自動検索の説明は旧挙動の履歴。
 // apps/web/app/(main)/projects/_search/search-panel.tsx
 // `S-010` 自社案件管理の**検索エリア**（改修指示書の全体。§2 の A / B / C の 3 層）。
 //
@@ -86,6 +87,7 @@ import {
   Badge,
   Button,
   Card,
+  PROJECT_SEARCH_PANEL_CLASSES,
   DIALOG_PANEL_NARROW_CLASSES,
   FILTER_BODY_CLASSES,
   FILTER_BODY_COLLAPSE_CLASSES,
@@ -483,7 +485,7 @@ export function SearchPanel({
   const saveFieldError = dialogError ?? (name !== '' && !nameValid ? messages.nameError : undefined);
 
   return (
-    <Card className="w-full" data-testid="project-list-search-panel">
+    <Card className={cn(PROJECT_SEARCH_PANEL_CLASSES, 'w-full')} data-testid="project-list-search-panel">
       {/* 🔴 **素の GET フォーム**（ファイル冒頭の 🔴🔴）。 */}
       <form
         // 🔴 **幅を測るのはこの要素である**（= 検索エリア自身の幅。指示書 §2）。

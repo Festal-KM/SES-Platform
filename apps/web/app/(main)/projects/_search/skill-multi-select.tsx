@@ -450,6 +450,7 @@ export function SkillMultiSelect({
               onKeyDown={(event) => {
                 // 🔴 **ここの Enter で検索を走らせない**（絞る意図の Enter である）。
                 if (event.key === 'Enter') event.preventDefault();
+                if (event.key === 'ArrowDown') { event.preventDefault(); panelRef.current?.querySelector<HTMLButtonElement>('[role=option]')?.focus(); }
               }}
             />
           </div>
@@ -477,7 +478,15 @@ export function SkillMultiSelect({
           </div>
           {/* 中央: 一覧（1 行 36px / 最大 240px でスクロール）。 */}
           {topHint ? <p className="m-0 px-3 py-2 text-xs text-fg-muted">{topHint}</p> : null}
-          <div className={POPOVER_LIST_CLASSES} role="listbox" aria-multiselectable="true">
+          <div className={POPOVER_LIST_CLASSES} role="listbox" aria-multiselectable="true" onKeyDown={event => {
+            if (!['ArrowDown','ArrowUp','Home','End'].includes(event.key)) return;
+            const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role=option]'));
+            if (!items.length) return;
+            event.preventDefault();
+            const current = items.indexOf(document.activeElement as HTMLButtonElement);
+            const index = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+            items[index]?.focus();
+          }}>
             {listed.length === 0 ? (
               <p className={MULTI_SELECT_EMPTY_CLASSES} data-testid={`${testIdPrefix}skills-no-match`}>
                 {messages.noMatch}

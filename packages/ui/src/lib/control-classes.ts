@@ -382,4 +382,7 @@ export const MULTI_SELECT_SEARCH_CLASSES = 'relative mb-2 shrink-0';
 /** ポップアップの中の「該当なし」の 1 行。🔴 空のパネルを出さない（壊れて見える）。 */
 export const MULTI_SELECT_EMPTY_CLASSES = 'px-2 py-3 text-body text-fg-muted';
 
-export const SEARCH_KEYWORD_CHIP_CLASSES = 'h-auto min-h-9 min-w-0 max-w-full shrink whitespace-normal';
+export const SEARCH_KEYWORD_CHIP_CLASSES = 'rounded-lg h-auto min-h-9 min-w-0 max-w-full shrink whitespace-normal';
+
+// 2026-10-29の画像指定。検索パネルだけに入力欄と同じ控えめな影を用いる。
+export const PROJECT_SEARCH_PANEL_CLASSES = 'shadow-control';

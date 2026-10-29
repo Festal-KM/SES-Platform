@@ -9,6 +9,14 @@ test('案件検索のチップ入力・明示的な適用・保存条件の再�
   try {
     await page.goto('/projects', {waitUntil:'domcontentloaded'});
     const initial = page.url();
+    const phases = page.getByTestId('project-list-filter-phases-skills');
+    await phases.focus(); await phases.press('ArrowDown');
+    await page.getByTestId('project-list-filter-phases-skills-search').press('ArrowDown');
+    await expect(page.getByTestId('project-list-filter-phases-skills-option-PLANNING')).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(page.getByTestId('project-list-filter-phases-skills-option-PLANNING')).toHaveAttribute('aria-selected','true');
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('project-list-filter-phases-skills-panel')).toHaveCount(0);
     await page.getByTestId('project-list-filter-advanced').locator('summary').click();
     const input = page.getByTestId('project-list-filter-q');
     await input.fill('Java'); await input.press('Enter');

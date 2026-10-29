@@ -470,3 +470,5 @@ export { SegmentedControl } from './components/segmented-control.js';
 
 
 export { SEARCH_KEYWORD_CHIP_CLASSES } from './lib/control-classes.js';
+
+export { PROJECT_SEARCH_PANEL_CLASSES } from './lib/control-classes.js';
