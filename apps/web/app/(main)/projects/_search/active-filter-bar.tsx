@@ -105,6 +105,7 @@ export function ActiveFilterBar({
   submitting = false,
   onRemove,
   onClear,
+  onCancel,
   messages,
   testIdPrefix,
 }: {
@@ -113,6 +114,7 @@ export function ActiveFilterBar({
   readonly submitting?: boolean;
   readonly onRemove: (key: string) => void;
   readonly onClear: () => void;
+  readonly onCancel?: () => void;
   readonly messages: ActiveFilterBarMessages;
   readonly testIdPrefix: string;
 }) {
@@ -222,7 +224,7 @@ export function ActiveFilterBar({
   );
 
   return (
-    <div className={FILTER_SUMMARY_BAR_CLASSES} data-testid={`${testIdPrefix}summary`}>
+    <div className={cn(FILTER_SUMMARY_BAR_CLASSES, 'flex-col items-stretch')} data-testid={`${testIdPrefix}summary`}>
       <div className={FILTER_SUMMARY_CHIPS_CLASSES}>
         <span className="shrink-0 text-xs text-fg-muted">{messages.label}</span>
         {chips.length === 0 ? (
@@ -280,7 +282,7 @@ export function ActiveFilterBar({
           </div>
         )}
       </div>
-      <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
+      <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2">
         {/* 🔴 **未適用**（指示書 §6「検索結果がまだ以前の条件であることを示します」）。 */}
         {pending ? (
           <span
@@ -292,9 +294,10 @@ export function ActiveFilterBar({
           </span>
         ) : null}
         <Tooltip content={messages.clear}>
-          <Button type="button" variant="secondary" size="sm" aria-label={messages.clear}
+          <Button type="button" variant="secondary" size="sm" className="mr-auto" aria-label={messages.clear}
             data-testid={`${testIdPrefix}clear`} onClick={onClear}><Icon name="filter-x" />{t('projects.search.clearAll')}</Button>
         </Tooltip>
+        {onCancel ? <Button type="button" variant="secondary" size="sm" onClick={onCancel} data-testid={`${testIdPrefix}cancel-search`}>{t('projects.search.cancel')}</Button> : null}
         <Tooltip content={messages.submit}>
           <Button type="submit" variant="primary" size="sm" aria-label={messages.submit} aria-busy={submitting}
             data-testid={`${testIdPrefix}search`}><Icon name="search" />{t('projects.search.submit')}</Button>

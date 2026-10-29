@@ -666,6 +666,7 @@ export function SearchPanel({
           chips={chips}
           pending={pending}
           submitting={navigating}
+          onCancel={() => setDraft(applied)}
           onRemove={(key) => {
             // ✅✅ **2026-10-19 の人間の指示「選択条件を部分的に削除した場合も
             //    すぐに適用されるようにして」** —— 外した時点で一覧に効く。
