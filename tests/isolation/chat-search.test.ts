@@ -125,7 +125,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await admin?.auditLog.deleteMany({ where: { action: { startsWith: 'chat_attachment.' } } });
-  await admin?.message.deleteMany({ where: { body: { contains: WORD } } });
   await admin?.chatThread.deleteMany({ where: { kind: { in: ['DM', 'GROUP'] } } });
   await admin?.user.deleteMany({ where: { id: { in: [USER_A_HOST2, USER_A_HOST3] } } });
   await disconnectTenantDb();
