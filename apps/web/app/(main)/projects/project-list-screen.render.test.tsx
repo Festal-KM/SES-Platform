@@ -655,8 +655,8 @@ describe('検索エリア（改修指示書 §2 の 3 層）', () => {
 
     expect(panel).toContain('bg-surface');
     expect(panel).toContain('border-border');
-    // 🔴 **強い影を付けない**（指示書 §2）。
-    expect(panel).not.toContain('shadow-');
+    // 2026-10-29の画像指定に従い、既存の入力欄と同じ控えめな影だけを使う。
+    expect(panel).toContain('shadow-control');
   });
 });
 
