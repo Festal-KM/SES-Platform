@@ -316,6 +316,6 @@ function validKeywordGroups(value: string): boolean { try { return value.length 
 /** 旧フリーワードも、送信時にはグループへ変換して保持する。 */
 export function projectDraftKeywordGroups(draft: ProjectSearchDraft) {
   const groups = draft.keywordGroups ? [...(parseProjectKeywordGroups(JSON.parse(draft.keywordGroups)) ?? [])] : [];
-  if (draft.q.trim()) groups.unshift({ mode: draft.q.includes('|') ? 'OR' : 'AND', terms: draft.q.split(draft.q.includes('|') ? '|' : /[\s　]+/).map(term => term.trim()).filter(Boolean) });
+  if (draft.q.trim()) groups.unshift({ mode: draft.q.includes('|') ? 'OR' : 'AND', terms: draft.q.split(draft.q.includes('|') ? '|' : /[\s\u3000]+/).map(term => term.trim()).filter(Boolean) });
   return groups.filter(group => group.terms.length);
 }
