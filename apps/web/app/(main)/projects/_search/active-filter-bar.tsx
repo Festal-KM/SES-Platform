@@ -287,8 +287,8 @@ export function ActiveFilterBar({
             </div>
           </div>
         )}
-      </div>
       {compact && keywordGroupCount > 0 && onOpenDetails ? <Button type="button" variant="ghost" size="sm" onClick={onOpenDetails} data-testid={`${testIdPrefix}details-summary`}>{t('projects.search.advanced')} ({keywordGroupCount}{t('projects.search.groupCountSuffix')})</Button> : null}
+      </div>
       {!compact ? <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2">
         {/* 🔴 **未適用**（指示書 §6「検索結果がまだ以前の条件であることを示します」）。 */}
         {pending ? (
