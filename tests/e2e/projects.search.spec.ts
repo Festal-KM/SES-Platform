@@ -25,7 +25,10 @@ test('案件検索のチップ入力・明示的な適用・保存条件の再�
     await page.getByTestId('project-list-search-save-name').fill('検索UIの回帰検証');
     await page.getByTestId('project-list-search-save-confirm').click();
     const selected = page.getByTestId('project-list-search-saved-select');
-    const savedId = await selected.inputValue(); expect(savedId).not.toBe('');
+    const option = selected.getByRole('option', {name:'検索UIの回帰検証',exact:true});
+    await expect(option).toHaveCount(1);
+    const savedId = await option.getAttribute('value'); expect(savedId).toBeTruthy();
+    await selected.selectOption(savedId!);
     await page.getByTestId('project-list-filter-development-method-segment-WATERFALL').locator('..').click();
     await expect(page.getByTestId('project-list-search-selected-modified')).toBeVisible();
     await selected.selectOption(savedId);

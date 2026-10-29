@@ -746,7 +746,7 @@ export function ProjectForm({
             <option value="">{t('projects.search.any')}</option>{PROJECT_DEVELOPMENT_METHODS.map(value => <option key={value} value={value}>{t(`projects.search.method.${value}`)}</option>)}
           </Select>
         </Field>
-        <Field className="mb-4" label={t('projects.search.utilization')}>
+        <Field className="mb-4" label={t('projects.search.utilizationPercent')}>
           <Input type="number" min={1} max={100} value={values.utilizationRate ?? ''} onChange={event => update({ utilizationRate: event.currentTarget.value })} data-testid="project-form-utilization-rate" />
         </Field>
         <Field className="mb-4" label={messages.locationDetailLabel}>
