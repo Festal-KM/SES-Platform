@@ -1,5 +1,6 @@
 'use client';
 
+// 2026-10-29: 人間の最新指示で基本検索10項目と詳細検索へ拡張。以下の8項目の説明は旧仕様の履歴。
 // apps/web/app/(main)/projects/_search/search-filter-form.tsx
 // `S-010` の検索エリアの**本文**（改修指示書 §2 の B 層 / §3）。
 //
