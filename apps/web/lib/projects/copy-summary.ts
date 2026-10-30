@@ -17,7 +17,7 @@ export function projectCopyRequirementFields(requirements: readonly ProjectRequi
     key: kind === 'MUST' ? 'mustRequirements' : 'niceRequirements',
     label: t(kind === 'MUST' ? 'projects.copy.required' : 'projects.copy.preferred'),
     value: requirements.filter((item) => item.kind === kind).map((item) => {
-      const text = item.skillName ?? item.freeText ?? '';
+      const text = [item.skillName, item.freeText].filter(Boolean).join(' / ');
       const years = item.requiredYears === null ? '' : ` ${item.requiredYears} ${t('projects.list.requirements.yearsOrMore')}`;
       return `${t('projects.copy.bullet')}${text}${years}`;
     }).join('\n'),
