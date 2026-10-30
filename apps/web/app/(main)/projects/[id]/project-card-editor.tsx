@@ -27,6 +27,7 @@ import { Dialog, Tooltip } from "@ses/ui/client";
 import {
   PROJECT_CARD_FIELDS,
   projectCardPatch,
+  projectUtilizationBand,
   type CardRequirement,
   type ProjectCardId,
   type ProjectCardValues,
@@ -53,6 +54,11 @@ const multiline = new Set([
   "remarks",
   "copySummary",
 ]);
+const pairedFields = new Set(['category', 'sourceKind', 'startDate', 'endDate', 'headcount', 'parallelOk', 'unitPrice', 'internalUnitPrice', 'settlementMinHours', 'settlementMaxHours', 'paymentSiteDays', 'distribution']);
+const utilizationOptions = [
+  {value:'',label:t('projects.search.all')},
+  ...(['FULL','HALF_TO_FULL','UNDER_HALF'] as const).map(value=>({value,label:t(`projects.search.band.${value}`)})),
+];
 const required = new Set(["name", "status", "sourceKind", "headcount"]);
 
 export function ProjectCardEditor({
@@ -72,6 +78,7 @@ export function ProjectCardEditor({
   const [requirements, setRequirements] = useState<readonly CardRequirement[]>(
     initial.requirements,
   );
+  const [rateBand, setRateBand] = useState(projectUtilizationBand(String(initial.values.utilizationRate ?? '')));
   const [nextCard, setNextCard] = useState<ProjectCardId | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -91,6 +98,7 @@ export function ProjectCardEditor({
         JSON.stringify(draft[key] ?? "") !==
         JSON.stringify(baseline[key] ?? ""),
     ) ||
+      (active === "development" && rateBand !== projectUtilizationBand(String(baseline.utilizationRate ?? ""))) ||
       (active === "content" &&
         JSON.stringify(requirements) !== JSON.stringify(data.requirements)));
   useEffect(() => {
@@ -103,6 +111,7 @@ export function ProjectCardEditor({
   }, [dirty]);
   function begin(card: ProjectCardId): void {
     setDraft({ ...baseline });
+    setRateBand(projectUtilizationBand(String(baseline.utilizationRate ?? "")));
     setRequirements(data.requirements);
     setActive(card);
     setError("");
@@ -128,12 +137,14 @@ export function ProjectCardEditor({
   });
   function update(key: string, value: string | readonly string[]): void {
     setDraft((current) => ({ ...current, [key]: value }));
+    if (key === "utilizationRate" && typeof value === "string" && value.trim() !== "") setRateBand(projectUtilizationBand(value));
     setError("");
   }
   async function save(card: ProjectCardId): Promise<void> {
     if (sending.current) return;
     let patch: Record<string, unknown>;
     try {
+      if (card === "development" && rateBand !== projectUtilizationBand(String(draft.utilizationRate ?? ""))) throw new Error("utilizationRate");
       patch = projectCardPatch(
         card,
         baseline,
@@ -276,7 +287,16 @@ export function ProjectCardEditor({
           onChange={(event) => update(key, event.currentTarget.value)}
         />
       );
-    if (key === "utilizationRate") return <div className="flex min-w-0 items-center gap-2"><Input {...attrs} type="number" value={text} min={1} max={100} step={1} onChange={event=>update(key,event.currentTarget.value)}/><span className="shrink-0 text-cell text-fg-muted">{t("projects.cards.percent")}</span></div>;
+    if (key === "utilizationRate") return <div className="flex min-w-0 flex-col gap-2">
+      <SegmentedControl compact value={rateBand} options={utilizationOptions} label={label(key)} testIdPrefix="project-card-utilization-" onChange={band=>{
+        setRateBand(band);
+        const current = projectUtilizationBand(text);
+        setDraft(values=>({...values,utilizationRate:band==='FULL'?'100':band===''?'':current===band?text:''}));
+        setError('');
+      }}/>
+      <div className="flex min-w-0 items-center gap-2"><Input {...attrs} type="number" value={text} required={rateBand!==''} min={1} max={100} step={1} onChange={event=>update(key,event.currentTarget.value)}/><span className="shrink-0 text-cell text-fg-muted">{t("projects.cards.percent")}</span></div>
+      {rateBand!==''&&!text?<p className="m-0 text-xs text-fg-muted">{t('projects.cards.rateRequired')}</p>:null}
+    </div>;
     if (options[key])
       return (
         <Select
@@ -555,8 +575,8 @@ export function ProjectCardEditor({
             </div>
           </div>
           <div className="flex min-w-0 flex-col gap-3 p-4">
-            {PROJECT_CARD_FIELDS[id].map((key) =>
-              editing ? (
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">{PROJECT_CARD_FIELDS[id].map((key) =>
+              <div key={key} className={pairedFields.has(key) ? "min-w-0" : "min-w-0 sm:col-span-2"}>{editing ? (
                 <Field key={key} as="div">
                   <div className="grid min-w-0 grid-cols-1 items-start gap-2 sm:grid-cols-3">
                     <span className="pt-2 text-cell text-fg-muted">
@@ -587,8 +607,8 @@ export function ProjectCardEditor({
                     {display(key)}
                   </span>
                 </div>
-              ),
-            )}
+              )}</div>,
+            )}</div>
             {id === "content" ? (
               <>
                 {requirementBlock("MUST", editing)}

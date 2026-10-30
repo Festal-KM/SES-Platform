@@ -30,6 +30,7 @@ export type Locale = (typeof LOCALES)[number];
 export const DEFAULT_LOCALE: Locale = 'ja';
 
 const ja = {
+  'projects.cards.rateRequired': '選択した範囲の具体的な稼働率を％で入力してください。',
   'projects.cards.edit': '編集',
   'projects.cards.save': '保存',
   'projects.cards.saved': '保存しました。',

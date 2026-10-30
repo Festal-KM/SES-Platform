@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   projectCardPatch,
+  projectUtilizationBand,
   type CardRequirement,
   type ProjectCardValues,
 } from "./card-fields";
@@ -101,4 +102,8 @@ describe("カードの差分保存", () => {
         ],
       ),
     ).toThrow("requirements"));
+});
+
+describe('稼働率から導く区分',()=>{
+  it.each([['',''],['1','UNDER_HALF'],['49','UNDER_HALF'],['50','HALF_TO_FULL'],['80','HALF_TO_FULL'],['99','HALF_TO_FULL'],['100','FULL'],['101',''],['0','']])('%sを%sへ分類する',(value,band)=>expect(projectUtilizationBand(value)).toBe(band));
 });

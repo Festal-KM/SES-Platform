@@ -115,3 +115,11 @@ export function projectCardPatch(
     throw new Error("settlementMaxHours");
   return patch;
 }
+
+/** 検索と同じ整数％の境界。区分を別の列には保存しない。 */
+export function projectUtilizationBand(value: string): string {
+  if (value.trim() === '') return '';
+  const rate = Number(value);
+  if (!Number.isInteger(rate) || rate < 1 || rate > 100) return '';
+  return rate === 100 ? 'FULL' : rate >= 50 ? 'HALF_TO_FULL' : 'UNDER_HALF';
+}

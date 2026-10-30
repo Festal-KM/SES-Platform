@@ -41,7 +41,16 @@ test("案件カードは一つずつ編集し、キャンセル・失敗・保�
     await expect(
       page.getByTestId("project-card-input-utilizationRate"),
     ).toHaveValue("80");
+    await expect(page.getByTestId("project-card-utilization-segment-HALF_TO_FULL")).toBeChecked();
+    await page.getByTestId("project-card-utilization-segment-HALF_TO_FULL").check();
+    await expect(page.getByTestId("project-card-input-utilizationRate")).toHaveValue("80");
+    await page.getByTestId("project-card-utilization-segment-UNDER_HALF").check();
+    await expect(page.getByTestId("project-card-input-utilizationRate")).toHaveValue("");
+    await expect(page.getByTestId("project-card-input-utilizationRate")).toHaveAttribute("required", "");
+    await page.getByTestId("project-card-input-utilizationRate").fill("49");
+    await expect(page.getByTestId("project-card-utilization-segment-UNDER_HALF")).toBeChecked();
     await page.getByTestId("project-card-input-utilizationRate").fill("75");
+    await expect(page.getByTestId("project-card-utilization-segment-HALF_TO_FULL")).toBeChecked();
     const request = page.waitForRequest(
       (r) => r.method() === "PATCH" && r.url().endsWith(`/api/projects/${id}`),
     );
