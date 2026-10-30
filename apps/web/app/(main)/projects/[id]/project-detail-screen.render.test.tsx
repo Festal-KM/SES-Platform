@@ -444,7 +444,7 @@ describe('🔴 T-12-10: 公開の状態の 4 値が別の語・別の見た目�
 
 describe('添付に合わせたコンパクトなホスト見出し',()=>{
   it('状態と主要項目を残して候補検索・コピーをタイトル横に配置する',()=>{
-    const html=renderToStaticMarkup(createElement(ProjectDetailScreen,{view:hostView(),requirementKinds:REQUIREMENT_KINDS,canEdit:true,messages,compactHeader:{category:'バックエンド',sourceKind:'自社案件',updatedAt:'2026-10-31',assignee:'サンプル担当者',copyText:'提出用サマリ',updatedLabel:'更新日時',assigneeLabel:'担当者',candidatesLabel:'候補を探す'}}));
+    const html=renderToStaticMarkup(createElement(ProjectDetailScreen,{view:hostView(),requirementKinds:REQUIREMENT_KINDS,canEdit:true,messages,compactHeader:{categoryLabel:'カテゴリ',sourceKindLabel:'案件区分',category:'バックエンド',sourceKind:'自社案件',updatedAt:'2026-10-31',assignee:'サンプル担当者',copyText:'提出用サマリ',updatedLabel:'更新日時',assigneeLabel:'担当者',candidatesLabel:'候補を探す'}}));
     for(const id of ['project-detail-headline','project-detail-headline-status','project-detail-headline-headcount','project-detail-headline-startDate','project-detail-candidates','project-detail-copy-summary'])expect(html).toContain(`data-testid="${id}"`);
     expect(html).toContain('サンプル担当者');
     expect(html).toContain('バックエンド');

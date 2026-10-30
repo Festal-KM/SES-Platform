@@ -461,7 +461,7 @@ export function ProjectDetailScreen({
   readonly view: ProjectDetailView;
   readonly requirementKinds: RequirementKindOrder;
   readonly cards?: ReactNode;
-  readonly compactHeader?: {readonly category:string;readonly sourceKind:string;readonly updatedAt:string;readonly assignee:string|null;readonly copyText:string;readonly updatedLabel:string;readonly assigneeLabel:string;readonly candidatesLabel:string};
+  readonly compactHeader?: {readonly categoryLabel:string;readonly sourceKindLabel:string;readonly category:string;readonly sourceKind:string;readonly updatedAt:string;readonly assignee:string|null;readonly copyText:string;readonly updatedLabel:string;readonly assigneeLabel:string;readonly candidatesLabel:string};
   /**
    * 🔴 `VIEWER` と取引先には `S-012` への導線を出さない（docs/04 §S-011 権限差分）。
    *    ⚠️ これは UI の配慮であって拒否の本体ではない（本体は #26 のガードと `S-012` の
@@ -488,8 +488,8 @@ export function ProjectDetailScreen({
       {/* 🔴 折りたたみの外（`CLAUDE.md` §13.3）。移動中の判断に要る 3 値。 */}
       {compactHeader ? <dl className="mb-4 flex flex-wrap items-center gap-3 text-xs text-fg-muted" data-testid="project-detail-headline">
         <div><dt className="sr-only">{headline[0]?.label}</dt><dd className="m-0" data-testid="project-detail-headline-status"><StatusBadge entity="project" state={view.status} label={headline[0]?.value??''}/></dd></div>
-        <div><dt className="sr-only">{compactHeader.category}</dt><dd className="m-0"><Badge variant="outline">{compactHeader.category}</Badge></dd></div>
-        <div><dt className="sr-only">{compactHeader.sourceKind}</dt><dd className="m-0"><Badge variant="outline">{compactHeader.sourceKind}</Badge></dd></div>
+        <div><dt className="sr-only">{compactHeader.categoryLabel}</dt><dd className="m-0"><Badge variant="outline">{compactHeader.category}</Badge></dd></div>
+        <div><dt className="sr-only">{compactHeader.sourceKindLabel}</dt><dd className="m-0"><Badge variant="outline">{compactHeader.sourceKind}</Badge></dd></div>
         {headline.slice(1).map(row=><div key={row.key} className="flex items-center gap-1"><dt>{row.label}</dt><dd className="m-0" data-testid={`project-detail-headline-${row.key}`}>{row.value}</dd></div>)}
         <div className="flex items-center gap-1"><dt>{compactHeader.updatedLabel}</dt><dd className="m-0">{compactHeader.updatedAt}</dd></div>
         {compactHeader.assignee?<div className="flex items-center gap-1"><dt>{compactHeader.assigneeLabel}</dt><dd className="m-0">{compactHeader.assignee}</dd></div>:null}

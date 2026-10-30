@@ -748,8 +748,9 @@ export function ProjectCardEditTrigger({
 }
 
 export function ProjectDetailCopyAction({text}:{readonly text:string}) {
-  const [result,setResult]=useState<'idle'|'copying'|'copied'|'failed'>('idle');
+  const [result,setResult]=useState<{text:string;state:'copying'|'copied'|'failed'}|null>(null);
+  const state=result?.text===text?result.state:'idle';
   const busy=useRef(false);
-  async function copy(){if(busy.current)return;busy.current=true;setResult('copying');try{await navigator.clipboard.writeText(text);setResult('copied');}catch{setResult('failed');}finally{busy.current=false;}}
-  return <div className="flex items-center gap-2"><Tooltip content={t('projects.list.panel.copy.action')}><IconButton variant="secondary" size="sm" icon={<Icon name="copy"/>} aria-label={t('projects.list.panel.copy.action')} aria-busy={result==='copying'} onClick={()=>void copy()} data-testid="project-detail-copy-summary"/></Tooltip>{result==='copied'||result==='failed'?<span role={result==='failed'?'alert':'status'} className="text-xs text-fg-muted">{t(result==='copied'?'projects.list.panel.copy.copied':'projects.list.panel.copy.failed')}</span>:null}</div>;
+  async function copy(){if(busy.current)return;busy.current=true;setResult({text,state:'copying'});try{await navigator.clipboard.writeText(text);setResult({text,state:'copied'});}catch{setResult({text,state:'failed'});}finally{busy.current=false;}}
+  return <div className="flex items-center gap-2"><Tooltip content={t('projects.list.panel.copy.action')}><IconButton variant="secondary" size="sm" icon={<Icon name="copy"/>} aria-label={t('projects.list.panel.copy.action')} aria-busy={state==='copying'} onClick={()=>void copy()} data-testid="project-detail-copy-summary"/></Tooltip>{state==='copied'||state==='failed'?<span role={state==='failed'?'alert':'status'} className="text-xs text-fg-muted">{t(state==='copied'?'projects.list.panel.copy.copied':'projects.list.panel.copy.failed')}</span>:null}</div>;
 }

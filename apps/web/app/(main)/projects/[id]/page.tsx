@@ -115,7 +115,7 @@ export default async function ProjectDetailPage({
       parallelOk: [unset, ...projectParallelOkOptions],
       developmentPhases: PROJECT_DEVELOPMENT_PHASES.map((value) => ({
         value,
-        label: t(`projects.search.phase.${value}` as MessageKey),
+        label: t(`projects.search.phaseShort.${value}` as MessageKey),
       })),
       developmentMethod: [
         { value: "", label: t("projects.search.all") },
@@ -171,6 +171,7 @@ export default async function ProjectDetailPage({
         <ProjectDetailScreen
           view={view}
           compactHeader={data && view.audience === 'HOST' ? {
+            categoryLabel:t('projects.cards.field.category'),sourceKindLabel:t('projects.cards.field.sourceKind'),
             category: options.category?.find(item=>item.value===data.values.category)?.label??t('projects.detail.valueNone'),
             sourceKind: options.sourceKind?.find(item=>item.value===data.values.sourceKind)?.label??t('projects.detail.valueNone'),
             updatedAt:data.updatedAt,assignee:data.assigneeName,copyText:String(data.values.copySummary||data.autoSummary),
