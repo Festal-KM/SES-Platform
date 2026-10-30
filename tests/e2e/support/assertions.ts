@@ -4,7 +4,7 @@
 // 🔴 `expect(text).not.toContain(x)` を並べると、落ちたときに「何が漏れたか」は分かるが
 //    「どの応答か」が分からない。分離の失敗は原因追跡が最重要なので、経路名を必ず添える。
 import { expect, type Page } from '@playwright/test';
-import { t } from '@ses/i18n';
+import { t } from '../../../packages/i18n/src/index';
 import { apiRequest, parseJson } from './api';
 
 export type Sighting = { readonly source: string; readonly marker: string };
