@@ -54,8 +54,9 @@ test('行のステータスを切り替えても検索URLを変えず、失敗�
       else await route.continue();
     });
     await toggle.click();
-    await expect(page.getByRole('alert')).toContainText('変更');
+    await expect(page.getByTestId(`project-list-row-${id}`).getByRole('alert')).toContainText('変更');
     await expect(toggle).toContainText('募集中');
     session.outbound.assertNone();
   } finally {await session.close();}
 });
+
