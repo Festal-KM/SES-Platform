@@ -27,6 +27,9 @@ import type { RequirementKind } from "@ses/db";
 import type { ProjectPublicField, ProjectPublishStateView } from "@ses/domain";
 import {
   cn,
+  Badge,
+  StatusBadge,
+  PRIMARY_LINK_CLASSES,
   Card,
   NameCell,
   SECONDARY_LINK_CLASSES,
@@ -48,7 +51,7 @@ import {
 } from "../../../../lib/projects/detail";
 import { formatDateTimeJst } from "../../../../lib/format/datetime";
 import type { ProjectDetailView } from "../../../../lib/projects/service";
-import { ProjectCardEditTrigger } from "./project-card-editor";
+import { ProjectCardEditTrigger, ProjectDetailCopyAction } from "./project-card-editor";
 
 export type ProjectDetailScreenMessages = {
   readonly sectionRequirements: string;
@@ -453,10 +456,12 @@ export function ProjectDetailScreen({
   canEdit,
   messages,
   cards,
+  compactHeader,
 }: {
   readonly view: ProjectDetailView;
   readonly requirementKinds: RequirementKindOrder;
   readonly cards?: ReactNode;
+  readonly compactHeader?: {readonly category:string;readonly sourceKind:string;readonly updatedAt:string;readonly assignee:string|null;readonly copyText:string;readonly updatedLabel:string;readonly assigneeLabel:string;readonly candidatesLabel:string};
   /**
    * 🔴 `VIEWER` と取引先には `S-012` への導線を出さない（docs/04 §S-011 権限差分）。
    *    ⚠️ これは UI の配慮であって拒否の本体ではない（本体は #26 のガードと `S-012` の
@@ -470,17 +475,25 @@ export function ProjectDetailScreen({
 
   return (
     <div data-testid="project-detail-screen" data-audience={view.audience}>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
         <h1
           className="text-title font-semibold text-fg"
           data-testid="project-detail-name"
         >
           {view.name}
         </h1>
+        {compactHeader?<div className="flex flex-wrap items-center gap-2"><ProjectDetailCopyAction text={compactHeader.copyText}/><Link className={PRIMARY_LINK_CLASSES} href={`/projects/${view.id}/candidates`} data-testid="project-detail-candidates">{compactHeader.candidatesLabel}</Link></div>:null}
       </div>
 
       {/* 🔴 折りたたみの外（`CLAUDE.md` §13.3）。移動中の判断に要る 3 値。 */}
-      <dl
+      {compactHeader ? <dl className="mb-4 flex flex-wrap items-center gap-3 text-xs text-fg-muted" data-testid="project-detail-headline">
+        <div><dt className="sr-only">{headline[0]?.label}</dt><dd className="m-0" data-testid="project-detail-headline-status"><StatusBadge entity="project" state={view.status} label={headline[0]?.value??''}/></dd></div>
+        <div><dt className="sr-only">{compactHeader.category}</dt><dd className="m-0"><Badge variant="outline">{compactHeader.category}</Badge></dd></div>
+        <div><dt className="sr-only">{compactHeader.sourceKind}</dt><dd className="m-0"><Badge variant="outline">{compactHeader.sourceKind}</Badge></dd></div>
+        {headline.slice(1).map(row=><div key={row.key} className="flex items-center gap-1"><dt>{row.label}</dt><dd className="m-0" data-testid={`project-detail-headline-${row.key}`}>{row.value}</dd></div>)}
+        <div className="flex items-center gap-1"><dt>{compactHeader.updatedLabel}</dt><dd className="m-0">{compactHeader.updatedAt}</dd></div>
+        {compactHeader.assignee?<div className="flex items-center gap-1"><dt>{compactHeader.assigneeLabel}</dt><dd className="m-0">{compactHeader.assignee}</dd></div>:null}
+      </dl> : (      <dl
         className="mb-4 grid grid-cols-1 gap-3 border border-border bg-bg-subtle p-4 text-body sm:grid-cols-3"
         data-testid="project-detail-headline"
       >
@@ -495,7 +508,7 @@ export function ProjectDetailScreen({
             </dd>
           </div>
         ))}
-      </dl>
+      </dl>)}
 
       {/* 🔴 T-12-10: 自動解除の帯（`docs/04` 改訂 14 §S-011）。要件の上に置く。 */}
       {view.audience === "HOST" &&
@@ -522,7 +535,7 @@ export function ProjectDetailScreen({
         //    無彩色・枠線に直した（🔴 **4 値はどれも別の見た目にする**。`F-014 AC-12` と同じ趣旨）。
         //    塗り / 枠線の区別は `StatusBadge` と同じ語彙（背景あり / `bg-transparent`）で表す。
         <p
-          className="mb-4 border border-neutral-border bg-transparent px-4 py-3 text-body text-fg"
+          className="mb-3 border border-neutral-border bg-transparent px-3 py-2 text-xs text-fg"
           data-testid="project-detail-visibility-warning"
         >
           {messages.visibilityEmpty}
@@ -539,7 +552,7 @@ export function ProjectDetailScreen({
         </p>
       ) : null}
 
-      <div className="mb-4 flex flex-wrap items-center gap-4">
+      <div className="mb-3 flex flex-wrap items-center gap-4">
         {canEdit && !cards ? (
           <Link
             className={SECONDARY_LINK_CLASSES}
@@ -550,7 +563,7 @@ export function ProjectDetailScreen({
           </Link>
         ) : null}
         <p
-          className="text-body text-fg-muted"
+          className="text-xs text-fg-muted"
           data-testid="project-detail-view-recorded"
         >
           {messages.viewRecorded}

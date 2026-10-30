@@ -160,7 +160,7 @@ export default async function ProjectDetailPage({
              `VIEWER` も閲覧でき、絞り込みの本体は `#30` の RLS である（同§の 🔴）。 */}
         <PageHeading
           trail={PROJECT_DETAIL_TRAIL}
-          primaryAction={{
+          primaryAction={data ? null : {
             labelKey: "projects.detail.candidates.open",
             href: `/projects/${view.id}/candidates`,
             kind: "NAVIGATION",
@@ -170,6 +170,12 @@ export default async function ProjectDetailPage({
         />
         <ProjectDetailScreen
           view={view}
+          compactHeader={data && view.audience === 'HOST' ? {
+            category: options.category?.find(item=>item.value===data.values.category)?.label??t('projects.detail.valueNone'),
+            sourceKind: options.sourceKind?.find(item=>item.value===data.values.sourceKind)?.label??t('projects.detail.valueNone'),
+            updatedAt:data.updatedAt,assignee:data.assigneeName,copyText:String(data.values.copySummary||data.autoSummary),
+            updatedLabel:t('projects.cards.field.updatedAt'),assigneeLabel:t('projects.cards.field.assigneeUserId'),candidatesLabel:t('projects.detail.candidates.open'),
+          }:undefined}
           cards={
             data && view.audience === "HOST" ? (
               <ProjectCardEditor

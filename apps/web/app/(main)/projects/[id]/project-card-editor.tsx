@@ -54,7 +54,7 @@ const multiline = new Set([
   "remarks",
   "copySummary",
 ]);
-const pairedFields = new Set(['category', 'sourceKind', 'startDate', 'endDate', 'headcount', 'parallelOk', 'unitPrice', 'internalUnitPrice', 'settlementMinHours', 'settlementMaxHours', 'paymentSiteDays', 'distribution']);
+const pairedFields = new Set(['category', 'sourceKind', 'startDate', 'endDate', 'headcount', 'parallelOk', 'unitPrice', 'internalUnitPrice', 'settlementMinHours', 'settlementMaxHours', 'paymentSiteDays', 'distribution', 'distributionLimit']);
 const utilizationOptions = [
   {value:'',label:t('projects.search.all')},
   ...(['FULL','HALF_TO_FULL','UNDER_HALF'] as const).map(value=>({value,label:t(`projects.search.band.${value}`)})),
@@ -282,12 +282,12 @@ export function ProjectCardEditor({
       return (
         <Textarea
           {...attrs}
-          rows={key === "copySummary" ? 8 : 3}
+          rows={key === "publicSummary" ? 3 : key === "copySummary" ? 4 : 2}
           value={text}
           onChange={(event) => update(key, event.currentTarget.value)}
         />
       );
-    if (key === "utilizationRate") return <div className="flex min-w-0 flex-col gap-2">
+    if (key === "utilizationRate") return <div className="flex min-w-0 flex-col gap-2 [&_[role=radiogroup]]:grid-cols-2 2xl:[&_[role=radiogroup]]:grid-cols-4">
       <SegmentedControl compact value={rateBand} options={utilizationOptions} label={label(key)} testIdPrefix="project-card-utilization-" onChange={band=>{
         setRateBand(band);
         const current = projectUtilizationBand(text);
@@ -521,7 +521,7 @@ export function ProjectCardEditor({
             void save(id);
           }}
         >
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
             <h2 className="m-0 text-lg font-semibold">{title(id)}</h2>
             <div className="flex items-center gap-1">
               {canEdit ? (
@@ -575,36 +575,36 @@ export function ProjectCardEditor({
             </div>
           </div>
           <div className="flex min-w-0 flex-col gap-3 p-4">
-            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">{PROJECT_CARD_FIELDS[id].map((key) =>
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">{PROJECT_CARD_FIELDS[id].filter(key=>key!=="settlementMaxHours").map((key) =>
               <div key={key} className={pairedFields.has(key) ? "min-w-0" : "min-w-0 sm:col-span-2"}>{editing ? (
                 <Field key={key} as="div">
-                  <div className="grid min-w-0 grid-cols-1 items-start gap-2 sm:grid-cols-3">
+                  <div className={cn("grid min-w-0 grid-cols-1 items-start gap-2", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:grid-cols-3" : "sm:grid-cols-6")}>
                     <span className="pt-2 text-cell text-fg-muted">
-                      {label(key)}
+                      {label(key === "settlementMinHours" ? "settlementHours" : key)}
                       {required.has(key) ? (
                         <span className="text-danger" aria-hidden="true">
                           {t("projects.cards.requiredMark")}
                         </span>
                       ) : null}
                     </span>
-                    <div className="min-w-0 sm:col-span-2">{control(key)}</div>
+                    <div className={cn("min-w-0", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:col-span-2" : "sm:col-span-5")}>{key === "settlementMinHours" ? <div className="flex min-w-0 items-center gap-2">{control(key)}<span>{t('projects.cards.rangeSeparator')}</span>{control('settlementMaxHours')}<span className="shrink-0 text-xs">{t('projects.cards.hours')}</span></div> : control(key)}</div>
                   </div>
                 </Field>
               ) : (
                 <div
                   key={key}
-                  className="grid min-w-0 grid-cols-1 gap-2 text-body sm:grid-cols-3"
+                  className={cn("grid min-w-0 grid-cols-1 gap-2 text-body", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:grid-cols-3" : "sm:grid-cols-6")}
                 >
-                  <span className="text-fg-muted">{label(key)}</span>
+                  <span className="text-cell text-fg-muted">{label(key === "settlementMinHours" ? "settlementHours" : key)}</span>
                   <span
-                    className="min-w-0 whitespace-pre-wrap break-words sm:col-span-2"
+                    className={cn("min-w-0 whitespace-pre-wrap break-words", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:col-span-2" : "sm:col-span-5", key === "copySummary" ? "max-h-48 overflow-y-auto" : undefined)}
                     data-testid={
                       key === "publicSummary"
                         ? "project-detail-public-summary"
-                        : `project-card-value-${key}`
+                        : key === "settlementMinHours" ? "project-card-value-settlementHours" : `project-card-value-${key}`
                     }
                   >
-                    {display(key)}
+                    {key === "settlementMinHours" ? <><span data-testid="project-card-value-settlementMinHours">{data.values.settlementMinHours || t('projects.detail.valueNone')}</span>{t('projects.cards.rangeSeparator')}<span data-testid="project-card-value-settlementMaxHours">{data.values.settlementMaxHours || t('projects.detail.valueNone')}</span>{t('projects.cards.hours')}</> : display(key)}
                   </span>
                 </div>
               )}</div>,
@@ -668,16 +668,16 @@ export function ProjectCardEditor({
           data-testid="project-detail-card-management"
         >
           <h2 className="mb-3 text-lg font-semibold">{title("management")}</h2>
-          <dl className="flex flex-col gap-3 text-cell">
+          <dl className="flex flex-col gap-3 text-xs">
             {[
               ["id", data.id],
               ["createdAt", data.createdAt],
               ["updatedAt", data.updatedAt],
               ["origin", data.origin],
             ].map(([key, value]) => (
-              <div key={key} className="grid min-w-0 grid-cols-3 gap-2">
-                <dt className="text-fg-muted">{label(key!)}</dt>
-                <dd className="m-0 min-w-0 break-all col-span-2">{value}</dd>
+              <div key={key} className="flex min-w-0 items-start gap-2">
+                <dt className="shrink-0 whitespace-nowrap text-fg-muted">{label(key!)}</dt>
+                <dd className="m-0 min-w-0 flex-1 break-words text-right">{value}</dd>
               </div>
             ))}
           </dl>
@@ -745,4 +745,11 @@ export function ProjectCardEditTrigger({
       {label}
     </Button>
   );
+}
+
+export function ProjectDetailCopyAction({text}:{readonly text:string}) {
+  const [result,setResult]=useState<'idle'|'copying'|'copied'|'failed'>('idle');
+  const busy=useRef(false);
+  async function copy(){if(busy.current)return;busy.current=true;setResult('copying');try{await navigator.clipboard.writeText(text);setResult('copied');}catch{setResult('failed');}finally{busy.current=false;}}
+  return <div className="flex items-center gap-2"><Tooltip content={t('projects.list.panel.copy.action')}><IconButton variant="secondary" size="sm" icon={<Icon name="copy"/>} aria-label={t('projects.list.panel.copy.action')} aria-busy={result==='copying'} onClick={()=>void copy()} data-testid="project-detail-copy-summary"/></Tooltip>{result==='copied'||result==='failed'?<span role={result==='failed'?'alert':'status'} className="text-xs text-fg-muted">{t(result==='copied'?'projects.list.panel.copy.copied':'projects.list.panel.copy.failed')}</span>:null}</div>;
 }

@@ -89,6 +89,9 @@ test("案件カードは一つずつ編集し、キャンセル・失敗・保�
     await expect(page.getByTestId("project-card-value-copySummary")).toHaveText(
       "取引先向けの手動サマリ",
     );
+    await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async(text:string)=>{(window as Window & {copiedProjectText?:string}).copiedProjectText=text;}}}));
+    await page.getByTestId('project-detail-copy-summary').click();
+    await expect.poll(()=>page.evaluate(()=>(window as Window & {copiedProjectText?:string}).copiedProjectText)).toBe('取引先向けの手動サマリ');
     await page.getByTestId("project-card-edit-content").click();
     await page.getByTestId("project-card-requirement-add-MUST").click();
     await expect(
