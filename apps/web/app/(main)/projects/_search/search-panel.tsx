@@ -87,7 +87,6 @@ import {
   Badge,
   Button,
   Card,
-  PROJECT_SEARCH_PANEL_CLASSES,
   DIALOG_PANEL_NARROW_CLASSES,
   FILTER_BODY_CLASSES,
   FILTER_BODY_COLLAPSE_CLASSES,
@@ -487,7 +486,7 @@ export function SearchPanel({
   const saveFieldError = dialogError ?? (name !== '' && !nameValid ? messages.nameError : undefined);
 
   return (
-    <Card className={cn(PROJECT_SEARCH_PANEL_CLASSES, 'w-full')} data-testid="project-list-search-panel">
+    <Card className="w-full" data-testid="project-list-search-panel">
       {/* 🔴 **素の GET フォーム**（ファイル冒頭の 🔴🔴）。 */}
       <form
         // 🔴 **幅を測るのはこの要素である**（= 検索エリア自身の幅。指示書 §2）。

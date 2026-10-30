@@ -1,4 +1,5 @@
 import { parseProjectKeywordGroups, type ProjectKeywordGroup } from '@ses/domain';
+import type { Prisma } from '@prisma/client';
 // packages/db/src/search/projects.ts
 // 案件の検索と既定の並び（`GET /api/projects`。docs/05 §6.4 #25 / `F-015` / `S-010`）。
 // T-06-03 → 🔴 T-06-05 で `apps/web/lib/projects/list.ts` から**検索に相当する部分だけ**を
@@ -209,6 +210,16 @@ export const PROJECT_LIST_ORDER_BY = [
   { startDate: { sort: 'asc', nulls: 'last' } },
   { id: 'desc' },
 ] as const;
+
+/** 旧カーソルURLを番号へ移すため、同じ並びでカーソルまでの行だけを数える。 */
+export function projectCursorPrefixWhere(row: {status: string; updatedAt: Date; startDate: Date | null; id: string}): Prisma.ProjectWhereInput {
+  return {OR:[
+    {status:{gt:row.status}},
+    {status:row.status,updatedAt:{gt:row.updatedAt}},
+    {status:row.status,updatedAt:row.updatedAt,startDate:row.startDate === null ? {not:null} : {lt:row.startDate}},
+    {status:row.status,updatedAt:row.updatedAt,startDate:row.startDate,id:{gte:row.id}},
+  ]};
+}
 
 /**
  * 🔴 **`ORDER BY status DESC` が `PROJECT_STATUS_LIST_PRIORITY` を与えることの検査。**

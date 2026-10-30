@@ -18,10 +18,17 @@ import {
   PROJECT_LIST_ORDER_BY,
   PROJECT_STATUS_LIST_PRIORITY,
   projectSearchWhere,
+  projectCursorPrefixWhere,
   type ProjectSearchCriteria,
 } from './projects.js';
 // ✅ 2026-10-15: 単価レンジの述語は人材検索と共有している（T-06-03 の申し送りの決着）。
 import { engineerPriceConditions } from './engineers.js';
+
+it('旧カーソルの位置は同じ並びのNULL末尾とUUID降順を使う',()=>{
+  const row={id:'01930000-0000-7000-8000-000000000001',status:'OPEN',updatedAt:new Date('2026-10-30T00:00:00Z'),startDate:null};
+  expect(projectCursorPrefixWhere(row).OR).toContainEqual({status:'OPEN',updatedAt:row.updatedAt,startDate:{not:null}});
+  expect(projectCursorPrefixWhere(row).OR).toContainEqual({status:'OPEN',updatedAt:row.updatedAt,startDate:null,id:{gte:row.id}});
+});
 import { unitPriceOverlapConditions } from './unit-price-range.js';
 
 /** `where` を素の JSON にして「何が入っているか」を文字列として数える。 */

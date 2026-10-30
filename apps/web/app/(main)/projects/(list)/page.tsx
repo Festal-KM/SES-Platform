@@ -17,24 +17,23 @@ import type { Metadata } from 'next';
 // ✅ 2026-10-16: 単価の逆転の判定（述語〔重なり〕と同じファイルの 1 本。人間の明示指示）。
 import { isUnitPriceRangeInverted } from '@ses/db';
 import { t } from '@ses/i18n';
-import { PageBody } from '@ses/ui';
+import { PageBody, CONTENT_PADDING_Y_CLASS, cn } from '@ses/ui';
 import { resolveTenantCtxOutcome, readRequestMeta } from '../../../../lib/auth/session';
 import { readProjectBasicInfo } from '../../../../lib/projects/basic-info';
-import { listProjects } from '../../../../lib/projects/list';
+import { listProjects, projectPageFromCursor } from '../../../../lib/projects/list';
+import { projectPagination, projectPageHref } from '../../../../lib/projects/pagination';
 import {
   hasProjectListFilters,
   parseHiddenProjectColumns,
   PROJECT_DEFAULT_HIDDEN_COLUMN_IDS,
   PROJECT_HIDEABLE_COLUMN_IDS,
   projectColumnToggleHref,
-  projectListHref,
   // ✅✅ 2026-10-16: 案件サマリのタブ（`?panelTab=`。人間の明示指示）。
   projectPanelTab,
   projectPanelTabHref,
   PROJECT_PANEL_TAB_PARAM,
   projectListPrimaryAction,
   projectListRows,
-  projectPageSummary,
   projectPopulationLabel,
   projectSelectHref,
   selectedProjectId,
@@ -106,6 +105,9 @@ export default async function ProjectListPage({
   // ⚠️ **DB の列も `packages/db` の述語も消していない**（指示書「DB の列削除や
   //    他画面の項目削除は不要」）—— `S-012`（登録・編集）は引き続き扱う。
   const query = { ...parsed.data, parallelOk: undefined };
+  // 旧カーソルのブックマークも同じ公開範囲で位置を解決して番号URLへ引き継ぐ。
+  const initialHidden = parseHiddenProjectColumns(raw[HIDDEN_COLUMNS_PARAM]);
+  if(query.cursor && query.page === undefined) redirect(projectPageHref(query,await projectPageFromCursor(ctx,query),initialHidden,projectPanelTab(raw[PROJECT_PANEL_TAB_PARAM])));
   // ============================================================================
   // ✅ **2026-10-16（人間の明示指示「下限 > 上限 の場合はバリデーションエラーを表示し
   //    検索を実行しない」）**
@@ -144,6 +146,8 @@ export default async function ProjectListPage({
   //    🔴 許可リスト外の値は捨てる（URL 直打ちで壊れない）。
   const hiddenColumns = parseHiddenProjectColumns(raw[HIDDEN_COLUMNS_PARAM]);
   const rows = projectListRows(view.items);
+  const paging = projectPagination(query,view.total,rows.length,hiddenColumns,projectPanelTab(raw[PROJECT_PANEL_TAB_PARAM]));
+  if((query.page ?? 1) > paging.last) redirect(projectPageHref(query,paging.last,hiddenColumns,projectPanelTab(raw[PROJECT_PANEL_TAB_PARAM])));
   // 🔴 **副カラムで開く行**（SP-22 段④）。`?selected=` も**表示の状態**であり API には渡さない
   //    （`?hide=` と同じ扱い。`projectListQuerySchema` はこのキーを持たず、Zod の既定〔strip〕で
   //    落ちるので上の `safeParse` は成功し、URL も書き換わらない）。
@@ -187,6 +191,8 @@ export default async function ProjectListPage({
   // 🔴 **画面に欄が無いが URL には在る値**と**表示の状態**。
   //    🔴 **かつての `parallelOk` は入れない**（指示書 §3）。
   const passThroughParams: { readonly name: string; readonly value: string }[] = [];
+  // 検索実行はpageを引き継がず先頭へ戻す。表示件数だけは維持する。
+  passThroughParams.push({name:'limit',value:String(query.limit)});
   if (query.sourceKind !== undefined) {
     passThroughParams.push({ name: 'sourceKind', value: query.sourceKind });
   }
@@ -214,7 +220,7 @@ export default async function ProjectListPage({
 
   return (
     // ページ見出しの下に、検索＋一覧と右側の詳細を並べる（狭幅では縦積み）。
-    <main className="min-h-full bg-bg py-6">
+    <main className={cn(CONTENT_PADDING_Y_CLASS,'min-h-full bg-bg-subtle')}>
       <PageBody widthClass="full">
       {/* 🔴 primary は帯の 1 つだけ（§7.6）。`ACTION` なので `canAct` が偽のロールには
           描かれない（`PageHeading`）。**判定の出所は `canRegister` の 1 つ**であり、
@@ -233,7 +239,7 @@ export default async function ProjectListPage({
              `partnerScopeNotice` も残っている。消したのは**重複していた 1 行**である。
           ⚠️ 文言キー（`projects.list.description*`）は消していない（`U-22` の凍結）。 */}
       <ProjectListScreen
-        pageSummary={projectPageSummary(view.total, rows.length)}
+        pagination={paging}
         summaryPanel={
           <ProjectSummaryPanel
             row={selectedRow}
@@ -277,12 +283,6 @@ export default async function ProjectListPage({
         //    次ページで隠した列が復活すると、利用者は何が起きたか説明できない。
         // 🔴 **`?selected=` は引き継がない** —— 開いていた行は次のページに居ないので、
         //    引き継ぐと「このページに無い ID」になる（遷移先で先頭行に落ちる）。
-        nextPageHref={
-          view.nextCursor === null ? null : projectListHref(query, view.nextCursor, hiddenColumns)
-        }
-        firstPageHref={
-          query.cursor === undefined ? null : projectListHref(query, null, hiddenColumns)
-        }
         columnToggleItems={columnToggleItems}
         selectedId={selectedId}
         // 🔴 行から副カラムを開く URL（検索条件・ページの位置・列の表示状態を保つ）。

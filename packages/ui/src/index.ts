@@ -302,6 +302,7 @@ export {
 export type { PageBodyAsideFrom, PageBodyProps, PageWidthClass } from './components/page-body.js';
 // 🔴 T-22-04: カーソル方式のページ送り。🔴 オフセット・総件数・無限スクロールの prop を持たない。
 export { Pagination } from './components/pagination.js';
+export { NumberedPagination } from './components/pagination.js';
 export type { PaginationLinkProps, PaginationProps } from './components/pagination.js';
 export { Radio } from './components/radio.js';
 export type { RadioProps } from './components/radio.js';

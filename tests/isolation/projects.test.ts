@@ -1752,3 +1752,21 @@ describe('詳細検索の条件結合と内部備考の境界', () => {
     }
   });
 });
+
+describe('番号指定のページでも情報の境界を保つ', () => {
+  it('各ロールの全件を分割しても同じ順・件数で、外部行が混ざらない',async()=>{
+    for(const [identity,role] of [[HOST_1,'SALES'],[PARTNER_USER_1,'PARTNER_ADMIN'],[HOST_2,'SALES']] as const){
+      const ctx=await ctxOf(identity,role);
+      const all=await listBodyOf(await getProjects(ctx,'?limit=200'));
+      const paged:string[]=[];
+      for(let page=1;page<=Math.max(1,all.total);page++){
+        const part=await listBodyOf(await getProjects(ctx,`?limit=1&page=${page}`));
+        expect(part.total).toBe(all.total);paged.push(...idsOf(part));
+      }
+      expect(paged).toEqual(idsOf(all));
+      expect(new Set(paged).size).toBe(paged.length);
+      const end=await listBodyOf(await getProjects(ctx,`?limit=1&page=${all.total+1}`));
+      expect(end.items).toEqual([]);
+    }
+  });
+});

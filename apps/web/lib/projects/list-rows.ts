@@ -294,6 +294,7 @@ export function projectListHref(
   for (const key of ['developmentMethod', 'utilizationBand', 'utilizationMin', 'utilizationMax', 'keywordGroups'] as const) { if (query[key] !== undefined) params.set(key, String(query[key])); }
   if (query.limit !== PAGE_SIZE_DEFAULT) params.set('limit', String(query.limit));
   if (cursor !== null) params.set('cursor', cursor);
+  if (cursor === null && query.page !== undefined && query.page > 1) params.set('page', String(query.page));
   // ✅ 2026-10-15: 既定（2 列を格納）と同じなら URL に痕跡を残さない。既定から戻したときだけ
   //    `?hide=` が載る（空値 ＝ 1 つも隠していない）。
   const hide = hiddenColumnsParamValue(hiddenColumns, PROJECT_DEFAULT_HIDDEN_COLUMN_IDS);

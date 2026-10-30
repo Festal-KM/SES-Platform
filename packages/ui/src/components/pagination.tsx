@@ -24,6 +24,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import { cn } from '../lib/cn.js';
 import { FOCUS_RING_CLASSES, TRANSITION_CLASSES } from '../lib/state-classes.js';
+import { Icon } from '../icons.js';
 
 /** 導線の部品が受け取る props（`next/link` の `Link` がそのまま満たす）。 */
 export type PaginationLinkProps = {
@@ -107,4 +108,31 @@ export function Pagination({
       )}
     </nav>
   );
+}
+
+// 番号指定は人間の明示した案件一覧の仕様。従来のカーソル部品と他画面の契約は変えない。
+const NUMBER_LINK = cn('inline-flex h-8 min-w-8 items-center justify-center rounded-md border border-transparent px-2 text-cell tabular-nums text-fg', 'hover:bg-brand-bg active:bg-bg-inset', FOCUS_RING_CLASSES, TRANSITION_CLASSES);
+const NUMBER_CURRENT = cn(NUMBER_LINK,'bg-brand text-brand-fg hover:bg-brand-hover');
+const NUMBER_EDGE = 'inline-flex h-8 min-w-8 items-center justify-center rounded-md px-2 text-cell text-fg-placeholder';
+
+export type NumberedPaginationProps = {
+  readonly current: number;
+  readonly pages: readonly ({readonly value:number; readonly href:string} | null)[];
+  readonly first:string|null; readonly previous:string|null; readonly next:string|null; readonly final:string|null;
+  readonly labels:{readonly nav:string; readonly first:string; readonly previous:string; readonly next:string; readonly last:string; readonly page:string; readonly ellipsis:string};
+  readonly busy?:boolean;
+  readonly onNavigate?:(href:string)=>void;
+};
+export function NumberedPagination(props:NumberedPaginationProps) {
+  const item = (href:string|null,label:string,id:string,content:ReactNode,current=false) => href === null
+    ? <span className={NUMBER_EDGE} aria-disabled="true" aria-label={label} data-testid={id === 'project-list-first' ? 'project-list-first' : id === 'project-list-next' ? 'project-list-next' : id}>{content}</span>
+    : <a href={href} className={current ? NUMBER_CURRENT : NUMBER_LINK} aria-label={label} aria-current={current ? 'page' : undefined} aria-disabled={props.busy || undefined} data-testid={id === 'project-list-first' ? 'project-list-first' : id === 'project-list-next' ? 'project-list-next' : id}
+      onClick={event=>{if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;if(props.busy){event.preventDefault();return;}if(props.onNavigate){event.preventDefault();props.onNavigate(href);}}}>{content}</a>;
+  return <nav aria-label={props.labels.nav} className="flex flex-wrap items-center justify-center gap-1" data-testid="project-list-pagination">
+    {item(props.first,props.labels.first,'project-list-first',<><Icon name="chevron-down" className="rotate-90"/><Icon name="chevron-down" className="-ml-3 rotate-90"/></>)}
+    {item(props.previous,props.labels.previous,'project-list-pagination-previous',<Icon name="chevron-down" className="rotate-90"/>)}
+    {props.pages.map((page,index)=>page === null ? <span key={`gap-${index}`} className={NUMBER_EDGE} aria-hidden="true">{props.labels.ellipsis}</span> : <span key={page.value}>{item(page.href,`${props.labels.page} ${page.value}`,`project-list-page-${page.value}`,page.value,page.value===props.current)}</span>)}
+    {item(props.next,props.labels.next,'project-list-next',<Icon name="chevron-down" className="-rotate-90"/>)}
+    {item(props.final,props.labels.last,'project-list-pagination-last',<><Icon name="chevron-down" className="-rotate-90"/><Icon name="chevron-down" className="-ml-3 -rotate-90"/></>)}
+  </nav>;
 }

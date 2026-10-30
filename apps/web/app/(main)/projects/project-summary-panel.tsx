@@ -113,7 +113,7 @@ export function ProjectSummaryPanel({
 }) {
   if (row === null) {
     return (
-      <Card className="h-full rounded-none border-0" data-testid="project-list-panel">
+      <Card className="h-full" data-testid="project-list-panel">
         <div className="p-4">
           <p className="m-0 text-body text-fg-muted" data-testid="project-list-panel-empty">
             {messages.empty}
@@ -134,7 +134,7 @@ export function ProjectSummaryPanel({
   }
 
   return (
-    <Card className="flex h-full min-h-0 flex-col overflow-hidden rounded-none border-0" data-testid="project-list-panel" data-project-id={row.id}>
+    <Card className="flex h-full min-h-0 flex-col overflow-hidden" data-testid="project-list-panel" data-project-id={row.id}>
       {/* 案件名 + 状態。🔴 `h1` にしない —— 画面の `h1` は帯（`PageHeading`）が持つ
           （1 画面 1 つ。`tests/static/page-heading-single.test.ts`）。
           🔴 **タブより上に置く** —— どのタブに居ても「どの案件か」が見えていなければならない

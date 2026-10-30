@@ -82,7 +82,7 @@ import {
   // ⚠️ **2026-10-19: 複数選択の 4 定数の import はここから消えた。** 引き金・面・行・`×` を
   //    組むのは `./skill-filter-select.tsx`（クライアントの島）に移っており、
   //    **見た目の決定は従来どおり `@ses/ui` の 1 箇所にある**（定数そのものは増えた）。
-  Pagination,
+  Card,
   PAGE_BODY_ASIDE_ROW_CLASSES_BY_FROM,
   PAGE_BODY_SPLIT_MAIN_CLASSES_BY_FROM,
   PAGE_BODY_ASIDE_WIDTH_CLASSES,
@@ -90,7 +90,6 @@ import {
   StatusBadge,
   Toolbar,
   type DataTableColumn,
-  type PaginationLinkProps,
 } from '@ses/ui';
 // ⚠️ **2026-10-19: 絞り込みの器のクラス（`_shared/filter-form-classes`）はここでは使わない。**
 //    検索エリアは `_search/` の島に移り、格子は器の幅で決まる（`FILTER_GRID_CLASSES`）。
@@ -108,6 +107,8 @@ import type { ProjectListRowView } from '../../../lib/projects/list-rows';
 //    閉じており、行の描画（50 行 × 9 列）も他の 5 条件もサーバに残る
 //    （`_components/column-toggle.tsx` が担っていたのと同じ形）。
 import { SearchPanel, type SearchPanelMessages } from './_search/search-panel';
+import { ProjectPagination } from './project-pagination';
+import type { ProjectPaginationModel } from '../../../lib/projects/pagination';
 import { ProjectStatusControl, type ProjectStatusControlMessages } from './project-status-control';
 import type { ProjectSearchDraft } from './_search/filters';
 import type { SearchFilterFormOptions } from './_search/search-filter-form';
@@ -168,18 +169,6 @@ export type ProjectListScreenMessages = {
  * `Pagination` は `project-list-pagination-prev` / `…-next` を出すが、凍結されている値は
  * **`project-list-first` / `project-list-next`** である（`EngineerPagingLink` と同じ形・同じ理由）。
  */
-function ProjectPagingLink({ href, className, children, 'data-testid': testId }: PaginationLinkProps) {
-  return (
-    <Link
-      href={href}
-      className={className}
-      data-testid={testId === undefined || testId.endsWith('-prev') ? 'project-list-first' : 'project-list-next'}
-    >
-      {children}
-    </Link>
-  );
-}
-
 /**
  * 列定義（🔴 **§10.3 の `S-010` の行をそのまま写す**。ファイル冒頭の表）。
  * 🔴 **画面に `hidden lg:table-cell` を書かない**（検査 (m)④）。
@@ -352,7 +341,7 @@ function projectColumns(
 }
 
 export function ProjectListScreen({
-  pageSummary,
+  pagination,
   summaryPanel,
   rows,
   applied,
@@ -363,14 +352,12 @@ export function ProjectListScreen({
   defaultExpanded,
   searchMessages,
   canRegister,
-  nextPageHref,
-  firstPageHref,
   columnToggleItems,
   selectedId,
   selectHrefOf,
   messages,
 }: {
-  readonly pageSummary: string;
+  readonly pagination: ProjectPaginationModel;
   readonly summaryPanel?: ReactNode;
   readonly rows: readonly ProjectListRowView[];
   // ====================================================================
@@ -409,9 +396,9 @@ export function ProjectListScreen({
   // ✅ 2026-10-16: `showClearFilters` を外した（「条件をクリア」は常時表示になった）。
   //    🔴 **受け取って使わない props を残さない** —— 呼び手が「渡せば効く」と誤解する。
   /** 次ページ（無ければ `null`）。検索条件を保った URL である。 */
-  readonly nextPageHref: string | null;
+
   /** 2 ページ目以降でだけ「最初のページに戻る」を出す（無ければ `null`）。 */
-  readonly firstPageHref: string | null;
+
   /**
    * 🔴 **列表示切替の対象**（`T-22-06`。`docs/04` §7.1「9 列目以降は列表示切替に格納する」）。
    *
@@ -439,7 +426,7 @@ export function ProjectListScreen({
   const hiddenColumnIds = columnToggleItems.filter((item) => item.hidden).map((item) => item.id);
   return (
     <div className={cn(PAGE_BODY_ASIDE_ROW_CLASSES_BY_FROM.lg, 'gap-4 lg:items-start')} data-testid="project-list-screen">
-      <div className={PAGE_BODY_SPLIT_MAIN_CLASSES_BY_FROM.lg}>
+      <div className={cn(PAGE_BODY_SPLIT_MAIN_CLASSES_BY_FROM.lg,'flex flex-col gap-4')}>
       {/* 🔴 §5-13 の `Toolbar`: **母集団の 1 行（§3.2-2 の #2）と検索の帯の置き場所をここに固定する。**
           ⚠️ **凍結済み testid の併記**（`U-22` / `SP-22` §3.2 の代替 ④）: `Toolbar` は母集団の 1 行を
              `project-list-toolbar-population` として描くが、凍結されている値は
@@ -511,18 +498,7 @@ export function ProjectListScreen({
         </p>
       )}
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-3" data-testid="project-list-paging-top">
-            <p className="m-0 text-cell text-fg-muted" data-testid="project-list-page-summary">{pageSummary}</p>
-            <Pagination
-              className="flex-wrap"
-              testIdPrefix="project-list-top-"
-              nextHref={nextPageHref}
-              nextLabel={messages.nextPage}
-              prevHref={firstPageHref ?? undefined}
-              prevLabel={messages.firstPage}
-              linkComponent={Link}
-            />
-          </div>
+          <Card className="overflow-hidden" data-testid="project-list-table-card">
           <DataTable
             containerClassName="rounded-none border-x-0"
             className="[&_tbody_tr]:border-b [&_tbody_tr]:border-border-row [&_td]:py-3 [&_thead]:bg-bg"
@@ -558,24 +534,11 @@ export function ProjectListScreen({
             }
           />
 
-          {/* 🔴 カーソルページング（docs/05 §6.1）。**「全 N ページ中 M ページ目」を出さない**。
-              🔴 リンクは検索条件を保った URL である（`projectListHref`）。
-              ⚠️ 器の `data-testid` は凍結済みの `project-list-paging` である（`U-22`）。 */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border py-3" data-testid="project-list-paging">
-              <p className="m-0 text-cell text-fg-muted">{pageSummary}</p>
-              <Pagination
-                className="flex-wrap"
-                testIdPrefix="project-list-"
-                nextHref={nextPageHref}
-                nextLabel={messages.nextPage}
-                prevHref={firstPageHref ?? undefined}
-                prevLabel={messages.firstPage}
-                linkComponent={ProjectPagingLink}
-              />
-            </div>
+          <ProjectPagination model={pagination} />
+          </Card>
         </div>
         {summaryPanel === undefined ? null : (
-          <aside className={cn(PAGE_BODY_ASIDE_WIDTH_CLASSES, DETAIL_PANE_VIEWPORT_CLASSES, 'bg-bg-subtle p-3')}>{summaryPanel}</aside>
+          <aside className={cn(PAGE_BODY_ASIDE_WIDTH_CLASSES, DETAIL_PANE_VIEWPORT_CLASSES, 'bg-bg-subtle')}>{summaryPanel}</aside>
         )}
     </div>
   );
