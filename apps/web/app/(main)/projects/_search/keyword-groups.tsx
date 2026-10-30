@@ -87,7 +87,7 @@ export function KeywordGroups({ compact = false, openRequest = 0, draft, onChang
             </label>)}
           </fieldset>
           <Field as="div" className={cn('min-w-0 flex-1', compact ? 'order-3 col-span-2' : null)} labelClassName="sr-only" label={`${t('projects.search.group')}${index + 1}`}>
-            <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-md border border-border bg-surface p-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-md border border-border bg-bg p-2">
               {group.terms.map((term, termIndex) => <span key={term} className="flex min-w-0 items-center gap-2">
                 {termIndex > 0 ? <span className="text-xs text-brand">{group.mode}</span> : null}
                 <Button type="button" variant="ghost" size="sm" className={cn(SEARCH_KEYWORD_CHIP_CLASSES, 'bg-brand-bg text-brand')} aria-label={`${term} ${t('projects.search.removeKeyword')}`}
@@ -116,7 +116,7 @@ export function KeywordGroups({ compact = false, openRequest = 0, draft, onChang
         <strong>{t('projects.search.conditionPreview')}</strong>
         {active.length ? active.map((group, index) => <span key={index} className="flex min-w-0 flex-wrap items-center gap-2">
           {index > 0 ? <strong className="text-brand">{t('projects.search.and')}</strong> : null}
-          <span className="flex min-w-0 flex-wrap items-center gap-2 rounded-md bg-surface px-2 py-1">
+          <span className="flex min-w-0 flex-wrap items-center gap-2 rounded-md bg-bg px-2 py-1">
             <span aria-hidden>{t('projects.search.openParenthesis')}</span>
             {group.terms.map((term, termIndex) => <span key={term} className="flex min-w-0 items-center gap-2">{termIndex > 0 ? <strong className="text-brand">{group.mode}</strong> : null}<span className="min-w-0 break-all rounded-sm bg-brand-bg px-2 py-1 text-brand">{term}</span></span>)}
             <span aria-hidden>{t('projects.search.closeParenthesis')}</span>
@@ -126,3 +126,4 @@ export function KeywordGroups({ compact = false, openRequest = 0, draft, onChang
     </div>
   </details>;
 }
+
