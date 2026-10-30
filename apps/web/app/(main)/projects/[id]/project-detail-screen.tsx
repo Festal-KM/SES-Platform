@@ -477,7 +477,7 @@ export function ProjectDetailScreen({
     <div data-testid="project-detail-screen" data-audience={view.audience}>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
         <h1
-          className="text-title font-semibold text-fg"
+          className="min-w-0 break-words text-title font-semibold text-fg"
           data-testid="project-detail-name"
         >
           {view.name}

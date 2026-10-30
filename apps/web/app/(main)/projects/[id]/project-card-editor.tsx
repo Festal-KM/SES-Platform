@@ -281,8 +281,10 @@ export function ProjectCardEditor({
     if (multiline.has(key))
       return (
         <Textarea
+          compact
+          className="max-h-48 overflow-y-auto"
           {...attrs}
-          rows={key === "publicSummary" ? 3 : key === "copySummary" ? 4 : 2}
+          rows={key === "publicSummary" || key === "copySummary" ? 2 : 1}
           value={text}
           onChange={(event) => update(key, event.currentTarget.value)}
         />
@@ -421,7 +423,9 @@ export function ProjectCardEditor({
                 <TableCell whitespace="normal">
                   {editing ? (
                     <Textarea
-                      rows={2}
+                      compact
+                      className="max-h-32 overflow-y-auto"
+                      rows={1}
                       aria-label={t("projects.cards.requirement.freeText")}
                       value={row.freeText}
                       onChange={(event) => {
@@ -604,7 +608,7 @@ export function ProjectCardEditor({
                         : key === "settlementMinHours" ? "project-card-value-settlementHours" : `project-card-value-${key}`
                     }
                   >
-                    {key === "settlementMinHours" ? <><span data-testid="project-card-value-settlementMinHours">{data.values.settlementMinHours || t('projects.detail.valueNone')}</span>{t('projects.cards.rangeSeparator')}<span data-testid="project-card-value-settlementMaxHours">{data.values.settlementMaxHours || t('projects.detail.valueNone')}</span>{t('projects.cards.hours')}</> : display(key)}
+                    {key === "settlementMinHours" ? (!data.values.settlementMinHours && !data.values.settlementMaxHours ? t('projects.detail.valueNone') : <><span data-testid="project-card-value-settlementMinHours">{data.values.settlementMinHours || t('projects.detail.valueNone')}</span>{t('projects.cards.rangeSeparator')}<span data-testid="project-card-value-settlementMaxHours">{data.values.settlementMaxHours || t('projects.detail.valueNone')}</span>{t('projects.cards.hours')}</>) : display(key)}
                   </span>
                 </div>
               )}</div>,
