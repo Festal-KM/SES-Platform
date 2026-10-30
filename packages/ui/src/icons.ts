@@ -173,6 +173,7 @@ export const ICONS = {
   // 🔴 **比喩ではない**（虫めがね = 検索そのもの）。🔴 **他の意味で使い回していない。**
   search: Search,
   save: Save,
+  pencil: Pencil,
   'save-all': SaveAll,
   'filter-x': FilterX,
   // ✅ 2026-10-02（`docs/04` 改訂 23 / §7.5 の許可④）: ホームのセクション見出しと KPI カードの印。

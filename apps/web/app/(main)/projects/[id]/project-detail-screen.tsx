@@ -27,6 +27,7 @@ import type { RequirementKind } from '@ses/db';
 import type { ProjectPublicField, ProjectPublishStateView } from '@ses/domain';
 import {
   cn,
+  Card,
   NameCell,
   SECONDARY_LINK_CLASSES,
   Table,
@@ -47,6 +48,7 @@ import {
 } from '../../../../lib/projects/detail';
 import { formatDateTimeJst } from '../../../../lib/format/datetime';
 import type { ProjectDetailView } from '../../../../lib/projects/service';
+import { ProjectCardEditTrigger } from './project-card-editor';
 
 export type ProjectDetailScreenMessages = {
   readonly sectionRequirements: string;
@@ -121,12 +123,12 @@ function Section({
   readonly children: ReactNode;
 }) {
   return (
-    <section className="border border-border bg-bg" data-testid={`project-detail-${id}`}>
+    <Card id={`project-detail-${id}`} data-testid={`project-detail-${id}`}>
       <h2 className="border-b border-border px-4 py-3 text-lg font-bold text-fg">
         {title}
       </h2>
       <div className="px-4 py-4">{children}</div>
-    </section>
+    </Card>
   );
 }
 
@@ -206,10 +208,12 @@ function RequirementTable({
 function AutoRevokedBanner({
   projectId,
   revocation,
+  inlineEdit = false,
   canEdit,
   messages,
 }: {
   readonly projectId: string;
+  readonly inlineEdit?: boolean;
   readonly revocation: NonNullable<Extract<ProjectPublishStateView, { state: 'AUTO_REVOKED' }>['revocation']>;
   readonly canEdit: boolean;
   readonly messages: ProjectDetailScreenMessages;
@@ -249,13 +253,13 @@ function AutoRevokedBanner({
             {copy.autoRevokedFindings}
           </Link>
           {/* 🔴 「該当の欄を直す」→ `S-012`（編集）。**再公開の近道ではない。** */}
-          <Link
+          {inlineEdit ? <ProjectCardEditTrigger id={projectId} label={copy.autoRevokedFix} /> : (          <Link
             className={SECONDARY_LINK_CLASSES}
             href={`/projects/${projectId}/edit`}
             data-testid="project-detail-publish-auto-revoked-fix"
           >
             {copy.autoRevokedFix}
-          </Link>
+          </Link>)}
         </div>
       ) : (
         <p className="mt-2 text-xs" data-testid="project-detail-publish-auto-revoked-read-only">
@@ -311,133 +315,8 @@ function PublishProgressNotice({
   return null;
 }
 
-export function ProjectDetailScreen({
-  view,
-  requirementKinds,
-  canEdit,
-  messages,
-}: {
-  readonly view: ProjectDetailView;
-  readonly requirementKinds: RequirementKindOrder;
-  /**
-   * 🔴 `VIEWER` と取引先には `S-012` への導線を出さない（docs/04 §S-011 権限差分）。
-   *    ⚠️ これは UI の配慮であって拒否の本体ではない（本体は #26 のガードと `S-012` の
-   *    リダイレクト、および `readProjectForEdit` の `requireHost`）。
-   */
-  readonly canEdit: boolean;
-  readonly messages: ProjectDetailScreenMessages;
-}) {
-  const headline = projectHeadlineRows(view);
-  const conditions = projectConditionRows(view);
-
+function ProposalsSection({ messages }: { readonly messages: ProjectDetailScreenMessages }) {
   return (
-    <div data-testid="project-detail-screen" data-audience={view.audience}>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <h1 className="text-title font-semibold text-fg" data-testid="project-detail-name">
-          {view.name}
-        </h1>
-      </div>
-
-      {/* 🔴 折りたたみの外（`CLAUDE.md` §13.3）。移動中の判断に要る 3 値。 */}
-      <dl
-        className="mb-4 grid grid-cols-1 gap-3 border border-border bg-bg-subtle p-4 text-body sm:grid-cols-3"
-        data-testid="project-detail-headline"
-      >
-        {headline.map((row) => (
-          <div key={row.key}>
-            <dt className="text-fg-muted">{row.label}</dt>
-            <dd
-              className="m-0 font-bold text-fg"
-              data-testid={`project-detail-headline-${row.key}`}
-            >
-              {row.value}
-            </dd>
-          </div>
-        ))}
-      </dl>
-
-      {/* 🔴 T-12-10: 自動解除の帯（`docs/04` 改訂 14 §S-011）。要件の上に置く。 */}
-      {view.audience === 'HOST' && view.publishState.state === 'AUTO_REVOKED' ? (
-        <AutoRevokedBanner
-          projectId={view.id}
-          revocation={view.publishState.revocation}
-          canEdit={canEdit}
-          messages={messages}
-        />
-      ) : null}
-
-      {/* 🔴 `docs/04` §S-011: 公開範囲未設定（ホスト）の警告は**要件の上**に置く（`F-014 AC-2`。
-          既定は非公開であり、設定を忘れると誰にも届かない）。
-          🔴 **T-12-10: 自動解除の帯が出ている間はこの警告を出さない**（`docs/04` 改訂 14 §S-011）——
-          どちらも公開先 0 社だが**原因が違う**（設定し忘れ / 検査で落ちた）。帯は 1 本だけにし、
-          自動解除を優先する。条件は「公開先 0 社」ではなく**公開の状態の 4 値**で書く。 */}
-      {view.audience === 'HOST' && view.publishState.state === 'UNPUBLISHED' ? (
-        // 🔴 **無彩色 / 枠線**（`docs/04` 改訂 14 §S-011 の 4 値表の「未公開」の行）。
-        //    ⚠️ SP-22 段④ の記録: 旧実装は `amber-300 / amber-50`（橙）で、自動解除の
-        //    `amber-400 / amber-100` と**濃さだけで**区別していた。semantic トークンに寄せると
-        //    どちらも `--color-warning-*` に畳まれて**見た目が同じになる**ため、条文どおり
-        //    無彩色・枠線に直した（🔴 **4 値はどれも別の見た目にする**。`F-014 AC-12` と同じ趣旨）。
-        //    塗り / 枠線の区別は `StatusBadge` と同じ語彙（背景あり / `bg-transparent`）で表す。
-        <p
-          className="mb-4 border border-neutral-border bg-transparent px-4 py-3 text-body text-fg"
-          data-testid="project-detail-visibility-warning"
-        >
-          {messages.visibilityEmpty}
-        </p>
-      ) : null}
-
-      {/* 🔴 `docs/04` §S-011 取引先セクション 4「公開されている旨の説明」。 */}
-      {view.audience === 'PARTNER' ? (
-        <p
-          className="mb-4 border border-border bg-bg-subtle px-4 py-3 text-body text-fg"
-          data-testid="project-detail-partner-published"
-        >
-          {messages.partnerPublished}
-        </p>
-      ) : null}
-
-      <div className="mb-4 flex flex-wrap items-center gap-4">
-        {canEdit ? (
-          <Link
-            className={SECONDARY_LINK_CLASSES}
-            href={`/projects/${view.id}/edit`}
-            data-testid="project-detail-edit-link"
-          >
-            {messages.edit}
-          </Link>
-        ) : null}
-        <p className="text-body text-fg-muted" data-testid="project-detail-view-recorded">
-          {messages.viewRecorded}
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* 左（デスクトップ）/ 上（タブレット以下）: 要件 → 条件 → 外部公開用の記載 */}
-        <div className="flex flex-col gap-4">
-          <Section id="requirements" title={messages.sectionRequirements}>
-            {requirementKinds.map((kind) => (
-              <RequirementTable
-                key={kind}
-                kind={kind}
-                rows={projectRequirementRows(view.requirements, kind)}
-                messages={messages}
-              />
-            ))}
-          </Section>
-
-          <Section id="conditions" title={messages.sectionConditions}>
-            <DefinitionList id="conditions" rows={conditions} />
-          </Section>
-
-          <Section id="public-summary" title={messages.sectionPublicSummary}>
-            <p className="whitespace-pre-wrap text-body text-fg" data-testid="project-detail-public-summary">
-              {view.publicSummary ?? messages.publicSummaryEmpty}
-            </p>
-          </Section>
-        </div>
-
-        {/* 右（デスクトップ）/ 下（タブレット以下）: 提案 → 商流情報・公開範囲 */}
-        <div className="flex flex-col gap-4">
           <Section id="proposals" title={messages.sectionProposals}>
             <p className="mb-2 text-body text-fg-muted" data-testid="project-detail-proposals-empty">
               {messages.proposalsEmpty}
@@ -450,18 +329,11 @@ export function ProjectDetailScreen({
                 primary にならない。移設先は `PageHeading`（`projects/[id]/page.tsx`）で、
                 `data-testid="project-detail-candidates"` はそのまま引き継いでいる。 */}
           </Section>
+  );
+}
 
-          {/* 🔴 ここから下はホストの枝にしか存在しない。取引先の枝には
-              `endClientName` / `internalUnitPrice` / `visibilities` が**型として無い**。 */}
-          {view.audience === 'HOST' ? (
-            <>
-              <Section id="commerce" title={messages.sectionCommerce}>
-                <p className="mb-3 text-xs text-fg-muted" data-testid="project-detail-commerce-notice">
-                  {messages.commerceNotice}
-                </p>
-                <DefinitionList id="commerce" rows={projectCommerceRows(view)} />
-              </Section>
-
+function VisibilitySection({ view, canEdit, messages }: { readonly view: Extract<ProjectDetailView, {audience:'HOST'}>; readonly canEdit: boolean; readonly messages: ProjectDetailScreenMessages }) {
+  return (
               <Section id="visibility" title={messages.sectionVisibility}>
                 {view.visibilities.length === 0 ? (
                   <p className="text-body text-fg-muted" data-testid="project-detail-visibility-empty">
@@ -506,10 +378,158 @@ export function ProjectDetailScreen({
                   </Link>
                 ) : null}
               </Section>
+  );
+}
+
+export function ProjectDetailScreen({
+  view,
+  requirementKinds,
+  canEdit,
+  messages,
+  cards,
+}: {
+  readonly view: ProjectDetailView;
+  readonly requirementKinds: RequirementKindOrder;
+  readonly cards?: ReactNode;
+  /**
+   * 🔴 `VIEWER` と取引先には `S-012` への導線を出さない（docs/04 §S-011 権限差分）。
+   *    ⚠️ これは UI の配慮であって拒否の本体ではない（本体は #26 のガードと `S-012` の
+   *    リダイレクト、および `readProjectForEdit` の `requireHost`）。
+   */
+  readonly canEdit: boolean;
+  readonly messages: ProjectDetailScreenMessages;
+}) {
+  const headline = projectHeadlineRows(view);
+  const conditions = projectConditionRows(view);
+
+  return (
+    <div data-testid="project-detail-screen" data-audience={view.audience}>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <h1 className="text-title font-semibold text-fg" data-testid="project-detail-name">
+          {view.name}
+        </h1>
+      </div>
+
+      {/* 🔴 折りたたみの外（`CLAUDE.md` §13.3）。移動中の判断に要る 3 値。 */}
+      <dl
+        className="mb-4 grid grid-cols-1 gap-3 border border-border bg-bg-subtle p-4 text-body sm:grid-cols-3"
+        data-testid="project-detail-headline"
+      >
+        {headline.map((row) => (
+          <div key={row.key}>
+            <dt className="text-fg-muted">{row.label}</dt>
+            <dd
+              className="m-0 font-bold text-fg"
+              data-testid={`project-detail-headline-${row.key}`}
+            >
+              {row.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+
+      {/* 🔴 T-12-10: 自動解除の帯（`docs/04` 改訂 14 §S-011）。要件の上に置く。 */}
+      {view.audience === 'HOST' && view.publishState.state === 'AUTO_REVOKED' ? (
+        <AutoRevokedBanner
+          projectId={view.id}
+          revocation={view.publishState.revocation}
+          inlineEdit={Boolean(cards)}
+          canEdit={canEdit}
+          messages={messages}
+        />
+      ) : null}
+
+      {/* 🔴 `docs/04` §S-011: 公開範囲未設定（ホスト）の警告は**要件の上**に置く（`F-014 AC-2`。
+          既定は非公開であり、設定を忘れると誰にも届かない）。
+          🔴 **T-12-10: 自動解除の帯が出ている間はこの警告を出さない**（`docs/04` 改訂 14 §S-011）——
+          どちらも公開先 0 社だが**原因が違う**（設定し忘れ / 検査で落ちた）。帯は 1 本だけにし、
+          自動解除を優先する。条件は「公開先 0 社」ではなく**公開の状態の 4 値**で書く。 */}
+      {view.audience === 'HOST' && view.publishState.state === 'UNPUBLISHED' ? (
+        // 🔴 **無彩色 / 枠線**（`docs/04` 改訂 14 §S-011 の 4 値表の「未公開」の行）。
+        //    ⚠️ SP-22 段④ の記録: 旧実装は `amber-300 / amber-50`（橙）で、自動解除の
+        //    `amber-400 / amber-100` と**濃さだけで**区別していた。semantic トークンに寄せると
+        //    どちらも `--color-warning-*` に畳まれて**見た目が同じになる**ため、条文どおり
+        //    無彩色・枠線に直した（🔴 **4 値はどれも別の見た目にする**。`F-014 AC-12` と同じ趣旨）。
+        //    塗り / 枠線の区別は `StatusBadge` と同じ語彙（背景あり / `bg-transparent`）で表す。
+        <p
+          className="mb-4 border border-neutral-border bg-transparent px-4 py-3 text-body text-fg"
+          data-testid="project-detail-visibility-warning"
+        >
+          {messages.visibilityEmpty}
+        </p>
+      ) : null}
+
+      {/* 🔴 `docs/04` §S-011 取引先セクション 4「公開されている旨の説明」。 */}
+      {view.audience === 'PARTNER' ? (
+        <p
+          className="mb-4 border border-border bg-bg-subtle px-4 py-3 text-body text-fg"
+          data-testid="project-detail-partner-published"
+        >
+          {messages.partnerPublished}
+        </p>
+      ) : null}
+
+      <div className="mb-4 flex flex-wrap items-center gap-4">
+        {canEdit && !cards ? (
+          <Link
+            className={SECONDARY_LINK_CLASSES}
+            href={`/projects/${view.id}/edit`}
+            data-testid="project-detail-edit-link"
+          >
+            {messages.edit}
+          </Link>
+        ) : null}
+        <p className="text-body text-fg-muted" data-testid="project-detail-view-recorded">
+          {messages.viewRecorded}
+        </p>
+      </div>
+
+      {cards && view.audience === 'HOST' ? <div className="flex flex-col gap-4">{cards}<div className="grid grid-cols-1 gap-4 lg:grid-cols-2"><ProposalsSection messages={messages}/><VisibilitySection view={view} canEdit={canEdit} messages={messages}/></div></div> : (
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* 左（デスクトップ）/ 上（タブレット以下）: 要件 → 条件 → 外部公開用の記載 */}
+        <div className="flex flex-col gap-4">
+          <Section id="requirements" title={messages.sectionRequirements}>
+            {requirementKinds.map((kind) => (
+              <RequirementTable
+                key={kind}
+                kind={kind}
+                rows={projectRequirementRows(view.requirements, kind)}
+                messages={messages}
+              />
+            ))}
+          </Section>
+
+          <Section id="conditions" title={messages.sectionConditions}>
+            <DefinitionList id="conditions" rows={conditions} />
+          </Section>
+
+          <Section id="public-summary" title={messages.sectionPublicSummary}>
+            <p className="whitespace-pre-wrap text-body text-fg" data-testid="project-detail-public-summary">
+              {view.publicSummary ?? messages.publicSummaryEmpty}
+            </p>
+          </Section>
+        </div>
+
+        {/* 右（デスクトップ）/ 下（タブレット以下）: 提案 → 商流情報・公開範囲 */}
+        <div className="flex flex-col gap-4">
+          <ProposalsSection messages={messages} />
+
+          {/* 🔴 ここから下はホストの枝にしか存在しない。取引先の枝には
+              `endClientName` / `internalUnitPrice` / `visibilities` が**型として無い**。 */}
+          {view.audience === 'HOST' ? (
+            <>
+              <Section id="commerce" title={messages.sectionCommerce}>
+                <p className="mb-3 text-xs text-fg-muted" data-testid="project-detail-commerce-notice">
+                  {messages.commerceNotice}
+                </p>
+                <DefinitionList id="commerce" rows={projectCommerceRows(view)} />
+              </Section>
+
+              <VisibilitySection view={view} canEdit={canEdit} messages={messages} />
             </>
           ) : null}
         </div>
-      </div>
+      </div>)}
     </div>
   );
 }

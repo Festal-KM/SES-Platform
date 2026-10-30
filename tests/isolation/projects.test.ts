@@ -333,6 +333,18 @@ describe('🔴 F-013 AC-1: 必須要件と尚可要件が別区分として保�
     expect(row.headcount).toBe(1);
   });
 
+  it('カード編集の手動サマリは他項目の更新で消えず明示クリアできる', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const id = await createdIdOf(await postProject(ctx, {name:`${MARKER}カード編集`}));
+    expect((await patchProject(ctx,id,{copySummary:'手動で調整したサマリ'})).status).toBe(200);
+    expect((await patchProject(ctx,id,{utilizationRate:80})).status).toBe(200);
+    const row = await projectRow(id);
+    expect(row.copySummary).toBe('手動で調整したサマリ');
+    expect(row.utilizationRate).toBe(80);
+    expect((await patchProject(ctx,id,{copySummary:null})).status).toBe(200);
+    expect((await projectRow(id)).copySummary).toBeNull();
+  });
+
   it('PATCH は要件集合を置き換える（画面から消した行が残らない）', async () => {
     const ctx = await ctxOf(HOST_1, 'SALES');
     const id = await createdIdOf(
