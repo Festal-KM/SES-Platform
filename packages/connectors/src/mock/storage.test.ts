@@ -178,6 +178,15 @@ describe('MockMalwareScanner', () => {
     expect(await scanner.getResult('unknown', 'v1')).toBeNull();
   });
 
+  it('✅ 2026-10-27: resolveUnknownAs を渡すと、enqueue を受けていないキーにもその判定を返す（web と worker が別プロセスのため）', async () => {
+    const scanner = new MockMalwareScanner({ resolveUnknownAs: 'CLEAN' });
+    expect((await scanner.getResult('never-enqueued', null))?.status).toBe('CLEAN');
+    scanner.setResult('k1', null, 'INFECTED');
+    expect((await scanner.getResult('k1', null))?.status).toBe('INFECTED');
+    scanner.setResult('k2', null, 'SCANNING');
+    expect(await scanner.getResult('k2', null)).toBeNull();
+  });
+
   it('🔴 SCANNING は確定結果として返さない（未確定は null で表す）', async () => {
     const scanner = new MockMalwareScanner();
     scanner.setResult('k1', null, 'SCANNING');

@@ -347,7 +347,9 @@ export function createMalwareScanner(
   runtime: ConnectorRuntimeOptions = {},
 ): MalwareScanner {
   return pickByKind<MalwareScanner>('malwareScanner', kind, {
-    mock: () => new MockMalwareScanner(),
+    // ✅ 2026-10-27: worker のモックは誰からも `enqueue` を受けないので、知らないキーも既定（CLEAN）で答える
+    //    （答えないと `scan.poll` に `null` を返し続け、デモで添付・スキルシートが永久に「検査中」になった）。
+    mock: () => new MockMalwareScanner({ resolveUnknownAs: 'CLEAN' }),
     // 🔴 `sandbox` / `staging` / `production` = GuardDuty（docs/03 §3.4）。
     //    `development` の ClamAV は未登録であり、選ばれたら例外になる。
     real: () => createGuardDutyMalwareScanner('real', runtime.scan),
