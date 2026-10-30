@@ -1726,3 +1726,29 @@ describe('🔴 F-015 AC-2 の前提: 索引と実行計画（判定は SP-12 / T
     expect(plan).toContain('revoked_at IS NULL');
   });
 });
+
+describe('詳細検索の条件結合と内部備考の境界', () => {
+  it('尚可と公開メモをグループ検索でき、内部備考はホストだけに一致する', async () => {
+    const id = TENANT_1.publishedProjectId;
+    const original = await admin.project.findUniqueOrThrow({ where: { id }, select: { remarks: true, publicMemo: true, developmentPhases: true, developmentMethod: true, utilizationRate: true, updatedAt: true } });
+    const req = await admin.projectRequirement.create({ data: { tenantId: TENANT_1.tenantId, projectId: id, kind: 'NICE', freeText: 'Springboot詳細検索検証' } });
+    try {
+      await admin.project.update({ where: { id }, data: { remarks: '内部備考境界検証語', publicMemo: '公開メモ条件結合検証語', developmentPhases: ['BASIC_DESIGN'], developmentMethod: 'AGILE', utilizationRate: 80 } });
+      const host = await ctxOf(HOST_1, 'SALES');
+      const partner = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+      const other = await ctxOf(PARTNER_USER_2, 'PARTNER_SALES');
+      const query = new URLSearchParams({ keywordGroups: JSON.stringify([{ mode: 'OR', terms: ['Java存在しない語', 'Springboot詳細検索検証'] }, { mode: 'AND', terms: ['公開メモ条件結合検証語'] }]), developmentPhases: 'BASIC_DESIGN', developmentMethod: 'AGILE', utilizationMin: '80', utilizationMax: '100' });
+      expect(idsOf(await listBodyOf(await getProjects(host, `?${query}`)))).toEqual([id]);
+      expect(idsOf(await listBodyOf(await getProjects(partner, `?${query}`)))).toEqual([id]);
+      expect(idsOf(await listBodyOf(await getProjects(other, `?${query}`)))).not.toContain(id);
+      const internal = new URLSearchParams({ q: '内部備考境界検証語', searchInternalRemarks: 'true' });
+      expect(idsOf(await listBodyOf(await getProjects(host, `?${internal}`)))).toEqual([id]);
+      expect((await listBodyOf(await getProjects(partner, `?${internal}`))).total).toBe(0);
+      const foreign = await ctxOf(HOST_2, 'SALES');
+      expect((await listBodyOf(await getProjects(foreign, `?${query}`))).total).toBe(0);
+    } finally {
+      await admin.projectRequirement.delete({ where: { id: req.id } });
+      await admin.project.update({ where: { id }, data: original });
+    }
+  });
+});

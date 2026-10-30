@@ -464,7 +464,7 @@ describe('検索エリア（改修指示書 §2 の 3 層）', () => {
 
     // A. ヘッダ（タブ + 条件を保存 + 折りたたむ）
     expect(html).toContain('role="tablist"');
-    expect(html).toContain('検索条件');
+    expect(html).toContain('案件検索');
     expect(html).toContain('保存した条件');
     expect(html).toContain('data-testid="project-list-search-save"');
     expect(html).toContain('data-testid="project-list-search-toggle"');
@@ -545,7 +545,8 @@ describe('検索エリア（改修指示書 §2 の 3 層）', () => {
       },
     });
 
-    expect(html).toContain('value="基幹"');
+    expect(html).toContain('基幹');
+    expect(html).toContain('name="keywordGroups"');
     expect(html).toContain('value="600000"');
     expect(html).toContain('value="800000"');
     // ✅✅ 2026-10-19: 自前の引き金になったので **`<option selected>` ではなく
@@ -654,8 +655,8 @@ describe('検索エリア（改修指示書 §2 の 3 層）', () => {
 
     expect(panel).toContain('bg-surface');
     expect(panel).toContain('border-border');
-    // 🔴 **強い影を付けない**（指示書 §2）。
-    expect(panel).not.toContain('shadow-');
+    // 2026-10-29の画像指定に従い、既存の入力欄と同じ控えめな影だけを使う。
+    expect(panel).toContain('shadow-control');
   });
 });
 
@@ -818,12 +819,13 @@ describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
     expect(summary).toBeGreaterThan(form);
   });
 
-  it('キーワードには見えるラベルがあり、他の検索条件と並ぶ', () => {
+  it('基本検索の下に詳細検索があり、キーワードの追加欄に読み上げ名がある', () => {
     const html = render();
-    const label = /<label class="([^"]*)"[^>]*>\s*<span[^>]*>フリーワード/.exec(html);
-    expect(label).not.toBeNull();
-    expect(label?.[1]).not.toContain('col-span-');
-    expect(html).toContain('aria-label="フリーワード"');
+    expect(html).toContain('基本検索');
+    expect(html).toContain('詳細検索');
+    expect(html).toContain('グループ1');
+    expect(html).toContain('aria-label="キーワードを追加 1"');
+    expect(html.indexOf('詳細検索')).toBeGreaterThan(html.indexOf('基本検索'));
   });
 
   // ✅✅ **2026-10-19: 「スキル欄の説明の 1 行」を外し、**条件バーの位置**を固定する。
@@ -950,4 +952,33 @@ describe('🔴 SP-22 段④: 操作列から副カラム（案件の要点パネ
   it('🔴 どの行も選ばれていないときは印が 1 つも付かない', () => {
     expect(render({ selectedId: null })).not.toContain('data-selected="true"');
   });
+});
+
+it('追加した基本条件と詳細グループがフォーム送信に載る', () => {
+  const html = render({ applied: { ...emptyApplied, developmentPhases: ['BASIC_DESIGN'], developmentMethod: 'AGILE', utilizationMin: '80', utilizationMax: '100', keywordGroups: JSON.stringify([{mode:'OR',terms:['Java','Springboot']}]) } });
+  for (const [name, value] of [['developmentPhases','BASIC_DESIGN'],['developmentMethod','AGILE'],['utilizationMin','80'],['utilizationMax','100']]) expect(html).toContain(`name="${name}" value="${value}"`);
+  expect(html).toContain('name="keywordGroups"');
+  expect(html.replace(/<[^>]*>/g, '')).toContain('(JavaORSpringboot)');
+});
+
+it('詳細検索は追加操作を入力の下に置き、空グループを式へ混ぜない', () => {
+  const html = render();
+  expect(html).toContain('data-testid="project-list-filter-keyword-guide"');
+  expect(html).toContain('最初のキーワードを追加');
+  expect(html).toContain('検索条件のイメージ');
+  expect(html).toContain('キーワード未設定');
+  expect(html).toMatch(/disabled="" data-testid="project-list-filter-keyword-add-0"/);
+  const advanced = html.slice(html.indexOf('data-testid="project-list-filter-advanced"'));
+  const summaryEnd = advanced.indexOf('</summary>');
+  expect(advanced.indexOf('data-testid="project-list-filter-add-group"')).toBeGreaterThan(summaryEnd);
+  expect(advanced).not.toContain('data-testid="project-list-filter-keyword-connector-1"');
+});
+
+it('全体を折りたたむと条件サマリと実際のグループ数だけを残す', () => {
+  const html = render({defaultExpanded:false,applied:{...emptyApplied,keywordGroups:JSON.stringify([{mode:'OR',terms:['Java','Springboot']},{mode:'AND',terms:['設計']}])}});
+  expect(html).toContain('data-testid="project-list-details-summary"');
+  expect(html).toContain('2グループ');
+  expect(html).not.toContain('data-testid="project-list-search"');
+  expect(html).not.toContain('data-testid="project-list-clear"');
+  expect(html).toContain('data-testid="project-list-summary"');
 });

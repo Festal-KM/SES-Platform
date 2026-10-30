@@ -382,7 +382,10 @@ describe('🔴 T-12-10: 公開欄 3 欄の印と、再検査が走る条件の�
 
   it('🔴 保存前に確認ダイアログ・「公開を解除してよいか」の同意を挟まない（`docs/04` §S-012）', () => {
     const html = render({ mode: 'EDIT', projectId: 'p1', publishedToCount: 2 });
-    expect(html).not.toContain('type="checkbox"');
+    // 開発フェーズの選択は許可し、公開解除の同意欄が増えていないことを確認する。
+    const checkboxes = html.match(/<input[^>]*type="checkbox"[^>]*>/g) ?? [];
+    expect(checkboxes).toHaveLength(7);
+    for (const checkbox of checkboxes) expect(checkbox).toContain('project-form-development-phase-');
     expect(html).not.toContain('<dialog');
     for (const forbidden of ['了解', '無視', '同意']) {
       expect(html).not.toContain(forbidden);

@@ -38,7 +38,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 import {
   Badge,
-  IconButton,
+  Button,
   FILTER_SUMMARY_BAR_CLASSES,
   FILTER_SUMMARY_CHIPS_CLASSES,
   Icon,
@@ -51,6 +51,7 @@ import {
   POPOVER_PANEL_END_CLASSES,
   cn,
 } from '@ses/ui';
+import { t } from '@ses/i18n';
 import { Tooltip } from '@ses/ui/client';
 import type { ProjectSearchChip } from './filters';
 
@@ -101,15 +102,25 @@ export type ActiveFilterBarMessages = {
 export function ActiveFilterBar({
   chips,
   pending,
+  submitting = false,
+  compact = false,
+  keywordGroupCount = 0,
+  onOpenDetails,
   onRemove,
   onClear,
+  onCancel,
   messages,
   testIdPrefix,
 }: {
   readonly chips: readonly ProjectSearchChip[];
   readonly pending: boolean;
+  readonly submitting?: boolean;
+  readonly compact?: boolean;
+  readonly keywordGroupCount?: number;
+  readonly onOpenDetails?: () => void;
   readonly onRemove: (key: string) => void;
   readonly onClear: () => void;
+  readonly onCancel?: () => void;
   readonly messages: ActiveFilterBarMessages;
   readonly testIdPrefix: string;
 }) {
@@ -219,8 +230,8 @@ export function ActiveFilterBar({
   );
 
   return (
-    <div className={FILTER_SUMMARY_BAR_CLASSES} data-testid={`${testIdPrefix}summary`}>
-      <div className={FILTER_SUMMARY_CHIPS_CLASSES}>
+    <div className={cn(FILTER_SUMMARY_BAR_CLASSES, 'flex-col items-stretch')} data-testid={`${testIdPrefix}summary`}>
+      <div className={cn(FILTER_SUMMARY_CHIPS_CLASSES, compact ? 'flex-wrap overflow-visible' : null)}>
         <span className="shrink-0 text-xs text-fg-muted">{messages.label}</span>
         {chips.length === 0 ? (
           <span className="truncate text-xs text-fg-muted" data-testid={`${testIdPrefix}summary-empty`}>
@@ -228,7 +239,7 @@ export function ActiveFilterBar({
           </span>
         ) : (
           // 🔴 `relative` は計測用の行（`absolute`）の基準点である。
-          <div ref={rowRef} className="relative flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+          <div ref={rowRef} className={cn('relative flex min-w-0 flex-1 items-center gap-2 overflow-hidden', compact ? 'min-w-24' : null)}>
             {chips.slice(0, shown).map((chip) => chipBadge(chip, false))}
             {hidden.length > 0 ? (
               <div ref={overflowRef} className="relative shrink-0">
@@ -276,8 +287,9 @@ export function ActiveFilterBar({
             </div>
           </div>
         )}
+      {compact && keywordGroupCount > 0 && onOpenDetails ? <Button type="button" variant="ghost" size="sm" onClick={onOpenDetails} data-testid={`${testIdPrefix}details-summary`}>{t('projects.search.advanced')} ({keywordGroupCount}{t('projects.search.groupCountSuffix')})</Button> : null}
       </div>
-      <div className="flex shrink-0 items-center gap-3">
+      {!compact ? <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2">
         {/* 🔴 **未適用**（指示書 §6「検索結果がまだ以前の条件であることを示します」）。 */}
         {pending ? (
           <span
@@ -289,14 +301,15 @@ export function ActiveFilterBar({
           </span>
         ) : null}
         <Tooltip content={messages.clear}>
-          <IconButton type="button" variant="ghost" size="sm" aria-label={messages.clear}
-            icon={<Icon name="filter-x" />} data-testid={`${testIdPrefix}clear`} onClick={onClear} />
+          <Button type="button" variant="secondary" className="mr-auto" aria-label={messages.clear}
+            data-testid={`${testIdPrefix}clear`} onClick={onClear}><Icon name="filter-x" />{t('projects.search.clearAll')}</Button>
         </Tooltip>
+        {onCancel ? <Button type="button" variant="secondary" onClick={onCancel} data-testid={`${testIdPrefix}cancel-search`}>{t('projects.search.cancel')}</Button> : null}
         <Tooltip content={messages.submit}>
-          <IconButton type="submit" variant="secondary" size="sm" aria-label={messages.submit}
-            icon={<Icon name="search" />} data-testid={`${testIdPrefix}search`} />
+          <Button type="submit" variant="primary" aria-label={messages.submit} aria-busy={submitting}
+            data-testid={`${testIdPrefix}search`}><Icon name="search" />{t('projects.search.submit')}</Button>
         </Tooltip>
-      </div>
+      </div> : null}
     </div>
   );
 }

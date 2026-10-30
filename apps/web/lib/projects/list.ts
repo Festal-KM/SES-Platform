@@ -385,7 +385,7 @@ export async function listProjects(
   //    日付の境目で件数と行がずれない（`resolveStartWindow` は純粋関数である）。
   // 🔴 `where` を 1 つの値にしておくのは、一覧と `COUNT` で書き分けられないようにするためである。
   //    🔴 述語の出所は `projectSearchWhere`（`@ses/db` の `search/projects.ts`）の 1 本だけである。
-  const where = projectSearchWhere(withStartWindow(query, new Date()));
+  const where = projectSearchWhere({ ...withStartWindow(query, new Date()), searchInternalRemarks: ctx.partnerCompanyId === null });
   const isHost = ctx.partnerCompanyId === null;
 
   return withTenant(ctx, async (db) => {

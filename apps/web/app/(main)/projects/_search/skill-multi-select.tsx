@@ -38,6 +38,7 @@
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import {
+  Checkbox,
   Badge,
   FOCUS_RING_CLASSES,
   Icon,
@@ -162,7 +163,11 @@ export function SkillMultiSelect({
   onChange,
   messages,
   testIdPrefix,
+  checklist = false,
+  topHint,
 }: {
+  readonly checklist?: boolean;
+  readonly topHint?: string;
   readonly options: readonly ProjectSearchOption[];
   readonly values: readonly string[];
   readonly onChange: (next: readonly string[]) => void;
@@ -170,6 +175,8 @@ export function SkillMultiSelect({
   readonly testIdPrefix: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [placement, setPlacement] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<SkillPopoverMode>('ALL');
   const [keyword, setKeyword] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
@@ -178,6 +185,26 @@ export function SkillMultiSelect({
   const searchRef = useRef<HTMLInputElement>(null);
   const panelId = useId();
   const [visible, setVisible] = useState<number | null>(null);
+
+  useIsomorphicLayoutEffect(() => {
+    if (!open) return;
+    const position = (): void => {
+      const rect = triggerRef.current?.getBoundingClientRect(); const panel = panelRef.current;
+      if (!rect || !panel) return;
+      const maxHeight = Math.max(0, window.innerHeight - 32);
+      const width = Math.min(panel.offsetWidth, window.innerWidth - 32);
+      const height = Math.min(panel.offsetHeight, maxHeight);
+      const desiredLeft = Math.max(16, Math.min(rect.left, window.innerWidth - 16 - width));
+      const availableBelow = window.innerHeight - rect.bottom;
+      const preferredTop = availableBelow >= height + 4 ? rect.bottom + 4 : rect.top - height - 4;
+      const desiredTop = Math.max(16, Math.min(preferredTop, window.innerHeight - 16 - height));
+      const next = { left: desiredLeft - rect.left, top: desiredTop - rect.top, maxHeight };
+      setPlacement(current => current?.left === next.left && current.top === next.top && current.maxHeight === maxHeight ? current : next);
+    };
+    position(); const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(position); if (panelRef.current) observer?.observe(panelRef.current);
+    window.addEventListener('resize', position); window.addEventListener('scroll', position, true);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', position); window.removeEventListener('scroll', position, true); };
+  }, [open]);
 
   // 🔴 **並びは辞書の順のまま**（指示書「選択するたびに行順を並べ替えて、クリック対象を
   //    移動させないでください」）。選んだ順にしない。
@@ -285,7 +312,7 @@ export function SkillMultiSelect({
       //    ホバーまたはキーボード操作で全文を確認できるようにします」）。
       title={measuring ? undefined : option.label}
     >
-      <span className={MULTI_SELECT_BADGE_LABEL_CLASSES}>{option.label}</span>
+      <span className={MULTI_SELECT_BADGE_LABEL_CLASSES}>{option.shortLabel ?? option.label}</span>
       {measuring ? (
         <span className={MULTI_SELECT_BADGE_REMOVE_CLASSES}>
           <Icon name="x" size="sm" />
@@ -398,7 +425,9 @@ export function SkillMultiSelect({
       {open ? (
         <div
           id={panelId}
+          ref={panelRef}
           className={POPOVER_PANEL_CLASSES}
+          style={placement ? { ...placement, right: 'auto', marginTop: 0 } : undefined}
           data-testid={`${testIdPrefix}skills-panel`}
         >
           {/* 上部: 32px の検索欄（指示書 §3）。🔴 `name` を持たせない（URL に乗せない）。 */}
@@ -421,6 +450,7 @@ export function SkillMultiSelect({
               onKeyDown={(event) => {
                 // 🔴 **ここの Enter で検索を走らせない**（絞る意図の Enter である）。
                 if (event.key === 'Enter') event.preventDefault();
+                if (event.key === 'ArrowDown') { event.preventDefault(); panelRef.current?.querySelector<HTMLButtonElement>('[role=option]')?.focus(); }
               }}
             />
           </div>
@@ -447,7 +477,16 @@ export function SkillMultiSelect({
             ))}
           </div>
           {/* 中央: 一覧（1 行 36px / 最大 240px でスクロール）。 */}
-          <div className={POPOVER_LIST_CLASSES} role="listbox" aria-multiselectable="true">
+          {topHint ? <p className="m-0 px-3 py-2 text-xs text-fg-muted">{topHint}</p> : null}
+          <div className={POPOVER_LIST_CLASSES} role="listbox" aria-multiselectable="true" onKeyDown={event => {
+            if (!['ArrowDown','ArrowUp','Home','End'].includes(event.key)) return;
+            const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role=option]'));
+            if (!items.length) return;
+            event.preventDefault();
+            const current = items.indexOf(document.activeElement as HTMLButtonElement);
+            const index = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+            items[index]?.focus();
+          }}>
             {listed.length === 0 ? (
               <p className={MULTI_SELECT_EMPTY_CLASSES} data-testid={`${testIdPrefix}skills-no-match`}>
                 {messages.noMatch}
@@ -471,9 +510,9 @@ export function SkillMultiSelect({
                       toggle(option.value);
                     }}
                   >
-                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                    <>{checklist ? <Checkbox checked={checked} readOnly tabIndex={-1} aria-hidden className="pointer-events-none" /> : null}<span className="min-w-0 flex-1 truncate">{option.label}</span></>
                     {/* 🔴 選んである行だけ**右端に小さなチェック**（未選択の行に空の箱を置かない）。 */}
-                    {checked ? <Icon name="check" size="sm" className="shrink-0" /> : null}
+                    {checked && !checklist ? <Icon name="check" size="sm" className="shrink-0" /> : null}
                   </button>
                 );
               })

@@ -1,3 +1,5 @@
+import { parseProjectKeywordGroups } from '@ses/domain';
+// 2026-10-29: 人間の最新指示で基本検索10項目と詳細検索へ拡張。以下の8項目の説明は旧仕様の履歴。
 // apps/web/app/(main)/projects/_search/filters.ts
 // `S-010` 自社案件管理の検索エリアの**条件そのもの**（純粋関数だけ。React に依存しない）。
 //
@@ -34,6 +36,12 @@
  *    （指示書 §3）。単価は**円**のままである。
  */
 export type ProjectSearchDraft = {
+  readonly developmentPhases?: readonly string[];
+  readonly developmentMethod?: string;
+  readonly utilizationBand?: string;
+  readonly utilizationMin?: string;
+  readonly utilizationMax?: string;
+  readonly keywordGroups?: string;
   readonly q: string;
   readonly status: string;
   readonly category: string;
@@ -60,6 +68,8 @@ export const EMPTY_PROJECT_SEARCH_DRAFT: ProjectSearchDraft = {
 
 /** `<form>` が送るキー（`name` 属性）。🔴 **既存の query と 1 文字も違わない。** */
 export const PROJECT_SEARCH_FIELD_NAMES = {
+  developmentPhases: 'developmentPhases', developmentMethod: 'developmentMethod',
+  utilizationBand: 'utilizationBand', utilizationMin: 'utilizationMin', utilizationMax: 'utilizationMax', keywordGroups: 'keywordGroups',
   q: 'q',
   status: 'status',
   category: 'category',
@@ -81,6 +91,7 @@ export type ProjectSearchChip = {
 
 /** バッジの語を組むために要る選択肢（`value` → `label`）。 */
 export type ProjectSearchOption = {
+  readonly shortLabel?: string;
   readonly value: string;
   readonly label: string;
 };
@@ -92,6 +103,8 @@ export type ProjectSearchOption = {
  *    `カテゴリ：バックエンド`）。どの項目に接頭辞を付けるかは**この語彙の有無**で決まる。
  */
 export type ProjectSearchChipLabels = {
+  readonly extraLabels?: Readonly<Record<string, string>>;
+  readonly phaseOptions?: readonly ProjectSearchOption[];
   readonly statusOptions: readonly ProjectSearchOption[];
   readonly categoryOptions: readonly ProjectSearchOption[];
   readonly remoteModeOptions: readonly ProjectSearchOption[];
@@ -173,6 +186,14 @@ export function projectSearchChips(
   if (startWithin !== null) {
     chips.push({ key: 'startWithin', label: prefixed(labels.fieldLabels.startWithin, startWithin) });
   }
+  for (const phase of draft.developmentPhases ?? []) {
+    const label = labelOf(labels.phaseOptions ?? [], phase);
+    if (label) chips.push({ key: `phase:${phase}`, label });
+  }
+  for (const key of ['developmentMethod', 'utilizationBand', 'utilizationMin', 'utilizationMax', 'keywordGroups'] as const) {
+    const value = draft[key];
+    if (value && labels.extraLabels?.[key]) chips.push({ key, label: prefixed(labels.extraLabels[key], key === 'keywordGroups' ? (parseProjectKeywordGroups(JSON.parse(value)) ?? []).filter(group => group.terms.length).map(group => `(${group.terms.join(` ${group.mode} `)})`).join(' AND ') : labels.extraLabels[value] ?? value) });
+  }
   return chips;
 }
 
@@ -184,6 +205,8 @@ export function removeProjectSearchChip(
   draft: ProjectSearchDraft,
   key: string,
 ): ProjectSearchDraft {
+  if (key.startsWith('phase:')) return { ...draft, developmentPhases: (draft.developmentPhases ?? []).filter(phase => phase !== key.slice(6)) };
+  if (['developmentMethod', 'utilizationBand', 'utilizationMin', 'utilizationMax', 'keywordGroups'].includes(key)) return { ...draft, [key]: '' };
   if (key.startsWith('skill:')) {
     const skillId = key.slice('skill:'.length);
     return { ...draft, skills: draft.skills.filter((id) => id !== skillId) };
@@ -212,7 +235,12 @@ export function removeProjectSearchChip(
 /** 2 つの条件が同じか。🔴 **`未適用` の判定そのもの**（指示書 §6）。 */
 export function isSameProjectSearchDraft(a: ProjectSearchDraft, b: ProjectSearchDraft): boolean {
   return (
-    a.q === b.q &&
+    [...(a.developmentPhases ?? [])].sort().join(',') === [...(b.developmentPhases ?? [])].sort().join(',') &&
+    (a.developmentMethod ?? '') === (b.developmentMethod ?? '') &&
+    (a.utilizationBand ?? '') === (b.utilizationBand ?? '') &&
+    (a.utilizationMin ?? '') === (b.utilizationMin ?? '') &&
+    (a.utilizationMax ?? '') === (b.utilizationMax ?? '') &&
+    JSON.stringify(projectDraftKeywordGroups(a).map(group => ({ ...group, terms: [...group.terms].sort() }))) === JSON.stringify(projectDraftKeywordGroups(b).map(group => ({ ...group, terms: [...group.terms].sort() }))) &&
     a.status === b.status &&
     a.category === b.category &&
     a.remoteMode === b.remoteMode &&
@@ -268,6 +296,12 @@ export function parseSavedProjectSearchDraft(value: unknown): ProjectSearchDraft
     ? raw.skills.filter((id): id is string => typeof id === 'string')
     : [];
   return {
+    ...(Array.isArray(raw.developmentPhases) ? { developmentPhases: raw.developmentPhases.filter((value): value is string => typeof value === 'string') } : {}),
+    ...(text('developmentMethod') ? { developmentMethod: text('developmentMethod') } : {}),
+    ...(text('utilizationBand') ? { utilizationBand: text('utilizationBand') } : {}),
+    ...(text('utilizationMin') ? { utilizationMin: text('utilizationMin') } : {}),
+    ...(text('utilizationMax') ? { utilizationMax: text('utilizationMax') } : {}),
+    ...(validKeywordGroups(text('keywordGroups')) ? { keywordGroups: text('keywordGroups') } : {}),
     q: text('q'),
     status: text('status'),
     category: text('category'),
@@ -278,4 +312,13 @@ export function parseSavedProjectSearchDraft(value: unknown): ProjectSearchDraft
     prefecture: text('prefecture'),
     startWithin: text('startWithin'),
   };
+}
+
+function validKeywordGroups(value: string): boolean { try { return value.length <= 4000 && parseProjectKeywordGroups(JSON.parse(value)) !== null; } catch { return false; } }
+
+/** 旧フリーワードも、送信時にはグループへ変換して保持する。 */
+export function projectDraftKeywordGroups(draft: ProjectSearchDraft) {
+  const groups = draft.keywordGroups ? [...(parseProjectKeywordGroups(JSON.parse(draft.keywordGroups)) ?? [])] : [];
+  if (draft.q.trim()) groups.unshift({ mode: draft.q.includes('|') ? 'OR' : 'AND', terms: [...new Set(draft.q.split(draft.q.includes('|') ? '|' : /[\s\u3000]+/).map(term => term.trim()).filter(Boolean))] });
+  return groups.filter(group => group.terms.length);
 }

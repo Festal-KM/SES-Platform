@@ -75,9 +75,12 @@ import { DISABLED_CLASSES, FOCUS_RING_CLASSES, TRANSITION_CLASSES } from './stat
  * 🔴 ここに**バリアントで切り替えたい語を置かない**（`variant` / `size` として prop で
  *    列挙する。`lib/cn.ts` の新しい規律 1）。
  */
+const CONTROL_SHADOW_CLASSES = 'shadow-control';
+
 export const CONTROL_BASE_CLASSES = cn(
   // ✅ 2026-10-13: Input の角丸は **8px**（`rounded-md`。`docs/design-system.md` §3.3）。
-  'w-full min-w-0 rounded-md border border-border-strong bg-transparent px-3 shadow-control',
+  'w-full min-w-0 rounded-md border border-border-strong bg-transparent px-3',
+  CONTROL_SHADOW_CLASSES,
   'text-lg md:text-body',
   TRANSITION_CLASSES,
   'placeholder:text-fg-placeholder',
@@ -381,3 +384,8 @@ export const MULTI_SELECT_SEARCH_CLASSES = 'relative mb-2 shrink-0';
 
 /** ポップアップの中の「該当なし」の 1 行。🔴 空のパネルを出さない（壊れて見える）。 */
 export const MULTI_SELECT_EMPTY_CLASSES = 'px-2 py-3 text-body text-fg-muted';
+
+export const SEARCH_KEYWORD_CHIP_CLASSES = 'rounded-lg h-auto min-h-9 min-w-0 max-w-full shrink whitespace-normal';
+
+// 2026-10-29の画像指定。検索パネルだけに入力欄と同じ控えめな影を用いる。
+export const PROJECT_SEARCH_PANEL_CLASSES = CONTROL_SHADOW_CLASSES;

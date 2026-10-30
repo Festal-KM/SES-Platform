@@ -588,6 +588,8 @@ const SHADOW_ALLOWANCES: ReadonlyArray<readonly [file: string, utility: string]>
 const CIRCLE_ALLOWANCES: ReadonlyArray<readonly [file: string, utility: string]> = [
   ['packages/ui/src/components/avatar.tsx', 'rounded-full'],
   ['packages/ui/src/components/rail-card.tsx', 'rounded-full'],
+  // 2026-10-29: 人間の添付画像・指示書で明示された、検索のセグメントだけの例外。
+  ['packages/ui/src/components/segmented-control.tsx', 'rounded-full'],
 ];
 
 function isAllowedCircle(file: string, utility: string): boolean {

@@ -221,10 +221,10 @@ describe('案件の要点パネル（`docs/04` §7.1 の幅クラス B の副カ
       //       区別しないのでブラウザでは `readonly` として働く）。
       expect(html).toContain('readOnly=""');
       expect(html).toContain('data-testid="project-list-panel-copy-button"');
-      expect(html).toContain('【想定仕入単価】60 万円');
+      expect(html).toContain('【単価】60 万円');
       expect(html).not.toContain('【卸単価】');
-      // 🔴 貼られる形（`【案件名】…`）。
-      expect(html).toContain('【案件名】金融系 Web API 改修');
+      // 🔴 貼られる形（`【案件】…`）。
+      expect(html).toContain('【案件】金融系 Web API 改修');
     });
 
     it('🔴🔴 コピペ用サマリにホスト内部の情報（公開先の設定状況）を入れない', () => {

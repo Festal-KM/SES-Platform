@@ -1,5 +1,6 @@
 'use client';
 
+// 2026-10-29: 人間の最新指示で基本検索10項目と詳細検索へ拡張。以下の8項目の説明は旧仕様の履歴。
 // apps/web/app/(main)/projects/_search/search-filter-form.tsx
 // `S-010` の検索エリアの**本文**（改修指示書 §2 の B 層 / §3）。
 //
@@ -37,11 +38,15 @@
 //    あり、折りたたみ中かどうかに依らず常に hidden が要る）。ここに `name` を戻すと
 //    同じキーが 2 つ載って壊れる。
 
+import { KeywordGroups } from './keyword-groups';
+import { t } from '@ses/i18n';
+import { PROJECT_DEVELOPMENT_PHASES, PROJECT_DEVELOPMENT_METHODS, PROJECT_UTILIZATION_BANDS } from '@ses/domain';
 import {
   FILTER_GRID_CLASSES,
+  FILTER_GRID_SPAN_2_CLASSES,
   FILTER_GRID_COLUMN_CLASSES,
   Field,
-  Icon,
+  SegmentedControl,
   Input,
   cn,
 } from '@ses/ui';
@@ -50,12 +55,13 @@ import { PROJECT_SEARCH_FIELD_NAMES, type ProjectSearchDraft, type ProjectSearch
 import { SkillMultiSelect, type SkillMultiSelectMessages } from './skill-multi-select';
 
 /** 指示書 §2 の 3 段。🔴 **これ以外の段を作らない。** */
-export type FilterColumnCount = 1 | 2 | 3;
+export type FilterColumnCount = 1 | 2 | 3 | 4;
 
 /** 器の幅から段を決める。🔴 **純粋関数**（ユニットテストで固定する）。 */
 export function filterColumnCount(width: number | null): FilterColumnCount {
   // 🔴 測る前は 4 列（サーバ描画と同じ段に留める。`./use-element-width.ts` の 🔴）。
   if (width === null) return 3;
+  if (width >= 960) return 4;
   if (width >= 768) return 3;
   if (width >= 520) return 2;
   return 1;
@@ -101,6 +107,7 @@ export type SearchFilterFormOptions = {
 
 export function SearchFilterForm({
   draft,
+  openDetailsRequest,
   onChange,
   onComposingChange,
   columns,
@@ -110,6 +117,7 @@ export function SearchFilterForm({
   testIdPrefix,
 }: {
   readonly draft: ProjectSearchDraft;
+  readonly openDetailsRequest?: number;
   readonly onChange: (patch: Partial<ProjectSearchDraft>) => void;
   /**
    * 🔴🔴 **日本語変換の開始 / 終了**（`search-panel.tsx` 冒頭の 🔴🔴）。
@@ -127,54 +135,9 @@ export function SearchFilterForm({
   // 🔴 2 列・1 列のときは単価も 1 列ぶん（2 列のときに 2 列分を取ると行が単価だけになる）。
 
   return (
+    <div className="flex min-w-0 flex-col gap-3">
+    <p className="m-0 bg-bg-subtle px-3 py-3 text-body font-semibold text-fg">{t('projects.search.basic')}</p>
     <div className={cn(FILTER_GRID_CLASSES, FILTER_GRID_COLUMN_CLASSES[columns])}>
-      {/* 🔴 キーワードは**行全体**（指示書 §2 の図の 1 行目）。 */}
-      <Field label={messages.q} labelClassName="text-xs text-fg-muted">
-        <div className="relative">
-          <Icon
-            name="search"
-            className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-fg-muted"
-          />
-          <Input
-            type="search"
-            // 🔴🔴 **`name` を持つ**（水合前・JS 無しでも打った語がそのまま送られる）。
-            //    持たせないと、水合前の送信が**前の条件で静かに検索される**
-            //    （結果が変わらないのにエラーも出ない、最も分かりにくい壊れ方）。
-            //    `search-panel.tsx` は**この欄が使えないときだけ** hidden で補う。
-            // ⚠️ `name` を持つのは**キーワードと単価の 3 欄だけ**になった（2026-10-19）——
-            //    単一選択の 5 欄とスキルは `<div>` でネイティブのフォーム値を持たないため、
-            //    常に hidden 側が送る（ファイル冒頭の 🔴🔴）。
-            name={PROJECT_SEARCH_FIELD_NAMES.q}
-            className="pl-8"
-            value={draft.q}
-            placeholder={messages.qPlaceholder}
-            aria-label={messages.q}
-            data-testid={`${testIdPrefix}q`}
-            onChange={(event) => {
-              onChange({ q: event.currentTarget.value });
-            }}
-            // 🔴🔴 **変換の間は自動の絞り込みを止める**（上の `onComposingChange` の 🔴🔴）。
-            onCompositionStart={() => {
-              onComposingChange(true);
-            }}
-            onCompositionEnd={(event) => {
-              // 🔴 **確定した語をここでも取り込む。** ブラウザによっては
-              //    `compositionend` が最後の `change` より**後**に来るため、
-              //    これが無いと確定した 1 文字ぶんが条件から落ちることがある。
-              onChange({ q: event.currentTarget.value });
-              onComposingChange(false);
-            }}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter') return;
-              // 🔴🔴 **日本語変換の確定 Enter では検索しない**（指示書 §6）。
-              //    `isComposing` は変換中に `true` になる。これを見ないと、
-              //    「案件」と打って変換を確定しただけで検索が走る。
-              if (event.nativeEvent.isComposing) event.preventDefault();
-            }}
-          />
-        </div>
-      </Field>
-
       {/* 🔴 `as="div"` —— 引き金は `role="combobox"` の `<div>` であり、`<label>` では結べない
           （`Field` の既定は `<label>`。スキル欄と同じ扱いである）。読み上げ名は
           `aria-label` として `FilterSelect` に渡す。 */}
@@ -206,7 +169,7 @@ export function SearchFilterForm({
         />
       </Field>
 
-      <Field as="div" labelClassName="text-xs text-fg-muted" label={messages.skill}>
+      <Field as="div" labelClassName="text-xs text-fg-muted" label={<span className="flex items-center gap-2" title={t('projects.search.skillTarget')}>{messages.skill}<span className="text-micro font-normal text-fg-muted">{t('projects.search.multiOR')}</span></span>}>
         <SkillMultiSelect
           options={options.skillOptions}
           values={draft.skills}
@@ -218,6 +181,17 @@ export function SearchFilterForm({
         />
       </Field>
 
+      <Field as="div" labelClassName="text-xs text-fg-muted" label={<span className="flex items-center gap-2">{t('projects.search.phase')}<span className="text-micro font-normal text-fg-muted">{t('projects.search.multiOR')}</span></span>}>
+        <SkillMultiSelect options={PROJECT_DEVELOPMENT_PHASES.map(value => ({ value, label: t(`projects.search.phase.${value}`), shortLabel: t(`projects.search.phaseShort.${value}`) }))}
+          values={draft.developmentPhases ?? []} onChange={developmentPhases => onChange({ developmentPhases })}
+          messages={{ ...messages.skillMessages, placeholder: t('projects.search.phasePlaceholder'), triggerLabel: t('projects.search.phase'), searchLabel: t('projects.search.phase'), searchPlaceholder: t('projects.search.phasePlaceholder') }}
+          testIdPrefix={`${testIdPrefix}phases-`} checklist topHint={t('projects.search.multiOR')} />
+      </Field>
+      <Field as="div" labelClassName="text-xs text-fg-muted" label={t('projects.search.method')}>
+        <SegmentedControl compact={columns === 1} options={[{ value: '', label: t('projects.search.all') }, ...PROJECT_DEVELOPMENT_METHODS.map(value => ({ value, label: t(`projects.search.method.${value}`) }))]}
+          value={draft.developmentMethod ?? ''} label={t('projects.search.method')} testIdPrefix={`${testIdPrefix}development-method-`}
+          onChange={developmentMethod => onChange({ developmentMethod })} />
+      </Field>
       <Field as="div" labelClassName="text-xs text-fg-muted" label={messages.remoteMode}>
         <FilterSelect
           options={options.remoteModeOptions}
@@ -301,6 +275,14 @@ export function SearchFilterForm({
           }}
         />
       </Field>
+      <Field as="div" className={columns > 1 ? FILTER_GRID_SPAN_2_CLASSES : undefined} labelClassName="text-xs text-fg-muted" label={t('projects.search.utilization')}>
+        <SegmentedControl compact={columns === 1} options={[{ value: '', label: t('projects.search.all') }, ...PROJECT_UTILIZATION_BANDS.map(value => ({ value, label: t(`projects.search.band.${value}`) }))]}
+          value={draft.utilizationBand ?? ''} label={t('projects.search.utilization')} testIdPrefix={`${testIdPrefix}utilization-`}
+          onChange={utilizationBand => onChange({ utilizationBand, utilizationMin: '', utilizationMax: '' })} />
+        {!draft.utilizationBand && (draft.utilizationMin || draft.utilizationMax) ? <p className="m-0 text-xs text-fg-muted">{t('projects.search.legacyUtilization')}</p> : null}
+      </Field>
+    </div>
+    <KeywordGroups compact={columns < 3} openRequest={openDetailsRequest} draft={draft} onChange={onChange} onComposingChange={onComposingChange} testIdPrefix={testIdPrefix} />
     </div>
   );
 }

@@ -287,7 +287,7 @@ describe('🔴 条件バーの「＋N」（指示書 §4）', () => {
 
 describe('🔴 段組みは「器の幅」で決まる（指示書 §2）', () => {
   it('768 以上 → 3 列 / 520〜767 → 2 列 / 520 未満 → 1 列', () => {
-    expect(filterColumnCount(1200)).toBe(3);
+    expect(filterColumnCount(1200)).toBe(4);
     expect(filterColumnCount(768)).toBe(3);
     expect(filterColumnCount(767)).toBe(2);
     expect(filterColumnCount(520)).toBe(2);
@@ -299,4 +299,22 @@ describe('🔴 段組みは「器の幅」で決まる（指示書 §2）', () =
   });
 
 
+});
+
+describe('基本検索と詳細検索の保存・解除', () => {
+  it('追加条件を保存して復元し、個別に解除する', () => {
+    const draft = { ...EMPTY_PROJECT_SEARCH_DRAFT, developmentPhases: ['BASIC_DESIGN', 'DETAIL_DESIGN'], developmentMethod: 'AGILE', utilizationMin: '60', utilizationMax: '80', keywordGroups: JSON.stringify([['Java','Springboot'],['基本設計','内部設計']]) };
+    expect(parseSavedProjectSearchDraft(draft)).toEqual(draft);
+    expect(isEmptyProjectSearchDraft(draft)).toBe(false);
+    expect(isSameProjectSearchDraft(draft, {...draft, developmentPhases: ['DETAIL_DESIGN','BASIC_DESIGN']})).toBe(true);
+    const removed = removeProjectSearchChip(draft,'phase:BASIC_DESIGN');
+    expect(removed.developmentPhases).toEqual(['DETAIL_DESIGN']);
+    expect(removed.keywordGroups).toBe(draft.keywordGroups);
+    expect(removeProjectSearchChip(draft,'keywordGroups').keywordGroups).toBe('');
+    expect(parseSavedProjectSearchDraft({...draft,keywordGroups:'{'})?.keywordGroups).toBeUndefined();
+  });
+});
+
+it('旧フリーワードと同じ意味のグループを適用後に未適用扱いしない', () => {
+  expect(isSameProjectSearchDraft({...EMPTY_PROJECT_SEARCH_DRAFT, q:'Java Springboot'}, {...EMPTY_PROJECT_SEARCH_DRAFT, keywordGroups: JSON.stringify([{mode:'AND',terms:['Springboot','Java']}])})).toBe(true);
 });
