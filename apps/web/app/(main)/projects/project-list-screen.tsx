@@ -347,6 +347,7 @@ function projectColumns(
 }
 
 export function ProjectListScreen({
+  pageSummary,
   summaryPanel,
   rows,
   applied,
@@ -364,6 +365,7 @@ export function ProjectListScreen({
   selectHrefOf,
   messages,
 }: {
+  readonly pageSummary: string;
   readonly summaryPanel?: ReactNode;
   readonly rows: readonly ProjectListRowView[];
   // ====================================================================
@@ -504,6 +506,18 @@ export function ProjectListScreen({
         </p>
       )}
 
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-3" data-testid="project-list-paging-top">
+            <p className="m-0 text-cell text-fg-muted" data-testid="project-list-page-summary">{pageSummary}</p>
+            <Pagination
+              className="flex-wrap"
+              testIdPrefix="project-list-top-"
+              nextHref={nextPageHref}
+              nextLabel={messages.nextPage}
+              prevHref={firstPageHref ?? undefined}
+              prevLabel={messages.firstPage}
+              linkComponent={Link}
+            />
+          </div>
           <DataTable
             containerClassName="rounded-none border-x-0"
             className="[&_tbody_tr]:border-b [&_tbody_tr]:border-border-row [&_td]:py-3 [&_thead]:bg-bg"
@@ -542,18 +556,18 @@ export function ProjectListScreen({
           {/* 🔴 カーソルページング（docs/05 §6.1）。**「全 N ページ中 M ページ目」を出さない**。
               🔴 リンクは検索条件を保った URL である（`projectListHref`）。
               ⚠️ 器の `data-testid` は凍結済みの `project-list-paging` である（`U-22`）。 */}
-          {nextPageHref === null && firstPageHref === null ? null : (
-            <div className="mt-4" data-testid="project-list-paging">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border py-3" data-testid="project-list-paging">
+              <p className="m-0 text-cell text-fg-muted">{pageSummary}</p>
               <Pagination
+                className="flex-wrap"
                 testIdPrefix="project-list-"
                 nextHref={nextPageHref}
                 nextLabel={messages.nextPage}
-                prevHref={firstPageHref}
+                prevHref={firstPageHref ?? undefined}
                 prevLabel={messages.firstPage}
                 linkComponent={ProjectPagingLink}
               />
             </div>
-          )}
         </div>
         {summaryPanel === undefined ? null : (
           <aside className={cn(PAGE_BODY_ASIDE_WIDTH_CLASSES, DETAIL_PANE_VIEWPORT_CLASSES, 'bg-bg-subtle p-3')}>{summaryPanel}</aside>

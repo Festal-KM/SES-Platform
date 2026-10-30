@@ -34,6 +34,7 @@ import {
   PROJECT_PANEL_TAB_PARAM,
   projectListPrimaryAction,
   projectListRows,
+  projectPageSummary,
   projectPopulationLabel,
   projectSelectHref,
   selectedProjectId,
@@ -232,6 +233,7 @@ export default async function ProjectListPage({
              `partnerScopeNotice` も残っている。消したのは**重複していた 1 行**である。
           ⚠️ 文言キー（`projects.list.description*`）は消していない（`U-22` の凍結）。 */}
       <ProjectListScreen
+        pageSummary={projectPageSummary(view.total, rows.length)}
         summaryPanel={
           <ProjectSummaryPanel
             row={selectedRow}

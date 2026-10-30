@@ -200,6 +200,13 @@ export function projectListRows(items: readonly ProjectView[]): readonly Project
   return items.map(projectListRow);
 }
 
+/** 件数は境界適用後の応答から取り、カーソルを件数やページ番号に読み替えない。 */
+export function projectPageSummary(total: number, displayed: number): string {
+  return t('projects.list.pageSummary')
+    .replace('{total}', formatThousands(total))
+    .replace('{displayed}', formatThousands(displayed));
+}
+
 /**
  * 🔴 **母集団の明示**（`docs/04` §3.2 項目 2 / §S-010「母集団が違うことを画面上で明示する」）。
  *

@@ -310,6 +310,7 @@ function render(
       searchMessages,
       canRegister: true,
       nextPageHref: null,
+      pageSummary: '全1件・このページは1件',
       firstPageHref: null,
       columnToggleItems: COLUMN_TOGGLE_SHOWN,
       // 🔴 SP-22 段④: 副カラムで開いている行（既定は先頭行）と、行から開く URL。
@@ -672,8 +673,20 @@ describe('ページング（検索条件を保つ）', () => {
     expect(render({ firstPageHref: '/projects?q=x' })).toContain('最初のページに戻る');
   });
 
-  it('次も前も無ければページングの領域ごと描かない', () => {
-    expect(render()).not.toContain('data-testid="project-list-paging"');
+  it('1ページだけでも上下に件数と末尾の状態を表示する', () => {
+    const html = render();
+    expect(html).toContain('data-testid="project-list-paging"');
+    expect(html).toContain('data-testid="project-list-paging-top"');
+    expect(html).toContain('data-testid="project-list-top-pagination-next-edge"');
+    expect(html).not.toContain('data-testid="project-list-next"');
+    expect(html.match(/全1件・このページは1件/g)).toHaveLength(2);
+  });
+
+  it('空の結果も実際の0件を表示し、上部のページ送りにも同じ検索URLを渡す', () => {
+    const html = render({rows:[],pageSummary:'全0件・このページは0件',nextPageHref:'/projects?q=Java&cursor=x'});
+    expect(html).toContain('全0件・このページは0件');
+    expect(html).toContain('data-testid="project-list-top-pagination-next"');
+    expect(html.match(/href="\/projects\?q=Java&amp;cursor=x"/g)).toHaveLength(2);
   });
 });
 

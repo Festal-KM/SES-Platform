@@ -3116,6 +3116,7 @@ const ja = {
   'projects.search.modeOR': 'いずれかに一致（OR）',
   'projects.search.modeAND': 'すべてに一致（AND）',
   'projects.search.addKeywordHint': 'Enterで追加',
+  'projects.list.pageSummary': '全{total}件・このページは{displayed}件',
   'projects.search.keywordGuide': 'キーワードを入力して Enter または［追加］で登録。グループ内は OR / AND を選択、グループ同士は AND で結合されます。',
   'projects.search.firstKeyword': '最初のキーワードを追加',
   'projects.search.keywordInput': 'キーワードを入力',

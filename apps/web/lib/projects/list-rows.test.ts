@@ -21,6 +21,7 @@ import {
   projectListRow,
   projectListRows,
   projectPopulationLabel,
+  projectPageSummary,
   projectSelectHref,
   selectedProjectId,
   PROJECT_HIDEABLE_COLUMN_IDS,
@@ -29,6 +30,12 @@ import {
 import type { ProjectListQuery } from './schemas';
 
 const PROJECT_ID = '01930000-0000-7000-8000-0000000000c1';
+
+it('ページ件数は境界適用済みの総件数と表示件数を区別し、0件も省略しない', () => {
+  expect(projectPageSummary(120,50)).toBe('全120件・このページは50件');
+  expect(projectPageSummary(0,0)).toBe('全0件・このページは0件');
+  expect(projectPageSummary(1234,34)).toBe('全1,234件・このページは34件');
+});
 
 function sharedView() {
   return {
