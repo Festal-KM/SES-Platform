@@ -25,12 +25,12 @@ import type { ComponentProps } from 'react';
 import { cn } from '../lib/cn.js';
 import { CONTROL_BASE_CLASSES } from '../lib/control-classes.js';
 
-export type TextareaProps = ComponentProps<'textarea'>;
+export type TextareaProps = ComponentProps<'textarea'> & { readonly compact?: boolean };
 
-export function Textarea({ className, ...props }: TextareaProps) {
+export function Textarea({ className, compact = false, ...props }: TextareaProps) {
   return (
     <textarea
-      className={cn(CONTROL_BASE_CLASSES, 'flex field-sizing-content min-h-20 py-2', className)}
+      className={cn(CONTROL_BASE_CLASSES, 'flex field-sizing-content py-2', compact ? 'min-h-9' : 'min-h-20', className)}
       {...props}
     />
   );

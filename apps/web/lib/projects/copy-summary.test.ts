@@ -44,6 +44,10 @@ describe('基本情報から作るコピペ用サマリ', () => {
     expect(text).toContain('[尚可]\n・周辺システムとの連携経験\n生産管理の業務知見');
     expect(text.indexOf('【スキル】')).toBeLessThan(text.indexOf('【期間】'));
   });
+  it('マスタのスキル名と自由記述を併記する', () => {
+    const fields=projectCopyRequirementFields([{kind:'MUST',skillId:'java',skillName:'Java',freeText:'SpringでのAPI設計経験',requiredYears:3}]);
+    expect(projectCopySummary('案件',fields)).toContain('Java / SpringでのAPI設計経験 3 年以上');
+  });
   it('内部情報とカテゴリはラベルと値の両方を除外する', () => {
     const text = projectCopySummary('受発注システム開発', fields());
     for (const key of COPY_SUMMARY_EXCLUDED_FIELDS) {

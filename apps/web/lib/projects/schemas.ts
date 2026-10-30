@@ -140,9 +140,7 @@ const projectFields = {
    *    案件サマリに描くために足した 9 項目。**
    *
    * 🔴 **すべて `nullable`**（既存の案件には値が無い。既定値を入れない）。
-   * 🔴 **`copySummary` はここに無い**（下の 🔴 を参照）。人が書き換えて保存する経路は
-   *    `#26` の本体とは別の操作であり、同じ body に混ぜると「案件を直したら
-   *    サマリの手直しが消えた」が起きる。
+   * `copySummary` は新規登録の自動生成とは分け、更新時の明示された差分だけを受け取る。
    * 🔴 **項目をまたぐ検証（終了日 < 開始日、精算幅の逆転）は `service.ts` が行う**
    *    —— `PATCH` は既存値と合成しないと判定できない（本ファイル冒頭の 🔴）。
    */
@@ -219,6 +217,8 @@ assertNoIsolationKeys(Object.keys(createProjectBodySchema.shape), 'createProject
  *    載せる列を「指定された項目だけ」に絞るため、両者を混同させない。
  */
 export const updateProjectBodySchema = z.object({
+  // カード単位編集では明示された手動サマリだけを更新する。未指定なら既存本文を保つ。
+  copySummary: z.string().trim().min(1).max(COPY_SUMMARY_MAX_LENGTH).nullable().optional(),
   locationDetail: projectFields.locationDetail.optional(),
   publicMemo: projectFields.publicMemo.optional(),
   remarks: projectFields.remarks.optional(),

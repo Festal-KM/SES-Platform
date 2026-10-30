@@ -1,0 +1,107 @@
+import { randomUUID } from "node:crypto";
+import { expect, test } from "@playwright/test";
+import { t } from "../../packages/i18n/src/index";
+import { apiRequest } from "./support/api";
+import { hostOwner, openTenantSession } from "./support/sessions";
+import { expectNoHorizontalOverflow } from "./support/assertions";
+
+test("案件カードは一つずつ編集し、キャンセル・失敗・保存の差分を維持する", async ({
+  browser,
+}) => {
+  const session = await openTenantSession(browser, hostOwner(1));
+  const page = session.page;
+  try {
+    await page.goto("/projects");
+    const created = await apiRequest(page, "/api/projects", {
+      method: "POST",
+      body: { name: `カード編集検証-${randomUUID()}`, utilizationRate: 80 },
+    });
+    expect(created.status).toBe(201);
+    const { id } = JSON.parse(created.text) as { id: string };
+    await page.goto(`/projects/${id}`);
+    await expect(page.getByTestId("project-card-editor")).toBeVisible();
+    await expect(page.locator('[data-editing="true"]')).toHaveCount(0);
+    await expect(
+      page.getByTestId("project-card-editor").locator("input,textarea,select"),
+    ).toHaveCount(0);
+    await page.getByTestId("project-detail-edit-link").click();
+    await page.getByTestId("project-card-input-name").fill("未保存の名前");
+    await page.getByTestId("project-card-edit-development").click();
+    await expect(page.getByTestId("project-card-discard-dialog")).toBeVisible();
+    await page
+      .getByTestId("project-card-discard-dialog")
+      .getByRole("button", { name: t("projects.cards.continue"), exact: true })
+      .click();
+    await expect(page.getByTestId("project-card-input-name")).toHaveValue(
+      "未保存の名前",
+    );
+    await page.getByTestId("project-card-edit-development").click();
+    await page.getByTestId("project-card-discard-confirm").click();
+    await expect(page.locator('[data-editing="true"]')).toHaveCount(1);
+    await expect(
+      page.getByTestId("project-card-input-utilizationRate"),
+    ).toHaveValue("80");
+    await expect(page.getByTestId("project-card-utilization-segment-HALF_TO_FULL")).toBeChecked();
+    await page.getByTestId("project-card-utilization-segment-HALF_TO_FULL").locator("..").click();
+    await expect(page.getByTestId("project-card-input-utilizationRate")).toHaveValue("80");
+    await page.getByTestId("project-card-utilization-segment-UNDER_HALF").locator("..").click();
+    await expect(page.getByTestId("project-card-input-utilizationRate")).toHaveValue("");
+    await expect(page.getByTestId("project-card-input-utilizationRate")).toHaveAttribute("required", "");
+    await page.getByTestId("project-card-input-utilizationRate").fill("49");
+    await expect(page.getByTestId("project-card-utilization-segment-UNDER_HALF")).toBeChecked();
+    await page.getByTestId("project-card-input-utilizationRate").fill("75");
+    await expect(page.getByTestId("project-card-utilization-segment-HALF_TO_FULL")).toBeChecked();
+    const request = page.waitForRequest(
+      (r) => r.method() === "PATCH" && r.url().endsWith(`/api/projects/${id}`),
+    );
+    await page.getByTestId("project-card-save-development").click();
+    expect((await request).postDataJSON()).toEqual({ utilizationRate: 75 });
+    await expect(page.locator('[data-editing="true"]')).toHaveCount(0);
+    await expect(
+      page.getByTestId("project-card-value-utilizationRate"),
+    ).toHaveText("75%");
+    await page.reload();
+    await expect(
+      page.getByTestId("project-card-value-utilizationRate"),
+    ).toHaveText("75%");
+    await page.getByTestId("project-card-edit-notes").click();
+    await page
+      .getByTestId("project-card-input-copySummary")
+      .fill("取引先向けの手動サマリ");
+    await page.route(`**/api/projects/${id}`, (route) =>
+      route.request().method() === "PATCH"
+        ? route.fulfill({
+            status: 500,
+            contentType: "application/json",
+            body: "{}",
+          })
+        : route.continue(),
+    );
+    await page.getByTestId("project-card-save-notes").click();
+    await expect(page.getByTestId("project-card-error")).toBeVisible();
+    await expect(
+      page.getByTestId("project-card-input-copySummary"),
+    ).toHaveValue("取引先向けの手動サマリ");
+    await page.unroute(`**/api/projects/${id}`);
+    await page.getByTestId("project-card-save-notes").click();
+    await expect(page.locator('[data-editing="true"]')).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByTestId("project-card-value-copySummary")).toHaveText(
+      "取引先向けの手動サマリ",
+    );
+    await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async(text:string)=>{(window as Window & {copiedProjectText?:string}).copiedProjectText=text;}}}));
+    await page.getByTestId('project-detail-copy-summary').click();
+    await expect.poll(()=>page.evaluate(()=>(window as Window & {copiedProjectText?:string}).copiedProjectText)).toBe('取引先向けの手動サマリ');
+    await page.getByTestId("project-card-edit-content").click();
+    await page.getByTestId("project-card-requirement-add-MUST").click();
+    await expect(
+      page.locator('[data-testid^="project-card-requirement-text-"]'),
+    ).toHaveCount(1);
+    await page.getByTestId("project-card-cancel-content").click();
+    await expect(page.locator('[data-editing="true"]')).toHaveCount(0);
+    await expectNoHorizontalOverflow("案件カード編集", page);
+    session.outbound.assertNone();
+  } finally {
+    await session.close();
+  }
+});

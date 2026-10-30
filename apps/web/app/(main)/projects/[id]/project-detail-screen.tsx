@@ -19,14 +19,18 @@
 //    - **遮断しない**（Tier 3 相当のセクションもモバイルで隠さない）
 //
 // 🔴 文言は props（`packages/i18n`）から受け取る。ここにベタ書きしない（`CLAUDE.md` §3.5）。
-import type { ReactNode } from 'react';
-import Link from 'next/link';
+import type { ReactNode } from "react";
+import Link from "next/link";
 // 🔴 型だけを import する（本ファイルはサーバコンポーネントだが、`@ses/db` の**値**を
 //    持ち込むと `*.render.test.tsx` が Prisma クライアントを読み込むことになる）。
-import type { RequirementKind } from '@ses/db';
-import type { ProjectPublicField, ProjectPublishStateView } from '@ses/domain';
+import type { RequirementKind } from "@ses/db";
+import type { ProjectPublicField, ProjectPublishStateView } from "@ses/domain";
 import {
   cn,
+  Badge,
+  StatusBadge,
+  PRIMARY_LINK_CLASSES,
+  Card,
   NameCell,
   SECONDARY_LINK_CLASSES,
   Table,
@@ -35,7 +39,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@ses/ui';
+} from "@ses/ui";
 import {
   projectCommerceRows,
   projectConditionRows,
@@ -44,9 +48,10 @@ import {
   projectVisibilityRows,
   type ProjectDetailRow,
   type ProjectRequirementRow,
-} from '../../../../lib/projects/detail';
-import { formatDateTimeJst } from '../../../../lib/format/datetime';
-import type { ProjectDetailView } from '../../../../lib/projects/service';
+} from "../../../../lib/projects/detail";
+import { formatDateTimeJst } from "../../../../lib/format/datetime";
+import type { ProjectDetailView } from "../../../../lib/projects/service";
+import { ProjectCardEditTrigger, ProjectDetailCopyAction } from "./project-card-editor";
 
 export type ProjectDetailScreenMessages = {
   readonly sectionRequirements: string;
@@ -121,12 +126,12 @@ function Section({
   readonly children: ReactNode;
 }) {
   return (
-    <section className="border border-border bg-bg" data-testid={`project-detail-${id}`}>
+    <Card id={`project-detail-${id}`} data-testid={`project-detail-${id}`}>
       <h2 className="border-b border-border px-4 py-3 text-lg font-bold text-fg">
         {title}
       </h2>
       <div className="px-4 py-4">{children}</div>
-    </section>
+    </Card>
   );
 }
 
@@ -140,9 +145,15 @@ function DefinitionList({
   return (
     <dl className="text-body">
       {rows.map((row) => (
-        <div key={row.key} className="flex gap-3 border-b border-border py-2 last:border-b-0">
+        <div
+          key={row.key}
+          className="flex gap-3 border-b border-border py-2 last:border-b-0"
+        >
           <dt className="w-40 shrink-0 text-fg-muted">{row.label}</dt>
-          <dd className="m-0 text-fg" data-testid={`project-detail-${id}-${row.key}`}>
+          <dd
+            className="m-0 text-fg"
+            data-testid={`project-detail-${id}-${row.key}`}
+          >
             {row.value}
           </dd>
         </div>
@@ -161,11 +172,21 @@ function RequirementTable({
   readonly messages: ProjectDetailScreenMessages;
 }) {
   return (
-    <div className="mb-4 last:mb-0" data-testid={`project-detail-requirements-${kind}`}>
-      <h3 className="text-body font-bold text-fg">{messages.requirementHeadings[kind]}</h3>
-      <p className="mb-2 text-xs text-fg-muted">{messages.requirementNotes[kind]}</p>
+    <div
+      className="mb-4 last:mb-0"
+      data-testid={`project-detail-requirements-${kind}`}
+    >
+      <h3 className="text-body font-bold text-fg">
+        {messages.requirementHeadings[kind]}
+      </h3>
+      <p className="mb-2 text-xs text-fg-muted">
+        {messages.requirementNotes[kind]}
+      </p>
       {rows.length === 0 ? (
-        <p className="text-body text-fg-muted" data-testid={`project-detail-requirements-${kind}-empty`}>
+        <p
+          className="text-body text-fg-muted"
+          data-testid={`project-detail-requirements-${kind}-empty`}
+        >
           {messages.requirementEmpties[kind]}
         </p>
       ) : (
@@ -206,11 +227,15 @@ function RequirementTable({
 function AutoRevokedBanner({
   projectId,
   revocation,
+  inlineEdit = false,
   canEdit,
   messages,
 }: {
   readonly projectId: string;
-  readonly revocation: NonNullable<Extract<ProjectPublishStateView, { state: 'AUTO_REVOKED' }>['revocation']>;
+  readonly inlineEdit?: boolean;
+  readonly revocation: NonNullable<
+    Extract<ProjectPublishStateView, { state: "AUTO_REVOKED" }>["revocation"]
+  >;
   readonly canEdit: boolean;
   readonly messages: ProjectDetailScreenMessages;
 }) {
@@ -221,21 +246,35 @@ function AutoRevokedBanner({
       className="mb-4 border border-warning-border bg-warning-bg px-4 py-3 text-body text-warning"
       data-testid="project-detail-publish-auto-revoked"
     >
-      <p className="font-bold" data-testid="project-detail-publish-auto-revoked-title">
-        {cause.kind === 'GATE_FINDINGS' ? copy.autoRevokedTitle : copy.autoRevokedInconclusive}
+      <p
+        className="font-bold"
+        data-testid="project-detail-publish-auto-revoked-title"
+      >
+        {cause.kind === "GATE_FINDINGS"
+          ? copy.autoRevokedTitle
+          : copy.autoRevokedInconclusive}
       </p>
-      {cause.kind === 'GATE_FINDINGS' ? (
-        <p className="mt-1" data-testid="project-detail-publish-auto-revoked-fields">
-          {copy.autoRevokedFieldsLabel}:{' '}
-          {cause.fields.map((field) => copy.fieldLabels[field]).join(' / ')}
+      {cause.kind === "GATE_FINDINGS" ? (
+        <p
+          className="mt-1"
+          data-testid="project-detail-publish-auto-revoked-fields"
+        >
+          {copy.autoRevokedFieldsLabel}:{" "}
+          {cause.fields.map((field) => copy.fieldLabels[field]).join(" / ")}
         </p>
       ) : null}
-      <p className="mt-1" data-testid="project-detail-publish-auto-revoked-hidden">
+      <p
+        className="mt-1"
+        data-testid="project-detail-publish-auto-revoked-hidden"
+      >
         {copy.autoRevokedHiddenFromPrefix}
         {revocation.revokedPartnerCount}
         {copy.autoRevokedHiddenFromSuffix}
       </p>
-      <p className="mt-1" data-testid="project-detail-publish-auto-revoked-recovery">
+      <p
+        className="mt-1"
+        data-testid="project-detail-publish-auto-revoked-recovery"
+      >
         {copy.autoRevokedRecovery}
       </p>
       {canEdit ? (
@@ -249,16 +288,26 @@ function AutoRevokedBanner({
             {copy.autoRevokedFindings}
           </Link>
           {/* 🔴 「該当の欄を直す」→ `S-012`（編集）。**再公開の近道ではない。** */}
-          <Link
-            className={SECONDARY_LINK_CLASSES}
-            href={`/projects/${projectId}/edit`}
-            data-testid="project-detail-publish-auto-revoked-fix"
-          >
-            {copy.autoRevokedFix}
-          </Link>
+          {inlineEdit ? (
+            <ProjectCardEditTrigger
+              id={projectId}
+              label={copy.autoRevokedFix}
+            />
+          ) : (
+            <Link
+              className={SECONDARY_LINK_CLASSES}
+              href={`/projects/${projectId}/edit`}
+              data-testid="project-detail-publish-auto-revoked-fix"
+            >
+              {copy.autoRevokedFix}
+            </Link>
+          )}
         </div>
       ) : (
-        <p className="mt-2 text-xs" data-testid="project-detail-publish-auto-revoked-read-only">
+        <p
+          className="mt-2 text-xs"
+          data-testid="project-detail-publish-auto-revoked-read-only"
+        >
           {copy.autoRevokedReadOnly}
         </p>
       )}
@@ -282,7 +331,7 @@ function PublishProgressNotice({
   readonly messages: ProjectDetailScreenMessages;
 }) {
   const copy = messages.publishState;
-  if (state.state === 'PUBLISHED_RECHECK_HELD') {
+  if (state.state === "PUBLISHED_RECHECK_HELD") {
     return (
       <div
         className="mt-3 border border-dashed border-border-strong px-3 py-2 text-xs text-fg"
@@ -297,7 +346,7 @@ function PublishProgressNotice({
       </div>
     );
   }
-  if (state.state === 'PUBLISHED' && state.recheckRunning) {
+  if (state.state === "PUBLISHED" && state.recheckRunning) {
     return (
       <div
         className="mt-3 border border-dashed border-border-strong px-3 py-2 text-xs text-fg"
@@ -311,14 +360,108 @@ function PublishProgressNotice({
   return null;
 }
 
+function ProposalsSection({
+  messages,
+}: {
+  readonly messages: ProjectDetailScreenMessages;
+}) {
+  return (
+    <Section id="proposals" title={messages.sectionProposals}>
+      <p
+        className="mb-2 text-body text-fg-muted"
+        data-testid="project-detail-proposals-empty"
+      >
+        {messages.proposalsEmpty}
+      </p>
+      <p
+        className="text-xs text-fg-muted"
+        data-testid="project-detail-proposals-coming-soon"
+      >
+        {messages.proposalsComingSoon}
+      </p>
+      {/* ✅ T-08-05 → 🔴 **T-12-21 で帯へ移した**: `docs/04` §S-011 の「候補を探す」は
+                **primary** であり（§7.6「primary は大きく」）、セクションの中の secondary リンクでは
+                primary にならない。移設先は `PageHeading`（`projects/[id]/page.tsx`）で、
+                `data-testid="project-detail-candidates"` はそのまま引き継いでいる。 */}
+    </Section>
+  );
+}
+
+function VisibilitySection({
+  view,
+  canEdit,
+  messages,
+}: {
+  readonly view: Extract<ProjectDetailView, { audience: "HOST" }>;
+  readonly canEdit: boolean;
+  readonly messages: ProjectDetailScreenMessages;
+}) {
+  return (
+    <Section id="visibility" title={messages.sectionVisibility}>
+      {view.visibilities.length === 0 ? (
+        <p
+          className="text-body text-fg-muted"
+          data-testid="project-detail-visibility-empty"
+        >
+          {messages.visibilityEmpty}
+        </p>
+      ) : (
+        <Table data-testid="project-detail-visibility-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead>{messages.visibilityColumnPartner}</TableHead>
+              <TableHead>{messages.visibilityColumnPublishedOn}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {projectVisibilityRows(view.visibilities).map((row) => (
+              <TableRow key={row.key}>
+                {/* 🔴 会社名は `docs/04` §10.3「長い名称」の規約（T-11-12。`NameCell`）。この表の行には
+                              詳細画面が無い（`href={null}`）ため、どのブレークポイントでも切り詰めず折り返す ——
+                              切り詰めは「同じ行に全文への導線」との組でのみ許される（§11-14）。 */}
+                <NameCell name={row.partnerCompanyName} href={null} />
+                <TableCell>{row.publishedOn}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      <p
+        className="mt-3 text-xs text-fg-muted"
+        data-testid="project-detail-visibility-proposal-count"
+      >
+        {messages.visibilityProposalCountComingSoon}
+      </p>
+      {/* 🔴 T-12-10: 再検査の進行 / 保留はセクション 5 の中に置く（帯にしない）。 */}
+      <PublishProgressNotice state={view.publishState} messages={messages} />
+      {/* ✅ T-06-06: `S-013`（公開範囲の設定）への導線（`docs/04` §S-011 操作と結果）。
+                    🔴 `canEdit`（＝ `PROJECT_EDITOR_ROLES`）のときだけ出す —— `VIEWER` は
+                    公開範囲を変更できない（`BR-31`）。取引先はこのセクション自体に到達しない。 */}
+      {canEdit ? (
+        <Link
+          className={cn(SECONDARY_LINK_CLASSES, "mt-1")}
+          href={`/projects/${view.id}/visibility`}
+          data-testid="project-detail-visibility-settings"
+        >
+          {messages.visibilitySettings}
+        </Link>
+      ) : null}
+    </Section>
+  );
+}
+
 export function ProjectDetailScreen({
   view,
   requirementKinds,
   canEdit,
   messages,
+  cards,
+  compactHeader,
 }: {
   readonly view: ProjectDetailView;
   readonly requirementKinds: RequirementKindOrder;
+  readonly cards?: ReactNode;
+  readonly compactHeader?: {readonly categoryLabel:string;readonly sourceKindLabel:string;readonly category:string;readonly sourceKind:string;readonly updatedAt:string;readonly assignee:string|null;readonly copyText:string;readonly updatedLabel:string;readonly assigneeLabel:string;readonly candidatesLabel:string};
   /**
    * 🔴 `VIEWER` と取引先には `S-012` への導線を出さない（docs/04 §S-011 権限差分）。
    *    ⚠️ これは UI の配慮であって拒否の本体ではない（本体は #26 のガードと `S-012` の
@@ -332,14 +475,25 @@ export function ProjectDetailScreen({
 
   return (
     <div data-testid="project-detail-screen" data-audience={view.audience}>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <h1 className="text-title font-semibold text-fg" data-testid="project-detail-name">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+        <h1
+          className="min-w-0 break-words text-title font-semibold text-fg"
+          data-testid="project-detail-name"
+        >
           {view.name}
         </h1>
+        {compactHeader?<div className="flex flex-wrap items-center gap-2"><ProjectDetailCopyAction text={compactHeader.copyText}/><Link className={PRIMARY_LINK_CLASSES} href={`/projects/${view.id}/candidates`} data-testid="project-detail-candidates">{compactHeader.candidatesLabel}</Link></div>:null}
       </div>
 
       {/* 🔴 折りたたみの外（`CLAUDE.md` §13.3）。移動中の判断に要る 3 値。 */}
-      <dl
+      {compactHeader ? <dl className="mb-4 flex flex-wrap items-center gap-3 text-xs text-fg-muted" data-testid="project-detail-headline">
+        <div><dt className="sr-only">{headline[0]?.label}</dt><dd className="m-0" data-testid="project-detail-headline-status"><StatusBadge entity="project" state={view.status} label={headline[0]?.value??''}/></dd></div>
+        <div><dt className="sr-only">{compactHeader.categoryLabel}</dt><dd className="m-0"><Badge variant="outline">{compactHeader.category}</Badge></dd></div>
+        <div><dt className="sr-only">{compactHeader.sourceKindLabel}</dt><dd className="m-0"><Badge variant="outline">{compactHeader.sourceKind}</Badge></dd></div>
+        {headline.slice(1).map(row=><div key={row.key} className="flex items-center gap-1"><dt>{row.label}</dt><dd className="m-0" data-testid={`project-detail-headline-${row.key}`}>{row.value}</dd></div>)}
+        <div className="flex items-center gap-1"><dt>{compactHeader.updatedLabel}</dt><dd className="m-0">{compactHeader.updatedAt}</dd></div>
+        {compactHeader.assignee?<div className="flex items-center gap-1"><dt>{compactHeader.assigneeLabel}</dt><dd className="m-0">{compactHeader.assignee}</dd></div>:null}
+      </dl> : (      <dl
         className="mb-4 grid grid-cols-1 gap-3 border border-border bg-bg-subtle p-4 text-body sm:grid-cols-3"
         data-testid="project-detail-headline"
       >
@@ -354,13 +508,15 @@ export function ProjectDetailScreen({
             </dd>
           </div>
         ))}
-      </dl>
+      </dl>)}
 
       {/* 🔴 T-12-10: 自動解除の帯（`docs/04` 改訂 14 §S-011）。要件の上に置く。 */}
-      {view.audience === 'HOST' && view.publishState.state === 'AUTO_REVOKED' ? (
+      {view.audience === "HOST" &&
+      view.publishState.state === "AUTO_REVOKED" ? (
         <AutoRevokedBanner
           projectId={view.id}
           revocation={view.publishState.revocation}
+          inlineEdit={Boolean(cards)}
           canEdit={canEdit}
           messages={messages}
         />
@@ -371,7 +527,7 @@ export function ProjectDetailScreen({
           🔴 **T-12-10: 自動解除の帯が出ている間はこの警告を出さない**（`docs/04` 改訂 14 §S-011）——
           どちらも公開先 0 社だが**原因が違う**（設定し忘れ / 検査で落ちた）。帯は 1 本だけにし、
           自動解除を優先する。条件は「公開先 0 社」ではなく**公開の状態の 4 値**で書く。 */}
-      {view.audience === 'HOST' && view.publishState.state === 'UNPUBLISHED' ? (
+      {view.audience === "HOST" && view.publishState.state === "UNPUBLISHED" ? (
         // 🔴 **無彩色 / 枠線**（`docs/04` 改訂 14 §S-011 の 4 値表の「未公開」の行）。
         //    ⚠️ SP-22 段④ の記録: 旧実装は `amber-300 / amber-50`（橙）で、自動解除の
         //    `amber-400 / amber-100` と**濃さだけで**区別していた。semantic トークンに寄せると
@@ -379,7 +535,7 @@ export function ProjectDetailScreen({
         //    無彩色・枠線に直した（🔴 **4 値はどれも別の見た目にする**。`F-014 AC-12` と同じ趣旨）。
         //    塗り / 枠線の区別は `StatusBadge` と同じ語彙（背景あり / `bg-transparent`）で表す。
         <p
-          className="mb-4 border border-neutral-border bg-transparent px-4 py-3 text-body text-fg"
+          className="mb-3 border border-neutral-border bg-transparent px-3 py-2 text-xs text-fg"
           data-testid="project-detail-visibility-warning"
         >
           {messages.visibilityEmpty}
@@ -387,7 +543,7 @@ export function ProjectDetailScreen({
       ) : null}
 
       {/* 🔴 `docs/04` §S-011 取引先セクション 4「公開されている旨の説明」。 */}
-      {view.audience === 'PARTNER' ? (
+      {view.audience === "PARTNER" ? (
         <p
           className="mb-4 border border-border bg-bg-subtle px-4 py-3 text-body text-fg"
           data-testid="project-detail-partner-published"
@@ -396,8 +552,8 @@ export function ProjectDetailScreen({
         </p>
       ) : null}
 
-      <div className="mb-4 flex flex-wrap items-center gap-4">
-        {canEdit ? (
+      <div className="mb-3 flex flex-wrap items-center gap-4">
+        {canEdit && !cards ? (
           <Link
             className={SECONDARY_LINK_CLASSES}
             href={`/projects/${view.id}/edit`}
@@ -406,110 +562,86 @@ export function ProjectDetailScreen({
             {messages.edit}
           </Link>
         ) : null}
-        <p className="text-body text-fg-muted" data-testid="project-detail-view-recorded">
+        <p
+          className="text-xs text-fg-muted"
+          data-testid="project-detail-view-recorded"
+        >
           {messages.viewRecorded}
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* 左（デスクトップ）/ 上（タブレット以下）: 要件 → 条件 → 外部公開用の記載 */}
+      {cards && view.audience === "HOST" ? (
         <div className="flex flex-col gap-4">
-          <Section id="requirements" title={messages.sectionRequirements}>
-            {requirementKinds.map((kind) => (
-              <RequirementTable
-                key={kind}
-                kind={kind}
-                rows={projectRequirementRows(view.requirements, kind)}
-                messages={messages}
-              />
-            ))}
-          </Section>
-
-          <Section id="conditions" title={messages.sectionConditions}>
-            <DefinitionList id="conditions" rows={conditions} />
-          </Section>
-
-          <Section id="public-summary" title={messages.sectionPublicSummary}>
-            <p className="whitespace-pre-wrap text-body text-fg" data-testid="project-detail-public-summary">
-              {view.publicSummary ?? messages.publicSummaryEmpty}
-            </p>
-          </Section>
+          {cards}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <ProposalsSection messages={messages} />
+            <VisibilitySection
+              view={view}
+              canEdit={canEdit}
+              messages={messages}
+            />
+          </div>
         </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* 左（デスクトップ）/ 上（タブレット以下）: 要件 → 条件 → 外部公開用の記載 */}
+          <div className="flex flex-col gap-4">
+            <Section id="requirements" title={messages.sectionRequirements}>
+              {requirementKinds.map((kind) => (
+                <RequirementTable
+                  key={kind}
+                  kind={kind}
+                  rows={projectRequirementRows(view.requirements, kind)}
+                  messages={messages}
+                />
+              ))}
+            </Section>
 
-        {/* 右（デスクトップ）/ 下（タブレット以下）: 提案 → 商流情報・公開範囲 */}
-        <div className="flex flex-col gap-4">
-          <Section id="proposals" title={messages.sectionProposals}>
-            <p className="mb-2 text-body text-fg-muted" data-testid="project-detail-proposals-empty">
-              {messages.proposalsEmpty}
-            </p>
-            <p className="text-xs text-fg-muted" data-testid="project-detail-proposals-coming-soon">
-              {messages.proposalsComingSoon}
-            </p>
-            {/* ✅ T-08-05 → 🔴 **T-12-21 で帯へ移した**: `docs/04` §S-011 の「候補を探す」は
-                **primary** であり（§7.6「primary は大きく」）、セクションの中の secondary リンクでは
-                primary にならない。移設先は `PageHeading`（`projects/[id]/page.tsx`）で、
-                `data-testid="project-detail-candidates"` はそのまま引き継いでいる。 */}
-          </Section>
+            <Section id="conditions" title={messages.sectionConditions}>
+              <DefinitionList id="conditions" rows={conditions} />
+            </Section>
 
-          {/* 🔴 ここから下はホストの枝にしか存在しない。取引先の枝には
+            <Section id="public-summary" title={messages.sectionPublicSummary}>
+              <p
+                className="whitespace-pre-wrap text-body text-fg"
+                data-testid="project-detail-public-summary"
+              >
+                {view.publicSummary ?? messages.publicSummaryEmpty}
+              </p>
+            </Section>
+          </div>
+
+          {/* 右（デスクトップ）/ 下（タブレット以下）: 提案 → 商流情報・公開範囲 */}
+          <div className="flex flex-col gap-4">
+            <ProposalsSection messages={messages} />
+
+            {/* 🔴 ここから下はホストの枝にしか存在しない。取引先の枝には
               `endClientName` / `internalUnitPrice` / `visibilities` が**型として無い**。 */}
-          {view.audience === 'HOST' ? (
-            <>
-              <Section id="commerce" title={messages.sectionCommerce}>
-                <p className="mb-3 text-xs text-fg-muted" data-testid="project-detail-commerce-notice">
-                  {messages.commerceNotice}
-                </p>
-                <DefinitionList id="commerce" rows={projectCommerceRows(view)} />
-              </Section>
-
-              <Section id="visibility" title={messages.sectionVisibility}>
-                {view.visibilities.length === 0 ? (
-                  <p className="text-body text-fg-muted" data-testid="project-detail-visibility-empty">
-                    {messages.visibilityEmpty}
-                  </p>
-                ) : (
-                  <Table data-testid="project-detail-visibility-table">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{messages.visibilityColumnPartner}</TableHead>
-                        <TableHead>{messages.visibilityColumnPublishedOn}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {projectVisibilityRows(view.visibilities).map((row) => (
-                        <TableRow key={row.key}>
-                          {/* 🔴 会社名は `docs/04` §10.3「長い名称」の規約（T-11-12。`NameCell`）。この表の行には
-                              詳細画面が無い（`href={null}`）ため、どのブレークポイントでも切り詰めず折り返す ——
-                              切り詰めは「同じ行に全文への導線」との組でのみ許される（§11-14）。 */}
-                          <NameCell name={row.partnerCompanyName} href={null} />
-                          <TableCell>{row.publishedOn}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-                <p className="mt-3 text-xs text-fg-muted" data-testid="project-detail-visibility-proposal-count">
-                  {messages.visibilityProposalCountComingSoon}
-                </p>
-                {/* 🔴 T-12-10: 再検査の進行 / 保留はセクション 5 の中に置く（帯にしない）。 */}
-                <PublishProgressNotice state={view.publishState} messages={messages} />
-                {/* ✅ T-06-06: `S-013`（公開範囲の設定）への導線（`docs/04` §S-011 操作と結果）。
-                    🔴 `canEdit`（＝ `PROJECT_EDITOR_ROLES`）のときだけ出す —— `VIEWER` は
-                    公開範囲を変更できない（`BR-31`）。取引先はこのセクション自体に到達しない。 */}
-                {canEdit ? (
-                  <Link
-                    className={cn(SECONDARY_LINK_CLASSES, 'mt-1')}
-                    href={`/projects/${view.id}/visibility`}
-                    data-testid="project-detail-visibility-settings"
+            {view.audience === "HOST" ? (
+              <>
+                <Section id="commerce" title={messages.sectionCommerce}>
+                  <p
+                    className="mb-3 text-xs text-fg-muted"
+                    data-testid="project-detail-commerce-notice"
                   >
-                    {messages.visibilitySettings}
-                  </Link>
-                ) : null}
-              </Section>
-            </>
-          ) : null}
+                    {messages.commerceNotice}
+                  </p>
+                  <DefinitionList
+                    id="commerce"
+                    rows={projectCommerceRows(view)}
+                  />
+                </Section>
+
+                <VisibilitySection
+                  view={view}
+                  canEdit={canEdit}
+                  messages={messages}
+                />
+              </>
+            ) : null}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
