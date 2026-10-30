@@ -32,6 +32,7 @@ import { t } from '../../packages/i18n/src/index';
 import {
   expectNoBrokenLabels,
   expectNoHiddenCountHints,
+  expectNoHiddenCountHintsOnPage,
   expectNoHorizontalOverflow,
 } from './support/assertions';
 import { apiRequest, parseJson } from './support/api';
@@ -69,7 +70,7 @@ test.describe('モバイルビューポートのスモーク（S-010 / S-011 は
       await expectNoBrokenLabels('S-010 案件一覧', session.page);
       // 🔴 モバイルでも「見えない件数」の示唆を出さない（§4.8。列を間引いた分を
       //    「他 N 件」で補うような実装に倒れていないこと）。
-      expectNoHiddenCountHints('S-010 案件一覧（モバイル）', await session.page.content());
+      await expectNoHiddenCountHintsOnPage('S-010 案件一覧（モバイル）', session.page);
       // ④ 外向き発信が 0 件。
       session.outbound.assertNone();
     } finally {

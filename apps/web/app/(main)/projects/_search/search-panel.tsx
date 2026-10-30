@@ -87,7 +87,6 @@ import {
   Badge,
   Button,
   Card,
-  PROJECT_SEARCH_PANEL_CLASSES,
   DIALOG_PANEL_NARROW_CLASSES,
   FILTER_BODY_CLASSES,
   FILTER_BODY_COLLAPSE_CLASSES,
@@ -487,7 +486,7 @@ export function SearchPanel({
   const saveFieldError = dialogError ?? (name !== '' && !nameValid ? messages.nameError : undefined);
 
   return (
-    <Card className={cn(PROJECT_SEARCH_PANEL_CLASSES, 'w-full')} data-testid="project-list-search-panel">
+    <Card className="w-full" data-testid="project-list-search-panel">
       {/* 🔴 **素の GET フォーム**（ファイル冒頭の 🔴🔴）。 */}
       <form
         // 🔴 **幅を測るのはこの要素である**（= 検索エリア自身の幅。指示書 §2）。
@@ -542,7 +541,7 @@ export function SearchPanel({
         }}
       >
         <Tabs
-          className="gap-0 [&_[role=tablist]]:flex-1 [&_[role=tablist]]:justify-between [&_[role=tab]]:text-cell [&_[role=tab][data-state=active]]:text-fg [&_[role=tab][data-state=active]]:border-transparent [&_[role=tab]:first-child]:text-lg [&_[role=tab]:first-child]:font-semibold"
+          className="gap-0 [&_[role=tablist]]:flex-1 [&_[role=tablist]]:basis-full sm:[&_[role=tablist]]:basis-auto [&_[role=tab]]:whitespace-nowrap [&_[role=tab]]:shrink-0 [&_[role=tablist]]:justify-between [&_[role=tab]]:text-cell [&_[role=tab][data-state=active]]:text-fg [&_[role=tab][data-state=active]]:border-transparent [&_[role=tab]:first-child]:text-lg [&_[role=tab]:first-child]:font-semibold"
           label={messages.tabsLabel}
           value={tab}
           onValueChange={(value) => {
@@ -576,10 +575,11 @@ export function SearchPanel({
                 </Tooltip>
               )}
               <Tooltip content={messages.save}>
-                <Button type="button" variant="secondary" size="sm"
+                <IconButton type="button" variant="ghost" size="sm"
                   aria-label={messages.save}
+                  icon={<Icon name="list-plus" />}
                   data-testid="project-list-search-save"
-                  onClick={() => { openDialog({ kind: 'SAVE' }); }}><Icon name="list-plus" />{t('projects.search.save')}</Button>
+                  onClick={() => { openDialog({ kind: 'SAVE' }); }} />
               </Tooltip>
               <Tooltip content={expanded ? messages.collapse : messages.expand}>
                 <IconButton type="button" variant="ghost" size="sm"

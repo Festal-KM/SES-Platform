@@ -209,3 +209,8 @@ describe('案件の追加検索条件', () => {
     for (const input of [{ keywordGroups: '{' }, { keywordGroups: JSON.stringify(Array.from({length:11}, () => ['Java'])) }, { developmentPhases: ['UNKNOWN'] }, { developmentMethod: 'UNKNOWN' }, { utilizationMin: '101' }, { utilizationMax: '0' }]) expect(projectListQuerySchema.safeParse(input).success).toBe(false);
   });
 });
+
+it('番号指定は正の整数だけを受け付け、旧カーソルも保持する', () => {
+  for(const page of ['0','-1','1.5','NaN','1000001']) expect(projectListQuerySchema.safeParse({page}).success).toBe(false);
+  expect(projectListQuerySchema.parse({page:'3',limit:'25'})).toMatchObject({page:3,limit:25});
+});

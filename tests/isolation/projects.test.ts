@@ -1752,3 +1752,32 @@ describe('詳細検索の条件結合と内部備考の境界', () => {
     }
   });
 });
+
+describe('番号指定のページでも情報の境界を保つ', () => {
+  it('各ロールの全件を分割しても同じ順・件数で、外部行が混ざらない',async()=>{
+    for(const [identity,role] of [[HOST_1,'SALES'],[PARTNER_USER_1,'PARTNER_ADMIN'],[HOST_2,'SALES']] as const){
+      const ctx=await ctxOf(identity,role);
+      const all=await listBodyOf(await getProjects(ctx,'?limit=200'));
+      const paged:string[]=[];
+      for(let page=1;page<=Math.max(1,all.total);page++){
+        const part=await listBodyOf(await getProjects(ctx,`?limit=1&page=${page}`));
+        expect(part.total).toBe(all.total);paged.push(...idsOf(part));
+      }
+      expect(paged).toEqual(idsOf(all));
+      expect(new Set(paged).size).toBe(paged.length);
+      if(all.items[0]){
+        const legacy=await listBodyOf(await getProjects(ctx,`?limit=1&cursor=${all.items[0].id}`));
+        const numbered=await listBodyOf(await getProjects(ctx,'?limit=1&page=2'));
+        expect(idsOf(legacy)).toEqual(idsOf(numbered));
+        const {projectPageFromCursor}=await import('../../apps/web/lib/projects/list');
+        expect(await projectPageFromCursor(ctx,{limit:1,cursor:all.items[0].id})).toBe(2);
+        const foreign=ctx.tenantId===TENANT_1.tenantId ? TENANT_2.publishedProjectId : TENANT_1.publishedProjectId;
+        expect(await projectPageFromCursor(ctx,{limit:1,cursor:foreign})).toBe(1);
+        const mixed=await listBodyOf(await getProjects(ctx,`?limit=1&page=2&cursor=${foreign}`));
+        expect(idsOf(mixed)).toEqual(idsOf(numbered));
+      }
+      const end=await listBodyOf(await getProjects(ctx,`?limit=1&page=${all.total+1}`));
+      expect(end.items).toEqual([]);
+    }
+  });
+});

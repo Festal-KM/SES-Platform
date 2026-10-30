@@ -341,6 +341,8 @@ const SKILL_FILTER_MAX = 20;
  * 🔴 分離キーを持たない（`AssertNoIsolationKeys`）。母集団は RLS の C4 が決める。
  */
 export const projectListQuerySchema = idCursorPageQuerySchema.extend({
+  // 案件一覧の番号指定。旧cursorは互換用として引き続き受け付ける。
+  page: optionalFilter(z.coerce.number().int().min(1).max(1000000)),
   developmentPhases: optionalListFilter(z.array(z.enum(PROJECT_DEVELOPMENT_PHASES)).max(7)),
   developmentMethod: optionalFilter(z.enum(PROJECT_DEVELOPMENT_METHODS)),
   utilizationBand: optionalFilter(z.enum(PROJECT_UTILIZATION_BANDS)),

@@ -1,3 +1,4 @@
+import { projectPagination } from '../../../lib/projects/pagination';
 // apps/web/app/(main)/projects/project-list-screen.render.test.tsx
 // `ProjectListScreen`（`S-010`）の状態別描画テスト。T-06-03。
 //
@@ -309,8 +310,7 @@ function render(
       defaultExpanded: true,
       searchMessages,
       canRegister: true,
-      nextPageHref: null,
-      firstPageHref: null,
+      pagination: projectPagination({limit:50},1,1),
       columnToggleItems: COLUMN_TOGGLE_SHOWN,
       // 🔴 SP-22 段④: 副カラムで開いている行（既定は先頭行）と、行から開く URL。
       //    組み立ては `lib/projects/list-rows.test.ts`（`selectedProjectId` / `projectSelectHref`）が
@@ -346,7 +346,7 @@ describe('単価の表示範囲', () => {
 
 describe('🔴 docs/05 §4.8: 順位・全体件数・スコアを描かない', () => {
   it('ページ番号（「全 N ページ中 M ページ目」）を描かない', () => {
-    const html = render({ nextPageHref: '/projects?cursor=x' });
+    const html = render({pagination:projectPagination({limit:50},120,50)});
 
     expect(html).not.toContain('ページ目');
     expect(html).not.toContain('ページ中');
@@ -656,27 +656,35 @@ describe('検索エリア（改修指示書 §2 の 3 層）', () => {
     expect(panel).toContain('bg-surface');
     expect(panel).toContain('border-border');
     // 2026-10-29の画像指定に従い、既存の入力欄と同じ控えめな影だけを使う。
-    expect(panel).toContain('shadow-control');
+    expect(panel).not.toContain('shadow-control');
   });
 });
 
 describe('ページング（検索条件を保つ）', () => {
-  it('次ページのリンクは呼び出し側が組み立てた URL をそのまま使う', () => {
-    const html = render({ nextPageHref: `/projects?q=%E5%9F%BA%E5%B9%B9&cursor=${PROJECT_B}` });
-
-    expect(html).toContain(`href="/projects?q=%E5%9F%BA%E5%B9%B9&amp;cursor=${PROJECT_B}"`);
+  it('一覧は編集権限があってもステータスの表示だけにする', () => {
+    expect(render()).not.toContain('data-testid="project-list-status-toggle-');
+    expect(render({canRegister:false})).not.toContain('data-testid="project-list-status-toggle-');
+    expect(render()).toContain('data-entity="project"');
   });
-
-  it('1 ページ目では「最初のページに戻る」を出さない', () => {
-    expect(render()).not.toContain('最初のページに戻る');
-    expect(render({ firstPageHref: '/projects?q=x' })).toContain('最初のページに戻る');
+  it('フッターだけに番号・件数・表示件数の選択を置く', () => {
+    const html=render({pagination:projectPagination({limit:50,q:'Java',page:2},120,50)});
+    expect(html).toContain('120件中 51–100件を表示');
+    expect(html).toContain('data-testid="project-list-page-size"');
+    expect(html).toContain('aria-current="page"');
+    expect(html).toContain('q=Java');
+    expect(html).not.toContain('project-list-paging-top');
   });
-
-  it('次も前も無ければページングの領域ごと描かない', () => {
-    expect(render()).not.toContain('data-testid="project-list-paging"');
+  it('0件でも実際の範囲と操作不可の端を表示する', () => {
+    const html=render({rows:[],pagination:projectPagination({limit:50},0,0)});
+    expect(html).toContain('0件中 0–0件を表示');
+    expect(html).toContain('aria-disabled="true"');
+  });
+  it('一覧と検索を共通カードに分け、余白を持たせる', () => {
+    const html=render();
+    expect(html).toContain('project-list-table-card');
+    expect(html).toContain('flex flex-col gap-4');
   });
 });
-
 describe('🔴 T-11-12: 案件名セルが docs/04 §10.3「長い名称」のブレークポイント別規約と一致する（`@ses/ui` の `NameCell`）', () => {
   it('lg 未満 = 折り返し + 下限 10rem、lg 以上 = 切り詰め（器）+ title + 同じ行に S-011 への導線', () => {
     const html = render({ rows: [row({ name: '金融系 Web API 改修' })] });
