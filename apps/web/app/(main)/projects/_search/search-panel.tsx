@@ -575,10 +575,11 @@ export function SearchPanel({
                 </Tooltip>
               )}
               <Tooltip content={messages.save}>
-                <Button type="button" variant="secondary" size="sm"
+                <IconButton type="button" variant="ghost" size="sm"
                   aria-label={messages.save}
+                  icon={<Icon name="list-plus" />}
                   data-testid="project-list-search-save"
-                  onClick={() => { openDialog({ kind: 'SAVE' }); }}><Icon name="list-plus" />{t('projects.search.save')}</Button>
+                  onClick={() => { openDialog({ kind: 'SAVE' }); }} />
               </Tooltip>
               <Tooltip content={expanded ? messages.collapse : messages.expand}>
                 <IconButton type="button" variant="ghost" size="sm"

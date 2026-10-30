@@ -61,7 +61,6 @@ function row(overrides: Partial<ProjectListRowView> = {}): ProjectListRowView {
 }
 
 const messages: ProjectListScreenMessages = {
-  statusControl: {open:'募集中',closed:'終了',changeToOpen:'ステータスを募集中に変更',changeToClosed:'ステータスを終了に変更',saved:'変更しました',failed:'変更できませんでした'},
   populationLabel: '自社案件 2 件',
   partnerScopeNotice: null,
   orderNote: '後任募集 → 募集中 → 充足 の順に、同じ状態のなかでは更新日の新しい順に表示しています。',
@@ -662,9 +661,10 @@ describe('検索エリア（改修指示書 §2 の 3 層）', () => {
 });
 
 describe('ページング（検索条件を保つ）', () => {
-  it('編集できる利用者だけに行内のステータス切替を表示する', () => {
-    expect(render()).toContain(`data-testid="project-list-status-toggle-${PROJECT_A}"`);
+  it('一覧は編集権限があってもステータスの表示だけにする', () => {
+    expect(render()).not.toContain('data-testid="project-list-status-toggle-');
     expect(render({canRegister:false})).not.toContain('data-testid="project-list-status-toggle-');
+    expect(render()).toContain('data-entity="project"');
   });
   it('フッターだけに番号・件数・表示件数の選択を置く', () => {
     const html=render({pagination:projectPagination({limit:50,q:'Java',page:2},120,50)});

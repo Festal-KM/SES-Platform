@@ -3164,6 +3164,7 @@ const ja = {
   'projects.search.group': 'グループ',
   'projects.search.legacyUtilization': '以前の稼働率の範囲を適用中',
   'projects.search.cancel': 'キャンセル',
+  'projects.search.cancelHint': '編集中の変更を取り消す',
   'projects.search.examples': '検索例',
   'projects.search.basic': '基本検索',
   'projects.search.advanced': '詳細検索',

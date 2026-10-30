@@ -63,6 +63,7 @@
 import { createElement } from 'react';
 import {
   Archive,
+  Undo2,
   AtSign,
   Bell,
   BellOff,
@@ -198,6 +199,7 @@ export const ICONS = {
   // 🔴 **比喩ではない**（↓ = 下に開く）。`<summary>` に添え、開いている間は回転させる。
   // 🔴 **他の意味で使い回さない**（並び替え・減少・ダウンロードには使わない）。
   'chevron-down': ChevronDown,
+  'undo-2': Undo2,
   // ── ✅ 2026-10-26（紺野「チャットは拡張して」）: **チャット（S-031）専用**のアイコン。
   // 🔴 `docs/04` §7.5「ボタン・見出しにアイコンを付けない」の**例外はチャットの画面だけ**である
   //    （Slack・Teams・LINE と同じく、入力欄・会話の見出し・発言の操作を印で素早く押せるようにする）。

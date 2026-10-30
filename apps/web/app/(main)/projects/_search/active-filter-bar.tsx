@@ -39,6 +39,7 @@ const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : us
 import {
   Badge,
   Button,
+  IconButton,
   FILTER_SUMMARY_BAR_CLASSES,
   FILTER_SUMMARY_CHIPS_CLASSES,
   Icon,
@@ -301,13 +302,13 @@ export function ActiveFilterBar({
           </span>
         ) : null}
         <Tooltip content={messages.clear}>
-          <Button type="button" variant="secondary" className="mr-auto" aria-label={messages.clear}
-            data-testid={`${testIdPrefix}clear`} onClick={onClear}><Icon name="filter-x" />{t('projects.search.clearAll')}</Button>
+          <IconButton type="button" variant="ghost" className="mr-auto" aria-label={messages.clear} icon={<Icon name="filter-x" />}
+            data-testid={`${testIdPrefix}clear`} onClick={onClear} />
         </Tooltip>
-        {onCancel ? <Button type="button" variant="secondary" onClick={onCancel} data-testid={`${testIdPrefix}cancel-search`}>{t('projects.search.cancel')}</Button> : null}
+        {onCancel ? <Tooltip content={t('projects.search.cancelHint')}><IconButton type="button" variant="ghost" onClick={onCancel} aria-label={t('projects.search.cancelHint')} icon={<Icon name="undo-2" />} data-testid={`${testIdPrefix}cancel-search`} /></Tooltip> : null}
         <Tooltip content={messages.submit}>
-          <Button type="submit" variant="primary" aria-label={messages.submit} aria-busy={submitting}
-            data-testid={`${testIdPrefix}search`}><Icon name="search" />{t('projects.search.submit')}</Button>
+          <IconButton type="submit" variant="primary" aria-label={messages.submit} aria-busy={submitting} icon={<Icon name="search" />}
+            data-testid={`${testIdPrefix}search`} />
         </Tooltip>
       </div> : null}
     </div>

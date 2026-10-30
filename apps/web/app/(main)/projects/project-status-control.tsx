@@ -15,8 +15,7 @@ export type ProjectStatusControlMessages = {
   readonly failed: string;
 };
 
-export function ProjectStatusControl({ id, status, messages, inList = false }: {
-  readonly inList?: boolean;
+export function ProjectStatusControl({ id, status, messages }: {
   readonly id: string;
   readonly status: ProjectStatus;
   readonly messages: ProjectStatusControlMessages;
@@ -48,17 +47,17 @@ export function ProjectStatusControl({ id, status, messages, inList = false }: {
   }
 
   return (
-    <div className={inList ? 'relative z-10 flex flex-wrap items-center gap-2' : 'flex flex-wrap items-center gap-2'}>
+    <div className="flex flex-wrap items-center gap-2">
       <Tooltip content={action}>
         <Button type="button" variant="ghost" size="sm" className="px-0" aria-label={action}
           disabled={pending || refreshing} onClick={() => void change()}
-          data-testid={inList ? `project-list-status-toggle-${id}` : 'project-list-panel-status-toggle'}>
+          data-testid="project-list-panel-status-toggle">
           <StatusBadge entity="project" state={status} label={status === 'OPEN' ? messages.open : messages.closed} />
         </Button>
       </Tooltip>
       {result === null ? null : (
         <span role={result === 'failed' ? 'alert' : 'status'}
-          className={result === 'failed' ? 'text-xs text-danger' : inList ? 'sr-only' : 'text-xs text-fg-muted'}>
+          className={result === 'failed' ? 'text-xs text-danger' : 'text-xs text-fg-muted'}>
           {result === 'failed' ? messages.failed : messages.saved}
         </span>
       )}

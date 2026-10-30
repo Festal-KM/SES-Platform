@@ -109,7 +109,6 @@ import type { ProjectListRowView } from '../../../lib/projects/list-rows';
 import { SearchPanel, type SearchPanelMessages } from './_search/search-panel';
 import { ProjectPagination } from './project-pagination';
 import type { ProjectPaginationModel } from '../../../lib/projects/pagination';
-import { ProjectStatusControl, type ProjectStatusControlMessages } from './project-status-control';
 import type { ProjectSearchDraft } from './_search/filters';
 import type { SearchFilterFormOptions } from './_search/search-filter-form';
 
@@ -126,7 +125,6 @@ export type ProjectFilterOption = {
 //    規律にしている「受け取って使わない props を残さない」を型にも適用する。
 
 export type ProjectListScreenMessages = {
-  readonly statusControl: ProjectStatusControlMessages;
   readonly populationLabel: string;
   /** 🔴 取引先にだけ出す「見える範囲の説明」（`F-006 AC-2` と同じ規律）。ホストは `null`。 */
   readonly partnerScopeNotice: string | null;
@@ -182,7 +180,6 @@ function projectColumns(
    */
   selectHrefOf: (projectId: string) => string,
   showPurchasePrice: boolean,
-  canEditStatus: boolean,
 ): readonly DataTableColumn<ProjectListRowView>[] {
   return [
     {
@@ -233,9 +230,7 @@ function projectColumns(
       //    `@ses/ui` の `STATUS_BADGE_APPEARANCES` が決める（`docs/04` §5-13）。
       //    割り当ては [Issue #98](https://github.com/Festal-KM/SES-Platform/issues/98)（既定 A）。
       // 🔴 **語は `packages/i18n` 由来のまま**（`row.status`）。部品に日本語を持たせない。
-      cell: (row) => canEditStatus
-        ? <ProjectStatusControl key={row.id} id={row.id} status={row.statusState} messages={messages.statusControl} inList />
-        : <StatusBadge entity="project" state={row.statusState} label={row.status} />,
+      cell: (row) => <StatusBadge entity="project" state={row.statusState} label={row.status} />,
     },
     {
       id: 'mustRequirements',
@@ -509,7 +504,7 @@ export function ProjectListScreen({
             //    器の側の印（`overflow-indicator-x`）は `Table` が常に持つ（CSS で、
             //    スクロールできるときにだけ出る）。
             overflowNote={messages.overflowNote}
-            columns={projectColumns(messages, selectHrefOf, messages.partnerScopeNotice === null, canRegister)}
+            columns={projectColumns(messages, selectHrefOf, messages.partnerScopeNotice === null)}
             rows={rows}
             rowKey={(row) => row.id}
             linkComponent={Link}

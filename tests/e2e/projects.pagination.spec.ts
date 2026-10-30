@@ -36,7 +36,7 @@ test('案件一覧の上下でページを送り、検索条件を保って先�
   } finally {await session.close();}
 });
 
-test('行のステータスを切り替えても検索URLを変えず、失敗時は元の状態を保つ', async ({browser}) => {
+test('一覧はステータスを表示し、サマリでだけ変更できる', async ({browser}) => {
   const session = await openTenantSession(browser, hostOwner(1));
   const page = session.page;
   try {
@@ -47,7 +47,8 @@ test('行のステータスを切り替えても検索URLを変えず、失敗�
     const {id} = parseJson(created) as {id:string};
     await page.goto(`/projects?q=${encodeURIComponent(name)}&limit=1`,{waitUntil:'domcontentloaded'});
     const url = page.url();
-    const toggle = page.getByTestId(`project-list-status-toggle-${id}`);
+    await expect(page.locator('[data-testid^="project-list-status-toggle-"]')).toHaveCount(0);
+    const toggle = page.getByTestId('project-list-panel-status-toggle');
     await expect(toggle).toContainText('募集中');
     await toggle.click();
     await expect(toggle).toContainText('終了');
@@ -60,7 +61,7 @@ test('行のステータスを切り替えても検索URLを変えず、失敗�
       else await route.continue();
     });
     await toggle.click();
-    await expect(page.getByTestId(`project-list-row-${id}`).getByRole('alert')).toContainText('変更');
+    await expect(page.getByTestId('project-list-panel').getByRole('alert')).toContainText('変更');
     await expect(toggle).toContainText('募集中');
     session.outbound.assertNone();
   } finally {await session.close();}
