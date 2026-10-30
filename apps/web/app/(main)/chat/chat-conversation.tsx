@@ -12,6 +12,8 @@ import { type ChatAnnouncementView, type ChatMessageView } from '../../../lib/ch
 import { ChatAnnouncementBar } from './chat-announcement-bar';
 import { ChatComposer } from './chat-composer';
 import { ChatMessageItem } from './chat-message-item';
+import { ChatOutboxBubble } from './chat-outbox-item';
+import { ChatSearchPanel } from './chat-search-panel';
 import type { ChatConversationMessages } from './chat-props';
 import { ChatThreadPrefsToggle } from './chat-thread-prefs-toggle';
 import { useChatConversation } from './use-chat-conversation';
@@ -86,6 +88,11 @@ export type ChatConversationProps = {
    * 省略時は線を引かない。
    */
   readonly selfName?: string | null;
+  /**
+   * ✅ 2026-10-29（F-038 ⑰）: 開いたときに移る発言（一覧の「本文で見つかった発言」から。`?msg=`）。
+   * 🔴 この部屋の中だけを探す。見つからなければ移らずに一言出す。
+   */
+  readonly jumpToMessageId?: string | null;
 };
 
 export function ChatConversation(props: ChatConversationProps) {
@@ -122,6 +129,10 @@ export function ChatConversation(props: ChatConversationProps) {
     removeMessage,
     scrollToLatest,
     loadOlder,
+    outbox,
+    searchOpen,
+    toggleSearch,
+    jumpNotLoaded,
   } = conversation;
   // 日付は発言の間だけに置き、スクロール中も本文に重ねない。
   const entries = withUnreadMarker(withDaySeparators(items), markerId);
@@ -180,6 +191,19 @@ return (
             </span>
           ) : null}
         </div>
+        {/* ✅ 2026-10-29（F-038 ⑰）: この会話の中を検索する（スマホでも「…」にしまわず外に置く = 1 回で開ける）。 */}
+        <IconButton
+          type="button"
+          variant={searchOpen ? 'secondary' : 'ghost'}
+          className="min-h-11 min-w-11 shrink-0"
+          icon={<Icon name="chat-search" />}
+          aria-label={searchOpen ? messages.search.close : messages.search.open}
+          title={searchOpen ? messages.search.close : messages.search.open}
+          aria-expanded={searchOpen}
+          aria-controls={`chat-search-${threadId}`}
+          onClick={toggleSearch}
+          data-testid={`chat-search-toggle-${threadId}`}
+        />
         {/* ✅ 2026-10-14: 並べて開いているときだけ「閉じる」を置く（`md` 以上。モバイルは 1 列の切替のまま）。
             ✅ 2026-10-26: 並べているときに操作を「…」にしまっても、「閉じる」だけは外に出したままにする（すぐ押せるように）。 */}
         {closeHref === undefined ? null : (
@@ -252,6 +276,15 @@ return (
         </div>
       </div>
 
+      {searchOpen ? (
+        <div id={`chat-search-${threadId}`}>
+          <ChatSearchPanel conversation={conversation} />
+        </div>
+      ) : jumpNotLoaded ? (
+        <p className="m-0 shrink-0 border-b border-border px-3 py-2 text-xs text-fg-muted md:px-5" role="status" data-testid={`chat-jump-not-loaded-${threadId}`}>
+          {messages.search.notLoaded}
+        </p>
+      ) : null}
       {/* ✅ 2026-10-26（紺野の決定 2026-10-22）: アナウンスの帯（会話の見出しの下）。🔴 スマホでも同じ帯を出す（隠さない）。 */}
       {announcement === null ? null : (
         <ChatAnnouncementBar
@@ -300,7 +333,7 @@ return (
             {messages.olderFailed}
           </Alert>
         ) : null}
-        {items.length === 0 ? (
+        {items.length === 0 && outbox.length === 0 ? (
           <EmptyState description={canPost ? messages.firstMessage : messages.empty} testIdPrefix="chat-messages-empty-" />
         ) : (
           <ol
@@ -337,6 +370,16 @@ return (
                 </ol>
               </li>
             ))}
+            {/* ✅ 2026-10-29（F-038 ⑮）: 送ったばかりの発言（手元だけ。届いたらサーバの発言に置き換わる）。 */}
+            {outbox.length === 0 ? null : (
+              <li className="list-none">
+                <ol className="m-0 flex list-none flex-col gap-1 p-0" data-testid="chat-outbox">
+                  {outbox.map((entry) => (
+                    <ChatOutboxBubble key={entry.tempId} entry={entry} conversation={conversation} />
+                  ))}
+                </ol>
+              </li>
+            )}
           </ol>
         )}
       </div>

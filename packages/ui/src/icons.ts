@@ -63,6 +63,8 @@
 import { createElement } from 'react';
 import {
   Archive,
+  ArrowDown,
+  ArrowUp,
   AtSign,
   Bell,
   BellOff,
@@ -105,6 +107,7 @@ import {
   Quote,
   ScrollText,
   Search,
+  TextSearch,
   Save,
   SaveAll,
   FilterX,
@@ -226,6 +229,9 @@ export const ICONS = {
   'chat-rail-open': PanelLeftOpen, // 左の絞り込みの列を開く
   'chat-attach': Paperclip, // ファイルを添える（社内だけの部屋。2026-10-27）
   'chat-quote': Quote, // 発言を引用して返信（2026-10-27）
+  'chat-search': TextSearch, // この会話の中を検索（2026-10-29。上部バーの全体検索〔`search`〕と見分ける）
+  'chat-move-up': ArrowUp, // 左の列の並び替え: 1 つ上へ（2026-10-29）
+  'chat-move-down': ArrowDown, // 左の列の並び替え: 1 つ下へ（2026-10-29）
 } as const;
 
 /** 🔴 写像に無い名前は**型エラー**になる（`docs/05` §17.7.1 (i)①）。 */

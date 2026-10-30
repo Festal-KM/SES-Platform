@@ -5,20 +5,19 @@
 //   ① 🔴 **見る人の権限で描く。** 値はサーバが見る人の RLS で読み直したもの（`lib/chat/project-cards.ts`）。
 //      読めなければ `{ visible: false }` しか届かず、ここは「表示できません」とだけ出す（案件名も ID も無い）。
 //   ② 🔴 **単価・エンド企業名を出さない**（カードの型にそもそも無い）。出すのは 案件名・状態・開始時期・
-//      勤務地 / リモート・必須の要件・尚可の件数と、案件詳細へのリンク（ホストも取引先も同じ案件詳細の画面）。
+//      勤務地 / リモート・必須の要件・尚可の件数と、案件詳細を開く操作（✅ 2026-10-29: チャットの中の右の欄で開く。欄から案件のページへも移れる）。
 //   ③ 「条件を引用」は投稿できる人にだけ描く（押せないボタンを置かない）。引用するのは要件だけ。
 // 🔴 `@ses/db` / `@ses/i18n` を値 import しない（会話の島から使う。語は `messages` で受け取る）。
-import Link from 'next/link';
-import { Badge, Button, CHAT_BUBBLE_MAX_WIDTH_CLASS, Icon, SECONDARY_LINK_CLASSES, StatusBadge, cn } from '@ses/ui';
+import { Badge, Button, CHAT_BUBBLE_MAX_WIDTH_CLASS, Icon, StatusBadge, cn } from '@ses/ui';
 import {
   chatProjectConditionsQuote,
-  chatProjectHref,
   chatProjectLocationText,
   chatProjectStartText,
   chatRequirementText,
 } from '../../../lib/chat/project-card-text';
 import type { ChatAttachedProjectView } from '../../../lib/chat/views';
 import type { ChatConversationMessages } from './chat-props';
+import { ChatProjectPanelButton } from './chat-project-panel';
 
 /** 状態の札が描ける値（`StatusBadge` の `project` の 2 値）。それ以外は札を描かず語だけにする。 */
 const PROJECT_BADGE_STATES = ['OPEN', 'CLOSED'] as const;
@@ -96,13 +95,8 @@ export function ChatProjectCard({ messageId, project, labels, onQuote }: ChatPro
         </p>
       )}
       <div className="flex flex-wrap items-center gap-3">
-        <Link
-          href={chatProjectHref(project.id)}
-          className={SECONDARY_LINK_CLASSES}
-          data-testid={`chat-message-project-open-${messageId}`}
-        >
-          {labels.open}
-        </Link>
+        {/* ✅ 2026-10-29（紺野）: 案件のページへ移らず、右の欄（スマホは全画面）で開く（`chat-project-panel.tsx`）。 */}
+        <ChatProjectPanelButton messageId={messageId} projectId={project.id} labels={labels} />
         {onQuote === undefined || quote === '' ? null : (
           <Button
             type="button"

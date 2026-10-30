@@ -1,4 +1,5 @@
 import { ChatResizablePane } from './chat-resizable-pane';
+import { conversationLayoutFor } from '../../../lib/chat/layout';
 // apps/web/app/(main)/chat/chat-screen.render.test.tsx
 // `S-031` チャットの 3 コンポーネント（`ChatThreadList` / `ChatConversation` / `ChatThreadPanel`）の
 // 描画テスト（`docs/04` §S-031 / `F-038` / `BR-44` / `U-10` / `CLAUDE.md` §13.3）。
@@ -228,10 +229,11 @@ describe('🔴 ②: 投稿できないロールにボタンを描かない（BR-
     const html = renderConversation({ canPost: false, initialNextCursor: null });
     // ✅ 2026-10-14: 発言の操作（コピー・続きを読む・2026-10-16 から「ここから未読にする」）は閲覧専用でも**押せて働く**
     //    （自分の表示の状態を変えるだけ）ので在ってよい。
+    //    ✅ 2026-10-29（F-038 ⑰）: 会話の中の検索も閲覧専用で押せて働く（読むだけ）ので在ってよい。
     //    🔴 それ以外の `<button>`（送信・再送・定型文・過去の読み込み）は 1 つも無い。
     const buttons = [...html.matchAll(/<button[^>]*>/g)].map((match) => match[0]);
     for (const button of buttons) {
-      expect(button, `発言の操作ではないボタンがあります: ${button}`).toMatch(/data-testid="chat-message-(copy|expand|mark-unread)-/);
+      expect(button, `発言の操作ではないボタンがあります: ${button}`).toMatch(/data-testid="chat-(message-(copy|expand|mark-unread)|search-toggle)-/);
     }
     expect(html).not.toContain('chat-compose-submit');
     expect(html).not.toContain('chat-compose-template');
@@ -473,16 +475,18 @@ describe('⑦: 並べ方の切り替え（2026-10-13、Lark 寄せ。lib/chat/la
     expect((other as RegExpExecArray)[0]).not.toContain('items-end');
   });
 
-  it('話題型（案件スレッド・既定）: 自分の発言も左で、名前を出す（従来どおり）', () => {
+  // ✅ 2026-10-29: 画面は案件スレッドにも会話型を渡す（下の page.tsx の検査と `layout.test.ts`）。話題型は部品の既定として残る。
+  it('話題型（部品の既定）: 自分の発言も左で、名前を出す', () => {
     for (const html of [renderConversation(), renderConversation({ layout: 'topic' })]) {
       expect(html).toContain(`data-testid="chat-message-sender-${MESSAGE_OWN.id}"`);
       expect(html).not.toContain('data-layout="chat"');
     }
   });
 
-  it('page.tsx はスレッドの種類から並べ方を決めて渡す', () => {
+  it('page.tsx はスレッドの種類から並べ方を決めて渡す（✅ 2026-10-29: 案件スレッドも会話型 = 自分は右）', () => {
     const source = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
     expect(source).toContain('layout={conversationLayoutFor(selected.kind)}');
+    expect(conversationLayoutFor('PROJECT')).toBe('chat');
   });
 });
 
@@ -665,13 +669,13 @@ describe('⑪: 会社ごとの木・検索・並べ替え（2026-10-14、チャ�
     expect(html).toContain(`chat-thread-row-${CHAT_A}`);
     expect(html).toContain(`chat-thread-row-${THREAD_PROJECT}`);
     expect(classTokensOf(html, `chat-thread-row-${THREAD_PROJECT}`)).not.toContain('pl-6');
-    // ✅ 2026-10-20: 種類は無彩色のアバター（案件 = 「#」、会社 = 頭文字）で分ける。会社・案件の行に札を付けない。
+    // ✅ 2026-10-29: 種類は色つきのアバター（案件 = 橙の「#」、会社 = 墨色の頭文字）で分ける。会社・案件の行に札を付けない。
     const projectRow = new RegExp(`<li data-testid="chat-thread-row-${THREAD_PROJECT}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
     const companyRow = new RegExp(`<li data-testid="chat-thread-row-${CHAT_A}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
-    expect(projectRow).toContain('bg-neutral-bg');
-    expect(projectRow).not.toContain('bg-warning');
+    expect(projectRow).toContain('bg-warning');
+    expect(projectRow).not.toContain('bg-neutral-bg');
     expect(projectRow).toContain('>#<');
-    expect(companyRow).toContain('bg-neutral-bg');
+    expect(companyRow).toContain('rounded-md bg-fg text-bg');
     expect(projectRow).not.toContain(t('chat.tag.external'));
     expect(companyRow).not.toContain(t('chat.tag.external'));
     // 「チャット / スレッド」の文字は出さない（見た目で分ける）。

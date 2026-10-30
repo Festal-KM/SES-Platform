@@ -309,6 +309,8 @@ export default async function ChatPage({
                 mentionNames={mentionNamesOf(selected)}
                 announcement={data.announcements[selected.id] ?? null}
                 selfName={data.viewerName}
+                // ✅ 2026-10-29（F-038 ⑰）: 一覧の「本文で見つかった発言」から開いたら、その発言へ移る（この部屋の中だけ）。
+                jumpToMessageId={query.msg ?? null}
                 canPost={canPost}
                 canAttach={canPost && attachableIds.has(selected.id)}
                 messages={conversationMessages}

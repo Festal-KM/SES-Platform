@@ -8,6 +8,7 @@
 //   ② 会社の鍵は会社の会話の行の ID（`ChatThreadGroup.key`）。取引先の ID を URL に出さない。
 //   ③ スマホでは横に流れる帯、`md` 以上では縦の列（隠さない。`CLAUDE.md` §13.3）。
 //   ④ ✅ 2026-10-22: 「取引先」「案件スレッド」「連絡先」は見出しで開閉できる（`chat-rail-section.tsx`。閉じても未読の件数は出す）。
+//   ⑤ ✅ 2026-10-29: 並びは利用者が変えられる（`chat-rail-order.tsx`。この端末に覚える）。項目の中身はここが決める。
 import { UNREAD_DOT_CLASSES } from './chat-unread-dot';
 import Link from 'next/link';
 import { t } from '@ses/i18n';
@@ -15,6 +16,7 @@ import { ROW_HOVER_CLASSES, cn } from '@ses/ui';
 import type { ChatThreadGroup } from '../../../lib/chat/thread-tree';
 import type { ChatRoomListItem } from '../../../lib/chat/views';
 import { chatHref, type ChatListFilter } from '../../../lib/chat/screen-query';
+import { ChatRailOrder, type ChatRailBlock } from './chat-rail-order';
 import { ChatRailSection } from './chat-rail-section';
 
 export type ChatRailProps = {
@@ -29,22 +31,26 @@ export type ChatRailProps = {
   readonly showSaved?: boolean;
 };
 
-/** 会社の印は列を畳んだときだけ残す。開いた列では社名で見分ける。 */
+/**
+ * 種類の印（一覧のアバターと同じ形・色の小さな四角・丸）。
+ * ✅ 2026-10-29（紺野「色分けしてあったほうがよかった」）: #167（5b9c539）で無彩色・畳んだ列だけにした印を元に戻し、
+ *    すべての項目に色つきの印を出す（`chat-thread-list.tsx` の `AVATAR_KIND_CLASSES` と同じ塗り）。
+ */
 type MarkKind = 'all' | 'unread' | 'dm' | 'group' | 'saved' | 'company' | 'project' | 'contacts';
 const MARK_CLASSES: Readonly<Record<MarkKind, string>> = {
-  all: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
-  unread: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
-  dm: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
-  group: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
-  saved: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
-  company: 'hidden rounded-md bg-neutral-bg text-fg-muted md:in-[[data-collapsed=true]]:inline-flex',
-  project: 'inline-flex rounded-md bg-neutral-bg text-fg-muted',
-  contacts: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
+  all: 'rounded-md bg-fg-muted text-bg',
+  unread: 'rounded-md bg-info text-bg',
+  dm: 'rounded-full bg-brand text-brand-fg',
+  group: 'rounded-full bg-success text-bg',
+  saved: 'rounded-md bg-brand text-brand-fg',
+  company: 'rounded-md bg-fg text-bg',
+  project: 'rounded-md bg-warning text-bg',
+  contacts: 'rounded-full bg-success text-bg',
 };
 
 function Mark({ kind, text }: { readonly kind: MarkKind; readonly text: string }) {
   return (
-    <span aria-hidden="true" className={cn('h-6 w-6 shrink-0 items-center justify-center text-xs font-bold', MARK_CLASSES[kind])}>
+    <span aria-hidden="true" className={cn('inline-flex h-6 w-6 shrink-0 items-center justify-center text-xs font-bold', MARK_CLASSES[kind])}>
       {text}
     </span>
   );
@@ -124,18 +130,23 @@ export function ChatRail({ groups, rooms, unreadCounts, mentionUnreadIds = [], f
     groups.flatMap((group) => [...(group.chat === null ? [] : [group.chat.id]), ...group.threads.map((item) => item.id)]).filter((id) => unreadOf(id) > 0).length +
     rooms.filter((room) => room.companyKey !== null && unreadOf(room.id) > 0).length;
   const projectsUnread = projects.filter((item) => unreadOf(item.id) > 0).length;
-  return (
-    <nav aria-label={t('chat.rail.label')} className="flex flex-col p-2" data-testid="chat-rail">
-      <ul className="m-0 flex list-none gap-1 overflow-x-auto p-0 md:flex-col md:overflow-visible">
-        <RailLink href={chatHref({})} active={is('all')} mark="all" markText={t('chat.rail.mark.all')} label={t('chat.rail.all')} count={unreadTotal} mention={mentioned.size > 0} testKey="all" />
-        <RailLink href={chatHref({ filter: { kind: 'unread' } })} active={is('unread')} mark="unread" markText={t('chat.rail.mark.unread')} label={t('chat.rail.unread')} count={unreadTotal} testKey="unread" />
-        <RailLink href={chatHref({ filter: { kind: 'dm' } })} active={is('dm')} mark="dm" markText={t('chat.rail.mark.dm')} label={t('chat.rail.dm')} mention={rooms.some((room) => room.kind === 'DM' && mentioned.has(room.id))} testKey="dm" />
-        <RailLink href={chatHref({ filter: { kind: 'group' } })} active={is('group')} mark="group" markText={t('chat.rail.mark.group')} label={t('chat.rail.group')} mention={rooms.some((room) => room.kind === 'GROUP' && mentioned.has(room.id))} testKey="group" />
-        {showSaved ? (
-          <RailLink href={chatHref({ filter: { kind: 'saved' } })} active={is('saved')} mark="saved" markText={t('chat.rail.mark.saved')} label={t('chat.rail.saved')} testKey="saved" />
-        ) : null}
-      </ul>
-      {groups.length === 0 ? null : (
+  // ✅ 2026-10-29（F-038 ⑯）: 項目を「鍵・名前・中身」の並びにして、並べ方だけを利用者に任せる（`chat-rail-order.tsx`）。
+  //    🔴 どの項目を出すか・件数・リンク先はここ（サーバ）が決める。並び替えで項目は増えも減りもしない。
+  const blocks: ChatRailBlock[] = [
+    { key: 'all', kind: 'link', label: t('chat.rail.all'), node: <RailLink href={chatHref({})} active={is('all')} mark="all" markText={t('chat.rail.mark.all')} label={t('chat.rail.all')} count={unreadTotal} mention={mentioned.size > 0} testKey="all" /> },
+    { key: 'unread', kind: 'link', label: t('chat.rail.unread'), node: <RailLink href={chatHref({ filter: { kind: 'unread' } })} active={is('unread')} mark="unread" markText={t('chat.rail.mark.unread')} label={t('chat.rail.unread')} count={unreadTotal} testKey="unread" /> },
+    { key: 'dm', kind: 'link', label: t('chat.rail.dm'), node: <RailLink href={chatHref({ filter: { kind: 'dm' } })} active={is('dm')} mark="dm" markText={t('chat.rail.mark.dm')} label={t('chat.rail.dm')} mention={rooms.some((room) => room.kind === 'DM' && mentioned.has(room.id))} testKey="dm" /> },
+    { key: 'group', kind: 'link', label: t('chat.rail.group'), node: <RailLink href={chatHref({ filter: { kind: 'group' } })} active={is('group')} mark="group" markText={t('chat.rail.mark.group')} label={t('chat.rail.group')} mention={rooms.some((room) => room.kind === 'GROUP' && mentioned.has(room.id))} testKey="group" /> },
+  ];
+  if (showSaved) {
+    blocks.push({ key: 'saved', kind: 'link', label: t('chat.rail.saved'), node: <RailLink href={chatHref({ filter: { kind: 'saved' } })} active={is('saved')} mark="saved" markText={t('chat.rail.mark.saved')} label={t('chat.rail.saved')} testKey="saved" /> });
+  }
+  if (groups.length > 0) {
+    blocks.push({
+      key: 'companies',
+      kind: 'section',
+      label: t('chat.rail.companies'),
+      node: (
         <ChatRailSection sectionKey="companies" heading={t('chat.rail.companies')} unread={companiesUnread}>
           <ul className="m-0 flex list-none gap-1 overflow-x-auto p-0 md:flex-col md:overflow-visible" data-testid="chat-rail-companies">
             {groups.map((group) => {
@@ -160,8 +171,15 @@ export function ChatRail({ groups, rooms, unreadCounts, mentionUnreadIds = [], f
             })}
           </ul>
         </ChatRailSection>
-      )}
-      {projects.length === 0 ? null : (
+      ),
+    });
+  }
+  if (projects.length > 0) {
+    blocks.push({
+      key: 'projects',
+      kind: 'section',
+      label: t('chat.rail.projects'),
+      node: (
         <ChatRailSection sectionKey="projects" heading={t('chat.rail.projects')} unread={projectsUnread}>
           <ul className="m-0 flex list-none gap-1 overflow-x-auto p-0 md:flex-col md:overflow-visible" data-testid="chat-rail-projects">
             {projects.map((item) => (
@@ -179,8 +197,15 @@ export function ChatRail({ groups, rooms, unreadCounts, mentionUnreadIds = [], f
             ))}
           </ul>
         </ChatRailSection>
-      )}
-      {showContacts ? (
+      ),
+    });
+  }
+  if (showContacts) {
+    blocks.push({
+      key: 'contacts',
+      kind: 'section',
+      label: t('chat.people.contacts'),
+      node: (
         <ChatRailSection sectionKey="contacts" heading={t('chat.people.contacts')} unread={0}>
           <ul className="m-0 flex list-none gap-1 p-0 md:flex-col">
             <RailLink
@@ -193,7 +218,23 @@ export function ChatRail({ groups, rooms, unreadCounts, mentionUnreadIds = [], f
             />
           </ul>
         </ChatRailSection>
-      ) : null}
+      ),
+    });
+  }
+  return (
+    <nav aria-label={t('chat.rail.label')} className="flex flex-col p-2" data-testid="chat-rail">
+      <ChatRailOrder
+        blocks={blocks}
+        labels={{
+          reorder: t('chat.rail.reorder'),
+          done: t('chat.rail.reorderDone'),
+          reset: t('chat.rail.reorderReset'),
+          listLabel: t('chat.rail.reorderLabel'),
+          hint: t('chat.rail.reorderHint'),
+          moveUp: t('chat.rail.reorderMoveUp'),
+          moveDown: t('chat.rail.reorderMoveDown'),
+        }}
+      />
     </nav>
   );
 }

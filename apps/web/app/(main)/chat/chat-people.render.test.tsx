@@ -162,11 +162,11 @@ describe('✅ v2: 左の列から「会社から＞」「人から＞」辿る',
     expect(renderWith({ kind: 'group' })).not.toContain(`data-testid="chat-room-${ROOM_DM}"`);
     expect(renderWith({ kind: 'dm' })).not.toContain(`data-testid="chat-room-${ROOM_GROUP}"`);
   });
-  it('種類は無彩色のアバターで示す（取引先との部屋には「外部」）', () => {
+  it('種類は色つきのアバターで示す（グループ = 緑。取引先との部屋には「外部」。2026-10-29 に色分けを戻した）', () => {
     const html = renderWith({ kind: 'all' });
     const group = new RegExp(`<li data-testid="chat-room-${ROOM_GROUP}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
-    expect(group).toContain('bg-neutral-bg');
-    expect(group).not.toContain('bg-success');
+    expect(group).toContain('bg-success');
+    expect(group).not.toContain('bg-neutral-bg');
     expect(group).toContain(t('chat.tag.external'));
   });
 });
