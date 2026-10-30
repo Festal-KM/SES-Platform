@@ -358,7 +358,7 @@ export function ProjectCardEditor({
                 </TableHead>
               ))}
               {editing ? (
-                <TableHead className="w-12">{t("projects.cards.remove")}</TableHead>
+                <TableHead className="w-12" padding="compact">{t("projects.cards.remove")}</TableHead>
               ) : null}
             </TableRow>
           </TableHeader>
@@ -445,7 +445,7 @@ export function ProjectCardEditor({
                   )}
                 </TableCell>
                 {editing ? (
-                  <TableCell>
+                  <TableCell padding="compact">
                     <Tooltip content={t("projects.cards.remove")}>
                       <IconButton
                         variant="ghost"
