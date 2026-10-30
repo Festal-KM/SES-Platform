@@ -2,6 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { hostOwner, openTenantSession } from './support/sessions';
 import { expectNoHorizontalOverflow } from './support/assertions';
+import { apiRequest, parseJson } from './support/api';
 
 test('案件一覧の上下でページを送り、検索条件を保って先頭へ戻れる', async ({browser}) => {
   const session = await openTenantSession(browser, hostOwner(1));
@@ -35,9 +36,9 @@ test('行のステータスを切り替えても検索URLを変えず、失敗�
   try {
     // 公開済みの既存案件を閉じると公開停止処理も動くため、専用の未公開案件を使う。
     const name = '一覧ステータス操作の検証専用案件';
-    const created = await session.context.request.post('/api/projects',{data:{name}});
-    expect(created.status()).toBe(201);
-    const {id} = await created.json() as {id:string};
+    const created = await apiRequest(page,'/api/projects',{method:'POST',body:{name}});
+    expect(created.status).toBe(201);
+    const {id} = parseJson(created) as {id:string};
     await page.goto(`/projects?q=${encodeURIComponent(name)}&limit=1`,{waitUntil:'domcontentloaded'});
     const url = page.url();
     const toggle = page.getByTestId(`project-list-status-toggle-${id}`);
