@@ -349,23 +349,23 @@ export function ProjectCardEditor({
               : "projects.cards.preferred",
           )}
         </h3>
-        <Table>
+        <Table className="table-fixed min-w-lg" overflowNote={t("projects.cards.requirementsOverflow")}>
           <TableHeader>
             <TableRow>
               {["skill", "years", "freeText"].map((key) => (
-                <TableHead key={key}>
+                <TableHead key={key} className={key === "skill" ? "w-1/4" : key === "years" ? "w-20" : undefined}>
                   {t(`projects.cards.requirement.${key}` as MessageKey)}
                 </TableHead>
               ))}
               {editing ? (
-                <TableHead>{t("projects.cards.remove")}</TableHead>
+                <TableHead className="w-12">{t("projects.cards.remove")}</TableHead>
               ) : null}
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.key}>
-                <TableCell whitespace="normal">
+                <TableCell whitespace="normal" className="break-words">
                   {editing ? (
                     <Select
                       aria-label={t("projects.cards.requirement.skill")}
@@ -420,7 +420,7 @@ export function ProjectCardEditor({
                     row.requiredYears || t("projects.detail.valueNone")
                   )}
                 </TableCell>
-                <TableCell whitespace="normal">
+                <TableCell whitespace="normal" className="break-words">
                   {editing ? (
                     <Textarea
                       compact
@@ -582,8 +582,8 @@ export function ProjectCardEditor({
             <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">{PROJECT_CARD_FIELDS[id].filter(key=>key!=="settlementMaxHours").map((key) =>
               <div key={key} className={pairedFields.has(key) ? "min-w-0" : "min-w-0 sm:col-span-2"}>{editing ? (
                 <Field key={key} as="div">
-                  <div className={cn("grid min-w-0 grid-cols-1 items-start gap-2", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:grid-cols-3" : "sm:grid-cols-6")}>
-                    <span className="pt-2 text-cell text-fg-muted">
+                  <div className={cn("grid min-w-0 grid-cols-1 items-start gap-2", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:grid-cols-3" : "sm:grid-cols-5")}>
+                    <span className="pt-2 text-xs text-fg-muted">
                       {label(key === "settlementMinHours" ? "settlementHours" : key)}
                       {required.has(key) ? (
                         <span className="text-danger" aria-hidden="true">
@@ -591,17 +591,17 @@ export function ProjectCardEditor({
                         </span>
                       ) : null}
                     </span>
-                    <div className={cn("min-w-0", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:col-span-2" : "sm:col-span-5")}>{key === "settlementMinHours" ? <div className="flex min-w-0 items-center gap-2">{control(key)}<span>{t('projects.cards.rangeSeparator')}</span>{control('settlementMaxHours')}<span className="shrink-0 text-xs">{t('projects.cards.hours')}</span></div> : control(key)}</div>
+                    <div className={cn("min-w-0", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:col-span-2" : "sm:col-span-4")}>{key === "settlementMinHours" ? <div className="flex min-w-0 items-center gap-2">{control(key)}<span>{t('projects.cards.rangeSeparator')}</span>{control('settlementMaxHours')}<span className="shrink-0 text-xs">{t('projects.cards.hours')}</span></div> : control(key)}</div>
                   </div>
                 </Field>
               ) : (
                 <div
                   key={key}
-                  className={cn("grid min-w-0 grid-cols-1 gap-2 text-body", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:grid-cols-3" : "sm:grid-cols-6")}
+                  className={cn("grid min-w-0 grid-cols-1 gap-2 text-body", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:grid-cols-3" : "sm:grid-cols-5")}
                 >
-                  <span className="text-cell text-fg-muted">{label(key === "settlementMinHours" ? "settlementHours" : key)}</span>
+                  <span className="text-xs text-fg-muted">{label(key === "settlementMinHours" ? "settlementHours" : key)}</span>
                   <span
-                    className={cn("min-w-0 whitespace-pre-wrap break-words", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:col-span-2" : "sm:col-span-5", key === "copySummary" ? "max-h-48 overflow-y-auto" : undefined)}
+                    className={cn("min-w-0 whitespace-pre-wrap break-words", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:col-span-2" : "sm:col-span-4", key === "copySummary" ? "max-h-48 overflow-y-auto" : undefined)}
                     data-testid={
                       key === "publicSummary"
                         ? "project-detail-public-summary"

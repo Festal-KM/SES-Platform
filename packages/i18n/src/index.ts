@@ -30,6 +30,7 @@ export type Locale = (typeof LOCALES)[number];
 export const DEFAULT_LOCALE: Locale = 'ja';
 
 const ja = {
+  'projects.cards.requirementsOverflow': '表は横にスクロールできます。',
   'projects.cards.field.settlementHours': '精算時間',
   'projects.cards.rangeSeparator': '～',
   'projects.cards.rateRequired': '選択した範囲の具体的な稼働率を％で入力してください。',
