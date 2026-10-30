@@ -541,7 +541,7 @@ export function SearchPanel({
         }}
       >
         <Tabs
-          className="gap-0 [&_[role=tablist]]:flex-1 [&_[role=tablist]]:justify-between [&_[role=tab]]:text-cell [&_[role=tab][data-state=active]]:text-fg [&_[role=tab][data-state=active]]:border-transparent [&_[role=tab]:first-child]:text-lg [&_[role=tab]:first-child]:font-semibold"
+          className="gap-0 [&_[role=tablist]]:flex-1 [&_[role=tablist]]:basis-full sm:[&_[role=tablist]]:basis-auto [&_[role=tab]]:whitespace-nowrap [&_[role=tab]]:shrink-0 [&_[role=tablist]]:justify-between [&_[role=tab]]:text-cell [&_[role=tab][data-state=active]]:text-fg [&_[role=tab][data-state=active]]:border-transparent [&_[role=tab]:first-child]:text-lg [&_[role=tab]:first-child]:font-semibold"
           label={messages.tabsLabel}
           value={tab}
           onValueChange={(value) => {
