@@ -438,6 +438,7 @@ export function ProjectListScreen({
         {/* 並び順の常時説明は外すが、凍結済みの検査IDは一覧のメタ情報に保持する。 */}
         <div data-testid="project-list-order-note">
         <Toolbar
+          className={messages.partnerScopeNotice === null ? 'gap-0' : undefined}
           testIdPrefix="project-list-"
           // ✅✅ **2026-10-16（人間の明示指示「『自社案件 6 件』と『後任募集 → 募集中 → 充足 の順に、
           //    同じ状態のなかでは更新日の新しい順に表示しています。』はいらない」）。**
