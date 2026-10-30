@@ -958,7 +958,20 @@ it('追加した基本条件と詳細グループがフォーム送信に載る'
   const html = render({ applied: { ...emptyApplied, developmentPhases: ['BASIC_DESIGN'], developmentMethod: 'AGILE', utilizationMin: '80', utilizationMax: '100', keywordGroups: JSON.stringify([{mode:'OR',terms:['Java','Springboot']}]) } });
   for (const [name, value] of [['developmentPhases','BASIC_DESIGN'],['developmentMethod','AGILE'],['utilizationMin','80'],['utilizationMax','100']]) expect(html).toContain(`name="${name}" value="${value}"`);
   expect(html).toContain('name="keywordGroups"');
-  expect(html).toContain('(Java OR Springboot)');
+  expect(html.replace(/<[^>]*>/g, '')).toContain('(JavaORSpringboot)');
+});
+
+it('詳細検索は追加操作を入力の下に置き、空グループを式へ混ぜない', () => {
+  const html = render();
+  expect(html).toContain('data-testid="project-list-filter-keyword-guide"');
+  expect(html).toContain('最初のキーワードを追加');
+  expect(html).toContain('検索条件のイメージ');
+  expect(html).toContain('キーワード未設定');
+  expect(html).toMatch(/disabled="" data-testid="project-list-filter-keyword-add-0"/);
+  const advanced = html.slice(html.indexOf('data-testid="project-list-filter-advanced"'));
+  const summaryEnd = advanced.indexOf('</summary>');
+  expect(advanced.indexOf('data-testid="project-list-filter-add-group"')).toBeGreaterThan(summaryEnd);
+  expect(advanced).not.toContain('data-testid="project-list-filter-keyword-connector-1"');
 });
 
 it('全体を折りたたむと条件サマリと実際のグループ数だけを残す', () => {
