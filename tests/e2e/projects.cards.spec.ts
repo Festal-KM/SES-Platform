@@ -42,9 +42,9 @@ test("案件カードは一つずつ編集し、キャンセル・失敗・保�
       page.getByTestId("project-card-input-utilizationRate"),
     ).toHaveValue("80");
     await expect(page.getByTestId("project-card-utilization-segment-HALF_TO_FULL")).toBeChecked();
-    await page.getByTestId("project-card-utilization-segment-HALF_TO_FULL").check();
+    await page.getByTestId("project-card-utilization-segment-HALF_TO_FULL").locator("..").click();
     await expect(page.getByTestId("project-card-input-utilizationRate")).toHaveValue("80");
-    await page.getByTestId("project-card-utilization-segment-UNDER_HALF").check();
+    await page.getByTestId("project-card-utilization-segment-UNDER_HALF").locator("..").click();
     await expect(page.getByTestId("project-card-input-utilizationRate")).toHaveValue("");
     await expect(page.getByTestId("project-card-input-utilizationRate")).toHaveAttribute("required", "");
     await page.getByTestId("project-card-input-utilizationRate").fill("49");
