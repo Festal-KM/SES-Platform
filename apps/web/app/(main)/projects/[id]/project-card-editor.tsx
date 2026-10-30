@@ -23,7 +23,7 @@ export function ProjectCardEditor({initial,options,canEdit}:{readonly initial:Pr
   const [draft,setDraft]=useState<ProjectCardValues>(initial.values);const [requirements,setRequirements]=useState<readonly CardRequirement[]>(initial.requirements);
   const [nextCard,setNextCard]=useState<ProjectCardId|null>(null);const [error,setError]=useState('');const [notice,setNotice]=useState('');const [saving,setSaving]=useState(false);const sending=useRef(false);
   useEffect(()=>{setData(initial);},[initial]);
-  const baseline={...data.values,copySummary:data.values.copySummary||data.autoSummary};
+  const baseline:ProjectCardValues={...data.values,copySummary:data.values.copySummary||data.autoSummary};
   const dirty=active!==null&&(PROJECT_CARD_FIELDS[active].some(key=>JSON.stringify(draft[key]??'')!==JSON.stringify(baseline[key]??''))||(active==='content'&&JSON.stringify(requirements)!==JSON.stringify(data.requirements)));
   useEffect(()=>{if(!dirty)return;const warn=(event:BeforeUnloadEvent)=>{event.preventDefault();};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dirty]);
   function begin(card:ProjectCardId):void{setDraft({...baseline});setRequirements(data.requirements);setActive(card);setError('');setNotice('');setNextCard(null);}
@@ -37,7 +37,7 @@ export function ProjectCardEditor({initial,options,canEdit}:{readonly initial:Pr
     if(!Object.keys(patch).length){setActive(null);return;}
     sending.current=true;setSaving(true);setError('');
     try{const response=await fetch(`/api/projects/${data.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(patch)});if(!response.ok)throw new Error(String(response.status));
-      setData(current=>({...current,values:{...current.values,...Object.fromEntries(PROJECT_CARD_FIELDS[card].map(key=>[key,draft[key]??'']))},requirements:card==='content'?requirements:current.requirements}));
+      setData(current=>({...current,values:{...current.values,...Object.fromEntries(PROJECT_CARD_FIELDS[card].map(key=>[key,draft[key]??'']))},requirements:card==='content'?[...requirements]:current.requirements}));
       setActive(null);setNotice(t('projects.cards.saved'));startRefresh(()=>router.refresh());
     }catch{setError(t('projects.cards.failed'));}finally{sending.current=false;setSaving(false);}
   }
