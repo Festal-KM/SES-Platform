@@ -187,6 +187,7 @@ export function projectListScreenMessages(params: {
       : isPartner
         ? t('projects.list.empty.partner.lead')
         : t('projects.list.empty.host.lead'),
+    statusControl: projectSummaryPanelMessages().statusControl,
     nextPage: t('projects.list.nextPage'),
     firstPage: t('projects.list.firstPage'),
   };

@@ -28,3 +28,33 @@ test('案件一覧の上下でページを送り、検索条件を保って先�
     session.outbound.assertNone();
   } finally {await session.close();}
 });
+
+test('行のステータスを切り替えても検索URLを変えず、失敗時は元の状態を保つ', async ({browser}) => {
+  const session = await openTenantSession(browser, hostOwner(1));
+  const page = session.page;
+  try {
+    // 公開済みの既存案件を閉じると公開停止処理も動くため、専用の未公開案件を使う。
+    const name = '一覧ステータス操作の検証専用案件';
+    const created = await session.context.request.post('/api/projects',{data:{name}});
+    expect(created.status()).toBe(201);
+    const {id} = await created.json() as {id:string};
+    await page.goto(`/projects?q=${encodeURIComponent(name)}&limit=1`,{waitUntil:'domcontentloaded'});
+    const url = page.url();
+    const toggle = page.getByTestId(`project-list-status-toggle-${id}`);
+    await expect(toggle).toContainText('募集中');
+    await toggle.click();
+    await expect(toggle).toContainText('終了');
+    expect(page.url()).toBe(url);
+    await expect(page.getByTestId('project-list-panel-status-toggle')).toContainText('終了');
+    await toggle.click();
+    await expect(toggle).toContainText('募集中');
+    await page.route(`**/api/projects/${id}`,async route => {
+      if(route.request().method()==='PATCH') await route.fulfill({status:500,json:{error:'検証用の失敗'}});
+      else await route.continue();
+    });
+    await toggle.click();
+    await expect(page.getByRole('alert')).toContainText('変更');
+    await expect(toggle).toContainText('募集中');
+    session.outbound.assertNone();
+  } finally {await session.close();}
+});
