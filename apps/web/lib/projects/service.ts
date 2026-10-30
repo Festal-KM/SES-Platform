@@ -143,6 +143,9 @@ export type ProjectEditView = {
   readonly endDate: string | null;
   readonly distributionLimit: string | null;
   readonly assigneeUserId: string | null;
+  readonly developmentPhases?: readonly string[];
+  readonly developmentMethod?: string | null;
+  readonly utilizationRate?: number | null;
   readonly locationDetail: string | null;
   readonly publicMemo: string | null;
   readonly remarks: string | null;
@@ -467,6 +470,7 @@ export async function createProject(
         endClientName: input.endClientName,
         internalUnitPrice: input.internalUnitPrice,
         publicSummary: input.publicSummary,
+        developmentPhases: input.developmentPhases, developmentMethod: input.developmentMethod, utilizationRate: input.utilizationRate,
         locationDetail: input.locationDetail,
         publicMemo: input.publicMemo,
         remarks: input.remarks,
@@ -551,6 +555,7 @@ export async function updateProject(
         name: true,
         publicSummary: true,
         publicMemo: true,
+        developmentPhases: true, developmentMethod: true, utilizationRate: true,
         locationDetail: true,
         // ✅✅ 2026-10-16: 項目をまたぐ検証のために既存値を読む
         //    （精算幅の逆転 / 終了 < 開始。片方だけ更新できるため合成する）。
@@ -633,6 +638,9 @@ export async function updateProject(
         ? {}
         : { internalUnitPrice: patch.internalUnitPrice }),
       ...(patch.publicSummary === undefined ? {} : { publicSummary: patch.publicSummary }),
+      ...(patch.developmentPhases === undefined ? {} : { developmentPhases: patch.developmentPhases }),
+      ...(patch.developmentMethod === undefined ? {} : { developmentMethod: patch.developmentMethod }),
+      ...(patch.utilizationRate === undefined ? {} : { utilizationRate: patch.utilizationRate }),
       ...(patch.locationDetail === undefined ? {} : { locationDetail: patch.locationDetail }),
       ...(patch.publicMemo === undefined ? {} : { publicMemo: patch.publicMemo }),
       ...(patch.remarks === undefined ? {} : { remarks: patch.remarks }),
@@ -810,6 +818,7 @@ export async function readProjectForEdit(
         endDate: true,
         distributionLimit: true,
         assigneeUserId: true,
+        developmentPhases: true, developmentMethod: true, utilizationRate: true,
         locationDetail: true,
         publicMemo: true,
         remarks: true,
@@ -841,6 +850,7 @@ export async function readProjectForEdit(
       endDate: toDateOnlyString(row.endDate),
       distributionLimit: row.distributionLimit,
       assigneeUserId: row.assigneeUserId,
+      developmentPhases: row.developmentPhases, developmentMethod: row.developmentMethod, utilizationRate: row.utilizationRate,
       locationDetail: row.locationDetail,
       publicMemo: row.publicMemo,
       remarks: row.remarks,

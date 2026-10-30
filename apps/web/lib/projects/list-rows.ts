@@ -283,6 +283,8 @@ export function projectListHref(
   if (query.skills !== undefined) {
     for (const skillId of query.skills) params.append('skills', skillId);
   }
+  for (const phase of query.developmentPhases ?? []) params.append('developmentPhases', phase);
+  for (const key of ['developmentMethod', 'utilizationBand', 'utilizationMin', 'utilizationMax', 'keywordGroups'] as const) { if (query[key] !== undefined) params.set(key, String(query[key])); }
   if (query.limit !== PAGE_SIZE_DEFAULT) params.set('limit', String(query.limit));
   if (cursor !== null) params.set('cursor', cursor);
   // ✅ 2026-10-15: 既定（2 列を格納）と同じなら URL に痕跡を残さない。既定から戻したときだけ
@@ -479,6 +481,8 @@ export function projectListPrimaryAction(canRegister: boolean): PagePrimaryActio
  */
 export function hasProjectListFilters(query: ProjectListQuery): boolean {
   return (
+    query.developmentPhases !== undefined || query.developmentMethod !== undefined ||
+    query.utilizationBand !== undefined || query.utilizationMin !== undefined || query.utilizationMax !== undefined || query.keywordGroups !== undefined ||
     query.q !== undefined ||
     query.status !== undefined ||
     query.startFrom !== undefined ||

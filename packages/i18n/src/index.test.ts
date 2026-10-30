@@ -96,6 +96,7 @@ describe('カタログの構造', () => {
           'members.roleChange.cancel',
           'partnerCompanies.suspend.cancel',
           'projects.cancel',
+          'projects.search.cancel',
           'projects.visibilitySettings.revoke.confirm.cancel',
           'proposalRequests.respond.accept.confirmCancel',
           'proposalRequests.respond.decline.cancel',

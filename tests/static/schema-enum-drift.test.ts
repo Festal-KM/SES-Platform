@@ -797,3 +797,14 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
     });
   });
 });
+
+// 案件検索の追加列も値の集合をDBと共有する。
+describe('案件の開発フェーズと方式', () => {
+  it('SQLのCHECKと入力値の集合が一致する', async () => {
+    const { PROJECT_DEVELOPMENT_PHASES, PROJECT_DEVELOPMENT_METHODS } = await import('../../packages/domain/src/project-search.js');
+    const sql = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../../packages/db/prisma/migrations/20261029000000_project_search_dimensions/migration.sql'), 'utf8');
+    const values = (name: string) => [...(sql.split(name)[1]?.split('),')[0] ?? '').matchAll(/'([A-Z_]+)'/g)].map(match => match[1]);
+    expect(values('projects_development_phases_check')).toEqual([...PROJECT_DEVELOPMENT_PHASES]);
+    expect(values('projects_development_method_check')).toEqual([...PROJECT_DEVELOPMENT_METHODS]);
+  });
+});
