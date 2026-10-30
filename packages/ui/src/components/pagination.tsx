@@ -125,8 +125,8 @@ export type NumberedPaginationProps = {
 };
 export function NumberedPagination(props:NumberedPaginationProps) {
   const item = (href:string|null,label:string,id:string,content:ReactNode,current=false) => href === null
-    ? <span className={NUMBER_EDGE} aria-disabled="true" aria-label={label} data-testid={id === 'project-list-first' ? 'project-list-first' : id === 'project-list-next' ? 'project-list-next' : id}>{content}</span>
-    : <a href={href} className={current ? NUMBER_CURRENT : NUMBER_LINK} aria-label={label} aria-current={current ? 'page' : undefined} aria-disabled={props.busy || undefined} data-testid={id === 'project-list-first' ? 'project-list-first' : id === 'project-list-next' ? 'project-list-next' : id}
+    ? <span className={NUMBER_EDGE} aria-disabled="true" aria-label={label} data-testid={id === 'project-list-first' ? 'project-list-first' : id === 'project-list-next' ? 'project-list-next' : id === 'project-list-pagination-previous' ? 'project-list-pagination-previous' : id === 'project-list-pagination-last' ? 'project-list-pagination-last' : `project-list-page-${id.slice('project-list-page-'.length)}`}>{content}</span>
+    : <a href={href} className={current ? NUMBER_CURRENT : NUMBER_LINK} aria-label={label} aria-current={current ? 'page' : undefined} aria-disabled={props.busy || undefined} data-testid={id === 'project-list-first' ? 'project-list-first' : id === 'project-list-next' ? 'project-list-next' : id === 'project-list-pagination-previous' ? 'project-list-pagination-previous' : id === 'project-list-pagination-last' ? 'project-list-pagination-last' : `project-list-page-${id.slice('project-list-page-'.length)}`}
       onClick={event=>{if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;if(props.busy){event.preventDefault();return;}if(props.onNavigate){event.preventDefault();props.onNavigate(href);}}}>{content}</a>;
   return <nav aria-label={props.labels.nav} className="flex flex-wrap items-center justify-center gap-1" data-testid="project-list-pagination">
     {item(props.first,props.labels.first,'project-list-first',<><Icon name="chevron-down" className="rotate-90"/><Icon name="chevron-down" className="-ml-3 rotate-90"/></>)}
@@ -136,3 +136,4 @@ export function NumberedPagination(props:NumberedPaginationProps) {
     {item(props.final,props.labels.last,'project-list-pagination-last',<><Icon name="chevron-down" className="-rotate-90"/><Icon name="chevron-down" className="-ml-3 -rotate-90"/></>)}
   </nav>;
 }
+

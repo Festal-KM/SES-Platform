@@ -104,7 +104,7 @@ export default async function ProjectListPage({
   // 🔴 **`safeParse` はそのまま通す**（`?parallelOk=1` 付きの共有 URL を 400 にしない）。
   // ⚠️ **DB の列も `packages/db` の述語も消していない**（指示書「DB の列削除や
   //    他画面の項目削除は不要」）—— `S-012`（登録・編集）は引き続き扱う。
-  const query = { ...parsed.data, parallelOk: undefined };
+  const query = { ...parsed.data, cursor:parsed.data.page === undefined ? parsed.data.cursor : undefined, parallelOk: undefined };
   // 旧カーソルのブックマークも同じ公開範囲で位置を解決して番号URLへ引き継ぐ。
   const initialHidden = parseHiddenProjectColumns(raw[HIDDEN_COLUMNS_PARAM]);
   if(query.cursor && query.page === undefined) redirect(projectPageHref(query,await projectPageFromCursor(ctx,query),initialHidden,projectPanelTab(raw[PROJECT_PANEL_TAB_PARAM])));
