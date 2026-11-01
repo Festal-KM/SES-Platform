@@ -201,9 +201,9 @@
    *
    *    | トークン | 仕様書 v1.0 | v4 の階調（これまでの実値） |
    *    |---|---|---|
-   *    | `--color-brand` | `#2563EB` | `blue-600` = `#155DFC` |
-   *    | `--color-brand-hover` | `#1D4ED8` | `blue-700` = `#1447E6` |
-   *    | `--color-brand-active` | （規定なし。同じ族の 1 段下 = v3 `blue-800`）`#1E40AF` | `blue-800` = `#193CB8` |
+   *    | `--color-brand` | ~~`#2563EB`~~ → ✅ **2026-10-16: `#1D4ED8`**（v3 `blue-700`） | `blue-600` = `#155DFC` |
+   *    | `--color-brand-hover` | ~~`#1D4ED8`~~ → ✅ **`#1E40AF`**（v3 `blue-800`） | `blue-700` = `#1447E6` |
+   *    | `--color-brand-active` | ~~`#1E40AF`~~ → ✅ **`#1E3A8A`**（v3 `blue-900`） | `blue-800` = `#193CB8` |
    *
    * 🔴 **`U-21`（独自の hex を起こさない）の例外である。** 例外にする理由は「好みの色を作る」
    *    ためではなく、**ブランド色だけは人間が確定した値そのものが仕様だから**である
@@ -214,9 +214,17 @@
    * 🔴 **`brand-bg` は階調のまま**（`blue-50` = `#EFF6FF`。仕様書の `--primary-soft` `#E8F1FF` との
    *    差は `docs/design-system.md` §6 に記録済みであり、**淡い面であって「明るすぎる」の原因ではない**）。
    * 🔴 **意味の割り当て（§7.4）は 1 文字も変えていない。** 変えたのは同じ青の彩度だけである。 */
-  --color-brand: #2563eb;
-  --color-brand-hover: #1d4ed8;
-  --color-brand-active: #1e40af;
+  /* ✅✅ 2026-10-16（人間の明示指示「検索ボタンの青が明るすぎて目がちかちかする
+     （案件を登録ボタンも同様）」。**同じ指摘は 2 度目**である）: さらに 1 段暗くした。
+     🔴 **1 度目（2026-10-15）は「Tailwind v4 の blue-600 が v3 より明るい」ことの修正**
+        であり、`#155DFC` → `#2563EB`（v3 の blue-600）に戻した。**それでもまだ明るい**
+        という指摘なので、今度は**族の中で 1 段下げる**（v3 の blue-700 / blue-800 / blue-900）。
+     🔴 **hover / active も 1 段ずつ下げる**（3 段の関係を保つ。同じ色にすると押した手応えが消える）。
+     🔴 **コントラストは上がる方向である**（暗くなるので白文字との比は改善する）。
+        実測の検査は `tests/static/design-tokens.test.ts` の `CONTRAST_PAIRS` が持つ。 */
+  --color-brand: #1d4ed8;
+  --color-brand-hover: #1e40af;
+  --color-brand-active: #1e3a8a;
   --color-brand-bg: var(--color-blue-50);
   --color-brand-fg: var(--color-white);
 

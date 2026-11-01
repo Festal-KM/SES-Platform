@@ -52,9 +52,12 @@ export const ENV_BANNER_HEIGHT_CLASS = 'md:h-10';
 /** 🔴 `<body>` に置く CSS 変数の名前（置く側と引く側で 1 文字も違ってはならない）。 */
 export const ENV_BANNER_HEIGHT_VAR = '--app-banner-h';
 
-/** Top Header。🔴 全画面で同じ高さ。 */
+/** Top Header。デスクトップは56px、狭い画面は複数行の内容に合わせる。 */
 export const HEADER_HEIGHT_PX = 56;
 export const HEADER_HEIGHT_CLASS = 'h-14';
+export const HEADER_ROW_HEIGHT_CLASSES = 'min-h-14 md:h-14';
+/** デスクトップは環境バナー直下に固定する。モバイルは多段ヘッダーで本文を覆わない。 */
+export const HEADER_STICKY_CLASSES = 'md:sticky md:top-[var(--app-banner-h,0px)] md:z-10 shrink-0';
 
 /** Top Header のグローバル検索。基準幅（1672）で 726px。狭い画面では縮む。 */
 export const HEADER_SEARCH_MAX_WIDTH_CLASS = 'max-w-181.5';
@@ -159,3 +162,11 @@ export const PANEL_KEY_WIDTH_CLASS = 'w-31';
 export const RAIL_SCHEDULE_ROW_HEIGHT_CLASS = 'min-h-14.5';
 export const RAIL_PRIORITY_ROW_HEIGHT_CLASS = 'min-h-12.5';
 export const RAIL_RANK_CIRCLE_CLASSES = 'h-7 w-7';
+
+/**
+ * 一覧に常設する詳細ペイン。デスクトップは検索の上端から画面下の余白までを使う。
+ * 11rem = header 56px + 本文上余白24px + ページ見出し72px + 下余白24px。
+ * 環境バナーの有無は共通の CSS 変数で引く。モバイルは自然な文書フローに戻す。
+ */
+export const DETAIL_PANE_VIEWPORT_CLASSES =
+  'lg:sticky lg:top-[calc(var(--app-banner-h,0px)+4.5rem)] lg:h-[calc(100dvh-var(--app-banner-h,0px)-11rem)] lg:min-h-80';

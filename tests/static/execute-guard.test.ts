@@ -71,6 +71,8 @@ const EXEMPT_ROUTES: Readonly<Record<string, string>> = {
     '本人のパスワード変更（S-048）。業務データを変えない。CLOSING / SUSPENDED でも資格情報の管理は止めない（サインアウトを止めないのと同じ理由）。',
   'apps/web/app/api/(main)/auth/signin/route.ts':
     '未認証経路（docs/05 §6.3 #1）。ctx を作る前の資格情報照合であり、テナントが確定していない。',
+  'apps/web/app/api/(main)/auth/test-signin/route.ts':
+    '未認証経路。人間の指示による開発・デモ限定の合成アカウント選択で、既存の資格情報照合を呼ぶ。本番等は404。業務ctxの生成や実行系のゲートは迂回しない。',
   'apps/web/app/api/(main)/auth/signout/route.ts':
     'セッション破棄（#4）。未認証でも 204 を返す（セッションの有無を漏らさない）。' +
     '解約手続き中でもサインアウトはできなければならない。',

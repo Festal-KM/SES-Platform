@@ -111,7 +111,10 @@ export function PageHeading({
   //    （部品に権限の概念を持たせると、`packages/ui` がロールを知ることになる）。
   const visible = primaryAction === null || (primaryAction.kind === 'ACTION' && !canAct) ? null : primaryAction;
   const action: PageHeaderAction | null =
-    visible === null ? null : { label: t(visible.labelKey), href: visible.href };
+    visible === null
+      ? null
+      : // ✅ 2026-10-16: 印は任意（語は必ず出る。`PageHeaderAction.icon` の 🔴）。
+        { label: t(visible.labelKey), href: visible.href, icon: visible.icon };
   return (
     <PageHeader
       trail={resolveTrail(trail, linkTestId)}

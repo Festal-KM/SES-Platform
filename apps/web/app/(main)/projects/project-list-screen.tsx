@@ -73,37 +73,43 @@
 //    **検索条件つきのリンク（ページング）は props で受け取る** —— 組み立てはテストできる
 //    場所（`projectListHref`）に置く。
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import {
   Badge,
-  Button,
-  Card,
-  CardContent,
-  Checkbox,
   DataTable,
-  EmptyState,
-  Field,
-  Icon,
-  Input,
-  Pagination,
-  SECONDARY_BUTTON_LINK_CLASSES,
-  SECONDARY_LINK_CLASSES,
-  Select,
-  StatusBadge,
-  StatusDot,
-  Toolbar,
   cn,
+  EmptyState,
+  // ⚠️ **2026-10-19: 複数選択の 4 定数の import はここから消えた。** 引き金・面・行・`×` を
+  //    組むのは `./skill-filter-select.tsx`（クライアントの島）に移っており、
+  //    **見た目の決定は従来どおり `@ses/ui` の 1 箇所にある**（定数そのものは増えた）。
+  Pagination,
+  PAGE_BODY_ASIDE_ROW_CLASSES_BY_FROM,
+  PAGE_BODY_SPLIT_MAIN_CLASSES_BY_FROM,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES,
+  DETAIL_PANE_VIEWPORT_CLASSES,
+  StatusBadge,
+  Toolbar,
   type DataTableColumn,
   type PaginationLinkProps,
 } from '@ses/ui';
-import {
-  FILTER_ACTIONS_CLASSES,
-  FILTER_FORM_CLASSES,
-} from '../_shared/filter-form-classes';
+// ⚠️ **2026-10-19: 絞り込みの器のクラス（`_shared/filter-form-classes`）はここでは使わない。**
+//    検索エリアは `_search/` の島に移り、格子は器の幅で決まる（`FILTER_GRID_CLASSES`）。
+//    🔴 **定数そのものは残す** —— 人材一覧（`S-005`）など 3 画面が使っている。
 // 🔴 列表示切替はクライアント境界の内側にある（`@ses/ui/client` の `DropdownMenu`）。
 //    **この画面は `'use client'` を宣言しない** —— 境界は `ColumnToggle` の 1 ファイルに閉じており、
 //    行の描画（50 行 × 9 列）はサーバに残る（`_components/column-toggle.tsx` 冒頭）。
-import { ColumnToggle, type ColumnToggleItem } from '../../_components/column-toggle';
+// ✅ 2026-10-16: `ColumnToggle` の描画はやめた（人間の明示指示）。型だけ残る ——
+//    `columnToggleItems` の prop そのものは `page.tsx` が組み立てており、`?hide=` の
+//    query を受け取れる状態は保っている（共有された URL を壊さない）。
+import type { ColumnToggleItem } from '../../_components/column-toggle';
 import type { ProjectListRowView } from '../../../lib/projects/list-rows';
+// ✅✅ **2026-10-19: スキル条件（複数選択）だけがクライアント境界の内側にある。**
+// 🔴 **この画面は `'use client'` を宣言しない** —— 境界は `SkillFilterSelect` の 1 ファイルに
+//    閉じており、行の描画（50 行 × 9 列）も他の 5 条件もサーバに残る
+//    （`_components/column-toggle.tsx` が担っていたのと同じ形）。
+import { SearchPanel, type SearchPanelMessages } from './_search/search-panel';
+import type { ProjectSearchDraft } from './_search/filters';
+import type { SearchFilterFormOptions } from './_search/search-filter-form';
 
 /** 検索条件の選択肢 1 件（`value` は API の query に載る値そのもの）。 */
 export type ProjectFilterOption = {
@@ -111,26 +117,11 @@ export type ProjectFilterOption = {
   readonly label: string;
 };
 
-/** フォームに戻す現在の検索条件（未指定は空文字）。 */
-export type ProjectListFilterValues = {
-  readonly q: string;
-  readonly status: string;
-  readonly startFrom: string;
-  readonly prefecture: string;
-  /** ✅ 2026-10-15: 単価レンジ（月額・円）。人材一覧（`S-005`）と**同じ名前・同じ単位**である。 */
-  readonly priceMin: string;
-  readonly priceMax: string;
-  /** ✅ 2026-10-16: 稼働形態（`RemoteMode` の 3 値。空文字 = すべて）。 */
-  readonly remoteMode: string;
-  /** ✅ 2026-10-16（受領モック + Issue #113）: カテゴリ / 案件区分 / 並行可否 / 開始時期。 */
-  readonly category: string;
-  readonly sourceKind: string;
-  /** `'1'`（可） / `'0'`（不可） / 空文字（すべて）。 */
-  readonly parallelOk: string;
-  readonly startWithin: string;
-  /** ✅ 2026-10-16: 「募集中のみ」。`'1'` のときだけチェック済みで描く。 */
-  readonly recruitingOnly: string;
-};
+// ⚠️ **2026-10-19: `ProjectListFilterValues` を削除した。**
+//    条件の型は `_search/filters.ts` の `ProjectSearchDraft`（指示書 §3 の 8 項目）に移った。
+// 🔴 **残すと矛盾する** —— 旧型は `parallelOk` を持っており、「この画面から並行可否を
+//    外した」今回の変更と反対のことを書いたままになる。この画面が繰り返し
+//    規律にしている「受け取って使わない props を残さない」を型にも適用する。
 
 export type ProjectListScreenMessages = {
   readonly populationLabel: string;
@@ -139,41 +130,18 @@ export type ProjectListScreenMessages = {
   readonly orderNote: string;
   /** ✅ 2026-10-03: 表が器に収まらない幅での 1 行（`Table` の `overflowNote`）。 */
   readonly overflowNote: string;
-  readonly searchComingSoon: string;
-  readonly searchLegend: string;
-  readonly searchQ: string;
-  readonly searchStatus: string;
-  readonly searchStartFrom: string;
-  readonly searchPrefecture: string;
-  readonly searchPriceMin: string;
-  readonly searchPriceMax: string;
-  /** ✅ 2026-10-15: 受領画像の検索欄のプレースホルダ。 */
-  readonly searchQPlaceholder: string;
-  /** ✅ 2026-10-15: 単価レンジの**塊**のラベル（`単価（月額）`）。 */
-  readonly searchPrice: string;
-  readonly searchPriceMinPlaceholder: string;
-  readonly searchPriceMaxPlaceholder: string;
-  /** 下限と上限の間の記号（`〜`）。🔴 画面で文字を組まない（`CLAUDE.md` §3.5）。 */
-  readonly searchPriceRangeSeparator: string;
-  /** 単価の単位（**円**。画像の `万円` にしていない理由は本体の 🔴）。 */
-  readonly searchPriceUnit: string;
-  /** ✅ 2026-10-16: 稼働形態 / 募集中のみ / 単価の逆転エラー（人間の明示指示）。 */
-  readonly searchRemoteMode: string;
-  /** ✅ 2026-10-16（受領モック）: カテゴリ / 案件区分 / 並行可否 / 開始時期。 */
-  readonly searchCategory: string;
-  readonly searchSourceKind: string;
-  readonly searchParallelOk: string;
-  readonly searchStartWithin: string;
-  readonly searchRecruitingOnly: string;
-  readonly searchPriceInverted: string;
-  readonly searchSubmit: string;
-  readonly searchClear: string;
+  // ⚠️ **2026-10-19: 検索条件の語はここに無い。**
+  //    検索エリアは `_search/search-panel.tsx` の島に移り、語は
+  //    `searchMessages`（`SearchPanelMessages`）として**別の prop** で届く。
+  // 🔴 **文言キーは 1 つも消していない**（`packages/i18n` の凍結。`U-22`）——
+  //    組み立てる場所が `list-props.ts` の別の関数に移っただけである。
   readonly register: string;
   readonly readOnlyNote: string;
   readonly columnName: string;
   readonly columnStatus: string;
   readonly columnMustRequirements: string;
   readonly columnUnitPrice: string;
+  readonly columnPurchaseUnitPrice: string;
   readonly columnStartDate: string;
   readonly columnLocation: string;
   /** ✅ 2026-10-15: 稼働形態（`#101` の C で `勤務地・リモート` を 2 列に分けた）。 */
@@ -216,26 +184,50 @@ function ProjectPagingLink({ href, className, children, 'data-testid': testId }:
  */
 function projectColumns(
   messages: ProjectListScreenMessages,
-  showVisibilityColumn: boolean,
+  /**
+   * ✅✅ **2026-10-16: 行を開く URL**（人間の明示指示「列をクリックしたら右側エリアに
+   * 表示されるようにする」）。🔴 **`showVisibilityColumn` と入れ替わった** ——
+   * 公開先の列が無くなり、代わりに行全体の遷移先が要るようになった。
+   */
+  selectHrefOf: (projectId: string) => string,
+  showPurchasePrice: boolean,
 ): readonly DataTableColumn<ProjectListRowView>[] {
   return [
     {
       id: 'name',
       header: messages.columnName,
       priority: 'always',
-      // 🔴 名称列の下限 10rem はどのブレークポイントでも維持する（`U-16`）。
+      // ✅✅ **2026-10-16（人間の明示指示「『案件名』列の幅が狭くて改行されている」）:
+      //    **余りをこの列が受けるようにした**（`grow`。旧: `必須要件の要約`）。**
+      // 🔴 **折り返していた原因は下限ではなく `grow` の位置だった** —— 余りを
+      //    `必須要件の要約` が全部受けていたので、案件名は下限 10rem に張り付いたままだった
+      //    （同じ指示の「必須要件の要約が列幅広すぎない？」と**同じ 1 つの原因**である）。
+      // 🔴🔴 **下限は 10rem のままにする。** 一度 16rem にしたが、それだと表の min-content が
+      //    256px 増え、**1600px でも案件サマリが表の右に並ばなくなった**（`PageBody` の
+      //    `asideFrom="main-min"` は「主カラムが下限を保てるときだけ」並置する）。
+      //    下限は `U-16` の「どのブレークポイントでも割らない値」であって「この幅にする値」ではない。
       minWidth: '10rem',
+      grow: true,
       // 🔴 案件名セルは `NameCell` に委譲する（`lg` 以上 = 切り詰め + `title` + 同じ行に `S-011` への
       //    導線 / `lg` 未満 = 折り返し）。**閲覧の監査記録は遷移先が書く**（`BR-27`）。
       nameCell: {
+        // ✅✅ **2026-10-16（人間の明示指示「操作列もいらない。列をクリックしたら右側エリアに
+        //    表示されるようにする。案件タイトルもリンクにしない。列クリック→右側で詳細を
+        //    クリックで詳細画面に行く動線」）。**
+        // 🔴 **遷移先が `S-011` から「右パネルを開く URL」に変わった。** 詳細画面へは右パネルの
+        //    `詳細` から行く（**閲覧の監査記録はその遷移先が書く**。`F-013 AC-3`）。
+        // 🔴 **行いっぱいの当たり判定にする**（`stretch`）—— `<a>` は行に 1 つだけで、
+        //    クライアント JS は 0 行である（`@ses/ui` の `NAME_CELL_ROW_LINK_CLASSES` の 🔴）。
+        // 🔴 **下線を引かない**（指示「案件タイトルもリンクにしない」）。見た目は素の文字で、
+        //    実体は行を開くリンクである。
         name: (row) => row.name,
-        href: (row) => `/projects/${row.id}`,
-        // ✅ **2026-10-15: 状態の点**（人間が提示した案件一覧の画像。案件名の左）。
-        // 🔴 **色は `StatusBadge` と同じ 1 つの表から決まる**（`StatusDot` は `entity` /
-        //    `state` しか受け取らない。`docs/04` §5-13）。画面は色を選べない。
-        // 🔴 **点に語を持たせない** —— 同じ行の Badge が語を出しており、読み上げでは
-        //    `aria-hidden` で重複を避けている。
-        leading: (row) => <StatusDot entity="project" state={row.statusState} />,
+        href: (row) => selectHrefOf(row.id),
+        stretch: true,
+        // ✅✅ **2026-10-16: 状態の点（`StatusDot`）を外した**（人間の明示指示
+        //    「案件名の左に〇があるけどこれはいらないね」）。
+        // 🔴 **状態は隣の列の `StatusBadge` が語で出している** —— 点はその重複であり、
+        //    外しても読み取れる情報は 1 つも減らない（むしろ案件名の左端が揃う）。
+        // ⚠️ `StatusDot` 自体は `@ses/ui` に残る（他の画面が使う）。ここで渡さないだけである。
       },
     },
     {
@@ -255,9 +247,14 @@ function projectColumns(
       id: 'mustRequirements',
       header: messages.columnMustRequirements,
       priority: 'lg',
+      // ✅✅ **2026-10-16（人間の明示指示「必須要件の要約が列幅広すぎない？」）:
+      //    **余りの配分を外した**（`grow` を `案件名` に移した）。**
+      // 🔴 **この列が持つのは上位 3 件の要約である**（全量は `S-011`）。余りを全部受けると、
+      //    一覧で最初に読む `案件名` より広くなり、要約のほうが主役に見える。
+      // 🔴🔴 **下限は 10rem のままにする。** 一度 8rem まで詰めたが、`TypeScript 2 年以上` が
+      //    2 行に折り返した（`whitespace: 'normal'` なので幅が足りないと割れる）——
+      //    **広すぎるのを直して、今度は狭すぎて折り返す**のでは意味が無い。
       minWidth: '10rem',
-      // 🔴 余りはこの列に配分する（§7.1 の `2xl`「要件の要約」）。
-      grow: true,
       // ✅ **2026-10-15: 切替に格納できる列にした**（既定は非表示。人間の決定）。
       //    🔴 **列を消していない** —— 1 クリックで戻せる（`PROJECT_DEFAULT_HIDDEN_COLUMN_IDS` の 🔴）。
       hideable: true,
@@ -276,6 +273,14 @@ function projectColumns(
         </>
       ),
     },
+    ...(showPurchasePrice ? [{
+      id: 'purchaseUnitPrice',
+      header: messages.columnPurchaseUnitPrice,
+      hideable: true,
+      priority: 'always',
+      minWidth: '6rem',
+      cell: (row: ProjectListRowView) => row.purchaseUnitPrice,
+    }] satisfies readonly DataTableColumn<ProjectListRowView>[] : []),
     {
       id: 'unitPrice',
       header: messages.columnUnitPrice,
@@ -333,37 +338,24 @@ function projectColumns(
       minWidth: '6rem',
       cell: (row) => row.updatedOn,
     },
-    // 🔴 取引先には公開先の列を出さない（`F-014 AC-4` / `BR-07`）。**DOM から取り除く**。
-    ...(showVisibilityColumn
-      ? [
-          {
-            id: 'visibility',
-            header: messages.columnVisibility,
-            priority: 'lg',
-            minWidth: '8rem',
-            // 🔴 9 列目は列表示切替に格納する列である（§7.1「既定 8 列 + 操作列」）。
-            hideable: true,
-            cell: (row: ProjectListRowView) => (
-              <span data-testid={`project-list-visibility-${row.id}`}>{row.visibility}</span>
-            ),
-          } satisfies DataTableColumn<ProjectListRowView>,
-        ]
-      : []),
+    // ✅✅ **2026-10-16: `公開先の設定状況` の列を外した**（人間の明示指示
+    //    「案件リストの『公開先の設定状況』列はいらない」）。
+    // 🔴 **情報そのものは失っていない** —— 右の案件の要点パネルが公開先を出す。
+    //    表から外したのは**横スクロールを無くすため**でもある（人間の明示指示
+    //    「案件一覧のリストは横スクロールなしで表示できるようにしてください」）。
   ];
 }
 
 export function ProjectListScreen({
+  summaryPanel,
   rows,
-  filters,
-  statusOptions,
-  prefectureOptions,
-  remoteModeOptions,
-  categoryOptions,
-  sourceKindOptions,
-  parallelOkOptions,
-  startWithinOptions,
-  priceInverted,
-  showVisibilityColumn,
+  applied,
+  searchOptions,
+  passThroughParams,
+  storageTenantId,
+  storageUserId,
+  defaultExpanded,
+  searchMessages,
   canRegister,
   nextPageHref,
   firstPageHref,
@@ -372,38 +364,39 @@ export function ProjectListScreen({
   selectHrefOf,
   messages,
 }: {
+  readonly summaryPanel?: ReactNode;
   readonly rows: readonly ProjectListRowView[];
-  readonly filters: ProjectListFilterValues;
-  readonly statusOptions: readonly ProjectFilterOption[];
-  readonly prefectureOptions: readonly ProjectFilterOption[];
+  // ====================================================================
+  // ✅✅ **2026-10-19: 検索エリアの props**（人間の改修指示書）
+  // ====================================================================
   /**
-   * ✅ **2026-10-16（人間の明示指示「稼働形態」）。**
-   * 🔴 **選択肢の出所は `@ses/db` の `REMOTE_MODES`（3 値）である**（ページが語を解決して渡す）。
-   *    指示は 4 値だったが、列の値集合は 3 値であり、4 値に割るのは DB の値集合の変更
-   *    （[Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)）。
-   *    **画面に無い選択肢を作らない**ほうを採った。
+   * 🔴 **いま一覧に効いている条件**（`appliedFilters`。指示書 §6）。
+   *
+   * 🔴 **出所は URL である** —— `page.tsx` が `projectListQuerySchema` で解釈した結果を
+   *    この形に整えて渡す。編集中の条件（`draftFilters`）は島の中にしか無い。
+   * 🔴 **`並行可否` のキーが無い**（指示書 §3 で除外した）。
    */
-  readonly remoteModeOptions: readonly ProjectFilterOption[];
+  readonly applied: ProjectSearchDraft;
+  /** 8 項目の選択肢（状態 / カテゴリ / 稼働形態 / 勤務地 / 開始時期 / スキル）。 */
+  readonly searchOptions: SearchFilterFormOptions;
   /**
-   * ✅ **2026-10-16（受領モックの絞り込み）: カテゴリ / 案件区分 / 並行可否 / 開始時期。**
-   * 🔴 **値の出所は `@ses/db` の値集合である**（カテゴリ 7 値 / 案件区分 2 値）。並行可否は
-   *    `'1'` / `'0'`、開始時期は `PROJECT_START_WINDOWS` の 4 値であり、いずれもページが語を解決して渡す。
+   * 🔴 **画面に欄を持たないが URL には在る値**（`sourceKind` / `recruitingOnly` /
+   *    `startFrom` と、表示の状態 `hide` / `selected` / `panelTab`）。
+   *    検索を 1 回押しただけでこれらが黙って消えないように素通しする。
    */
-  readonly categoryOptions: readonly ProjectFilterOption[];
-  readonly sourceKindOptions: readonly ProjectFilterOption[];
-  readonly parallelOkOptions: readonly ProjectFilterOption[];
-  readonly startWithinOptions: readonly ProjectFilterOption[];
-  /**
-   * ✅ **2026-10-16: 単価の下限 > 上限**（人間の明示指示）。`true` のとき、単価の欄に
-   * エラーを出し、**表の領域は検索を実行していないことを示す空状態**にする（`page.tsx` が
-   * 問い合わせ自体を行わない）。判定は `@ses/db` の `isUnitPriceRangeInverted` の 1 本である。
-   */
-  readonly priceInverted: boolean;
+  readonly passThroughParams: readonly { readonly name: string; readonly value: string }[];
+  /** 🔴 保存条件の置き場所を**会社×ユーザー**で分ける（指示書 §5）。 */
+  readonly storageTenantId: string;
+  readonly storageUserId: string;
+  /** 🔴 折りたたみの初期値（cookie 。**再訪時に復元**するため。指示書 §4）。 */
+  readonly defaultExpanded: boolean;
+  readonly searchMessages: SearchPanelMessages;
   /**
    * 🔴 取引先には公開先の列を出さない（docs/04 §S-010 / `F-014 AC-4`）。
    *    出所は `ctx.partnerCompanyId` であり、行の値ではない。
    */
-  readonly showVisibilityColumn: boolean;
+  // ✅ 2026-10-16: `公開先の設定状況` の列ごと外したので prop も外した（人間の明示指示）。
+  //    🔴 **取引先に出さない判断は消えていない** —— 列そのものが無い。
   readonly canRegister: boolean;
   /** 絞り込みが 1 つでも効いているとき（`docs/04` §10.1 `S-010` 絞込 0 の条件解除導線）。 */
   // ✅ 2026-10-16: `showClearFilters` を外した（「条件をクリア」は常時表示になった）。
@@ -438,7 +431,8 @@ export function ProjectListScreen({
   // 🔴 隠す列は props の `hidden` から導く（画面に 2 つ目の出所を作らない）。
   const hiddenColumnIds = columnToggleItems.filter((item) => item.hidden).map((item) => item.id);
   return (
-    <div data-testid="project-list-screen">
+    <div className={cn(PAGE_BODY_ASIDE_ROW_CLASSES_BY_FROM.lg, 'gap-4 lg:items-start')} data-testid="project-list-screen">
+      <div className={PAGE_BODY_SPLIT_MAIN_CLASSES_BY_FROM.lg}>
       {/* 🔴 §5-13 の `Toolbar`: **母集団の 1 行（§3.2-2 の #2）と検索の帯の置き場所をここに固定する。**
           ⚠️ **凍結済み testid の併記**（`U-22` / `SP-22` §3.2 の代替 ④）: `Toolbar` は母集団の 1 行を
              `project-list-toolbar-population` として描くが、凍結されている値は
@@ -447,341 +441,48 @@ export function ProjectListScreen({
              （件数バー）の右端へ移した（ワイヤーフレームの「絞り込みカード」+「件数バー」）。
              🔴 **条件の集合・`name` 属性・送り先は 1 つも変えていない。** */}
       <div data-testid="project-list-population">
+        {/* 並び順の常時説明は外すが、凍結済みの検査IDは一覧のメタ情報に保持する。 */}
+        <div data-testid="project-list-order-note">
         <Toolbar
           testIdPrefix="project-list-"
-          population={messages.populationLabel}
-          note={
-            // 🔴 並び順の説明（docs/04 §S-010「並び順の説明は 1 行で常時出す」）。
-            //    スコア・順位・重みの語を含めない。
-            // 🔴 **選べる形にしない** —— 既存 API に `?sort=` が無い（`HANDOFF.md` §5）。
-            //    動かないセレクトを置かず、サーバが確定させた並びを文で述べる。
-            //    ⚠️ 器の `data-testid` は凍結済みの `project-list-order-note` である（`U-22`）。
-            <p className="text-xs text-fg-muted" data-testid="project-list-order-note">
-              {messages.orderNote}
-            </p>
-          }
+          // ✅✅ **2026-10-16（人間の明示指示「『自社案件 6 件』と『後任募集 → 募集中 → 充足 の順に、
+          //    同じ状態のなかでは更新日の新しい順に表示しています。』はいらない」）。**
+          // 🔴 **母集団の説明は取引先にだけ残す**（`partnerScopeNotice`）—— あちらは
+          //    「なぜこの件数なのか」が公開範囲で決まる側であり、消すと**見えない理由が消える**
+          //    （`F-006 AC-2`）。ホストは自社の全件なので説明が要らない。
+          // ⚠️ **並び順の注記も外した。** `docs/04` §S-010 は「並び順の説明は 1 行で常時出す」と
+          //    定めているが、人間の明示指示が優先する（設計書の追随は別途）。
+          //    🔴 **並び自体は変えていない**（`PROJECT_LIST_ORDER_BY`。決定的なまま）。
+          population={messages.partnerScopeNotice ?? ''}
+          note={null}
           filters={
             // 🔴 絞り込みは**白い面のカード**に入れる（ページ地は `--color-bg-subtle` なので、
             //    面を持たないと入力欄の群が地に溶ける。`Table` の器と同じ判断）。
             //    🔴 面・余白・radius は `Card` の中にしか無い（画面に `rounded-md border …` を書かない）。
-            <Card className="w-full">
-              {/* `CardContent` は `p-4 pt-0`。見出しを持たないカードなので上の余白を戻す
-                  （`cn()` = `tailwind-merge` が `pt-0` を落とす）。 */}
-              <CardContent className="pt-4">
-                {/* 🔴 検索条件（docs/04 §S-010 セクション 1）。`method="get"` なので、実行した検索が
-                   そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。
-                   🔴 **既存 API（`#25`）に在る条件だけを描く**（`q` / `status` / `startFrom` /
-                      `prefecture` / ✅ 2026-10-15 で足した `priceMin` / `priceMax`）。
-                      **スキル要件とリモート可否**は query に無いので**入力欄を描かず**、
-                      下の 1 行で「できないこと」を書く。
-                   🔴 **条件の個数を文章に数字で書かない**（増減のたびに文章が古くなる。
-                      `HANDOFF.md` §6-15）。
-                   ⚠️ `mb-0` / `w-full` は帯の中に置いたための余白・幅の調整である（`cn()` の規律 1）。 */}
-                <form
-                  className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full')}
-                  method="get"
-                  action="/projects"
-                  data-testid="project-list-filters"
-                >
-                  <fieldset className="contents">
-                    <legend className="sr-only">{messages.searchLegend}</legend>
-                    {/* 🔴 フリーワードは**全幅**（ワイヤーフレームの検索欄）。最も使う条件を
-                        1 行目に単独で置く —— 他の 3 条件と同じ幅に並べると、入力できる語数が
-                        画面幅で変わる。 */}
-                    {/* ✅ **2026-10-15: 全幅 → 2 列ぶん**（定義書 §1.6 の「検索 Input 420×36」+
-                        受領した画像）。🔴 **帯が 1 行ぶん縮む** —— 行の高さを 45px に上げた
-                        ぶん、一覧の「ファーストビューに 12 行以上」（`docs/04` §7.1）を
-                        ここで取り戻す。**条件は 1 つも減っていない。** */}
-                    {/* ✅ **2026-10-15（2 回目。人間の指示「この画像ファイルをよく確認して、検索
-                        フィルター部分を修正してください」）: 虫眼鏡 + プレースホルダ**（受領画像の
-                        1 行目「案件名・企業名・キーワードで検索」）。
-                        🔴 **プレースホルダに「企業名」と書かない** —— `#25` の `q` が見るのは
-                           案件名と外部公開用の記載であり、**できないことを書くと嘘になる**
-                           （同じカードの中で「スキル要件・リモート可否は後続」と断っているのと
-                           同じ規律）。
-                        🔴 **ラベルは消さない。** 画像にはラベルが無いが、読み上げで欄の用途が
-                           消える（`CLAUDE.md` §13.3 の「劣化はさせても遮断しない」と同じ判断）。
-                           語だけ短くして、詳しい説明はプレースホルダに移した。
-                        ⚠️ `pl-8` は左の虫眼鏡（`left-3` + 16px）を避けるための内側の余白であり、
-                           §7.9 の 7 段の中の値である（`ui-spacing-scale` の許容段）。 */}
-                    {/* ✅✅ **2026-10-16（人間の明示指示「これちゃんと参考にして、検索部分
-                        修正してよ」+ 受領モック）: 1 行目を全幅にした。** モックのキーワード欄は
-                        帯の幅いっぱいで、2 行目から 4 列の選択肢が始まる。
-                        🔴 **`col-span-full` にする**（`sm:col-span-2` は 4 列のうち 2 列だった）。 */}
-                    {/* 🔴 **ラベルは読み上げのために残す**（モックには文字が無いが、消すと欄の
-                        用途がスクリーンリーダから失われる）。**見た目だけ隠す**ので、
-                        画面はモックと同じ「虫眼鏡 + プレースホルダだけ」になる
-                        （`CLAUDE.md` §13.3「劣化はさせても遮断しない」と同じ判断）。 */}
-                    <Field className="col-span-full" label={messages.searchQ} labelClassName="sr-only">
-                      <div className="relative">
-                        <Icon
-                          name="search"
-                          className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-fg-muted"
-                        />
-                        <Input
-                          type="search"
-                          name="q"
-                          className="pl-8"
-                          placeholder={messages.searchQPlaceholder}
-                          defaultValue={filters.q}
-                          data-testid="project-list-filter-q"
-                        />
-                      </div>
-                    </Field>
-                    {/* ========================================================================
-                        ✅✅ **2026-10-16: 受領モックの並びに作り直した**
-                        （人間の明示指示「これちゃんと参考にして、検索部分修正してよ」。
-                         一次資料 `デザインモック/自社案件管理_案件一覧.png`）
-                        ========================================================================
-                        モックの 2 行目 = ステータス / 案件区分 / カテゴリ / 稼働形態
-                        モックの 3 行目 = 単価（月額）/ 勤務地 / 開始時期 / 並行可否
-                        🔴 **カテゴリ / 案件区分 / 並行可否は列ごと足した**
-                           （[Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)
-                            「設計から改訂して」が承認である。migration 20261016030000）。
-                           **押しても絞れない選択肢を先に並べない**という規律は守っている ——
-                           足したのは「実際に絞れる条件」だけである。 */}
-                    <Field label={messages.searchStatus}>
-                      <Select name="status" defaultValue={filters.status} data-testid="project-list-filter-status">
-                        {statusOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                    <Field label={messages.searchSourceKind}>
-                      <Select
-                        name="sourceKind"
-                        defaultValue={filters.sourceKind}
-                        data-testid="project-list-filter-source-kind"
-                      >
-                        {sourceKindOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                    <Field label={messages.searchCategory}>
-                      <Select
-                        name="category"
-                        defaultValue={filters.category}
-                        data-testid="project-list-filter-category"
-                      >
-                        {categoryOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                    {/* 🔴 **一覧の `稼働形態` 列と同じ語を使う**（`columnRemoteMode` と同じ
-                        `projects.remoteMode.*`）—— 絞り込みと列で語が違うと、選んだ値がどの列に
-                        効いたのか分からない。
-                        ⚠️ モックの選択肢は 4 つ（フルリモート / リモート中心 / ハイブリッド / 常駐）
-                        だが、列の値集合は 3 値である。4 値に割るのは `engineers.remote_mode` と
-                        共有している値集合の変更であり、人材側の画面・検索・Badge に同時に波及する
-                        （[Issue #113] の続きとして別に行う）。 */}
-                    <Field label={messages.searchRemoteMode}>
-                      <Select
-                        name="remoteMode"
-                        defaultValue={filters.remoteMode}
-                        data-testid="project-list-filter-remote-mode"
-                      >
-                        {remoteModeOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                    {/* ✅ **2026-10-15: 単価レンジ**（定義書 §1.6 の Filter Panel の 1 行。人間の
-                        指示「自社案件管理ページはこれを参照してアップデートして」）。
-                        🔴 **述語（レンジの重なり）は `packages/db/src/search/unit-price-range.ts` の
-                           1 本**である（人材検索と共有。T-06-03 の申し送りの決着）。
-                        ✅ **2026-10-15（2 回目）: 受領画像どおり「`単価（月額）` ＋ 下限 ＋ 〜 ＋ 上限
-                           ＋ 単位」の 1 つの欄に組み直した**（旧: `単価（下限）` / `単価（上限）` の
-                           2 ラベル）。🔴 **`name` も `step` も値の単位も変えていない** ——
-                           送るのは従来どおり `priceMin` / `priceMax`（**円**）である。
-                        🔴 **単位は「円」である（画像の「万円」にしていない）。** 入力を万円にすると
-                           送信値も万円になり、`#25` の query（円）と `S-005` 人材一覧の同名の条件と
-                           食い違う。**画面だけで単位を変えられない**ので、万円にするなら
-                           query の仕様から直す（[Issue #115](https://github.com/Festal-KM/SES-Platform/issues/115)）。
-                        ⚠️ 人材一覧（`S-005`）はまだ 2 ラベルの形である（人間の指示が
-                           「案件管理から修正していきましょう」であり、順に直す）。 */}
-                    {/* ✅ **2026-10-16（人間の明示指示「下限 > 上限 の場合はバリデーション
-                        エラーを表示し検索を実行しない」）。**
-                        🔴 **判定は `@ses/db` の `isUnitPriceRangeInverted` の 1 本**である
-                           （述語〔重なり〕と同じファイルに置いた。人材一覧も同じ関数を使える）。
-                        🔴 **検索そのものを実行していない**のはページ側である（`page.tsx`）——
-                           逆転したレンジは重なりが空で、述語としては素通りして 0 件になる。
-                           0 件は「条件に合う案件が無い」と**見分けが付かない**ので、
-                           入力の誤りとしてその場で言う（`docs/04` §S-010）。 */}
-                    {/* ✅✅ **2026-10-16: 2 列ぶん → 1 列にした**（受領モックの 3 行目は
-                        `単価 / 勤務地 / 開始時期 / 並行可否` の 4 つが 1 行に収まっている）。
-                        🔴 **中身は変えていない**（下限 / 〜 / 上限 / 単位の 4 つ）。欄が狭くなるが、
-                           入るのは 6〜7 桁の数値であり、モックの欄も同じ幅である。 */}
-                    <Field
-                      as="div"
-                      label={messages.searchPrice}
-                      error={priceInverted ? messages.searchPriceInverted : undefined}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          name="priceMin"
-                          min={0}
-                          step={10000}
-                          placeholder={messages.searchPriceMinPlaceholder}
-                          defaultValue={filters.priceMin}
-                          // 🔴 欄ごとの読み上げの語（ラベルは塊に 1 つしか無い）。
-                          aria-label={messages.searchPriceMin}
-                          data-testid="project-list-filter-price-min"
-                        />
-                        <span aria-hidden="true" className="shrink-0 text-body text-fg-muted">
-                          {messages.searchPriceRangeSeparator}
-                        </span>
-                        <Input
-                          type="number"
-                          name="priceMax"
-                          min={0}
-                          step={10000}
-                          placeholder={messages.searchPriceMaxPlaceholder}
-                          defaultValue={filters.priceMax}
-                          aria-label={messages.searchPriceMax}
-                          data-testid="project-list-filter-price-max"
-                        />
-                        <span className="shrink-0 text-body text-fg-muted">
-                          {messages.searchPriceUnit}
-                        </span>
-                      </div>
-                    </Field>
-                    {/* 🔴 モックの 3 行目の残り（勤務地 / 開始時期 / 並行可否）。 */}
-                    <Field label={messages.searchPrefecture}>
-                      <Select
-                        name="prefecture"
-                        defaultValue={filters.prefecture}
-                        data-testid="project-list-filter-prefecture"
-                      >
-                        {prefectureOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                    {/* ✅✅ **2026-10-16: `開始日（この日以降）` の日付入力をやめ、モックどおり
-                        `開始時期` の選択にした。**
-                        🔴 **営業が知りたいのは「いま出せるか / 来月までに出せるか」であって、
-                           「2026-11-13 以降か」ではない** —— 日付を打たせると、その月の初日を
-                           利用者に計算させることになる。
-                        🔴 区分 → 日付の範囲の変換は `@ses/db` の `resolveStartWindow` の 1 本で
-                           行う（**現在時刻は引数で受け取る純粋関数**。同ファイル冒頭の 🔴）。
-                        ⚠️ 旧 `startFrom` の query のキーは**受け取れる状態のまま残してある**
-                           （共有された URL が開かなくなるのを避ける。`schemas.ts` の ⚠️）。 */}
-                    <Field label={messages.searchStartWithin}>
-                      <Select
-                        name="startWithin"
-                        defaultValue={filters.startWithin}
-                        data-testid="project-list-filter-start-within"
-                      >
-                        {startWithinOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                    <Field label={messages.searchParallelOk}>
-                      <Select
-                        name="parallelOk"
-                        defaultValue={filters.parallelOk}
-                        data-testid="project-list-filter-parallel-ok"
-                      >
-                        {parallelOkOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                    {/* 🔴 送信と「条件をクリア」は必ず 1 行を占める（列の途中に紛れると
-                        押せる場所が毎回変わる）。`justify-end` はカードの中で右に寄せるための
-                        配置の調整であり、共有定数（`FILTER_ACTIONS_CLASSES`）は変えていない。 */}
-                    {/* ✅ **2026-10-15: フッタ 1 行にまとめた**（人間が提示した画像 + 定義書 §1.6
-                        「フッタ行（Checkbox 左 / Secondary + Primary 右）」）。**左に「できないこと」
-                        と「表示する列」、右に クリア / 検索**。
-                        🔴 **一覧は「ファーストビューに 12 行以上」**（`docs/04` §7.1）であり、
-                           絞り込みの帯が縦に伸びるほど表が押し下げられる —— 実測で帯は 286px
-                           あり、3 行ぶんの行を食っていた。行の高さを定義書の 45h に上げる
-                           ぶん、**ここで取り戻す**。 */}
-                    <div className={cn(FILTER_ACTIONS_CLASSES, 'justify-between gap-y-2')}>
-                      <div className="flex flex-wrap items-center gap-3">
-                        {/* ✅ **2026-10-16（人間の明示指示「チェックボックス『募集中のみ』。ON で
-                            ステータス = 募集中に絞る（ステータスセレクトと併用時は AND）」）。**
-                            🔴 **置き場所は定義書 §1.6 の「フッタ行（Checkbox 左）」そのものである。**
-                            🔴 **値は `'1'` を送る**（チェックされたときだけ送られる。`'on'` を
-                               受けない理由は `schemas.ts` の 🔴）。
-                            🔴 **ステータスの選択と独立した条件である** —— 併用して矛盾したとき
-                               （`終了` かつ `募集中のみ`）は **0 件になるのが正しい**。どちらかを
-                               黙って優先すると、指定した条件と違う結果が出る。 */}
-                        <label className="flex items-center gap-2 text-cell text-fg">
-                          <Checkbox
-                            name="recruitingOnly"
-                            value="1"
-                            defaultChecked={filters.recruitingOnly === '1'}
-                            data-testid="project-list-filter-recruiting-only"
-                          />
-                          {messages.searchRecruitingOnly}
-                        </label>
-                        {/* 🔴 まだ効かない条件を黙って描かない（`engineers.list.searchComingSoon` と同じ規律）。 */}
-                        <p className="text-xs text-fg-muted" data-testid="project-list-search-coming-soon">
-                          {messages.searchComingSoon}
-                        </p>
-                        {/* 🔴 **列表示切替の置き場所は帯である**（`docs/04` §5-13 / §7.1。`T-22-06`）。
-                            ✅ 2026-10-15: 既定で 2 列を格納したので、**ここが「戻す」唯一の入口**になった。 */}
-                        {columnToggleItems.length === 0 ? null : (
-                          <ColumnToggle
-                            columns={columnToggleItems}
-                            triggerLabel={messages.columnToggleTrigger}
-                            testIdPrefix="project-list-column-toggle-"
-                          />
-                        )}
-                      </div>
-                      <div className="flex items-center gap-4">
-                        {/* ✅ **2026-10-15: 文字リンク → 輪郭ボタン**（受領画像のフッタは
-                            `条件をクリア`（白地 + 枠）と `検索`（primary）の 2 つのボタンである）。
-                            🔴 **`Button` では描けない**（遷移なのでリンクである）。面と hover を
-                               画面側で組まず、`@ses/ui` の `SECONDARY_BUTTON_LINK_CLASSES` を使う。
-                            🔴 **出す条件は変えていない**（絞り込みが 1 つでも効いているときだけ。
-                               押しても何も起きないボタンを常設しない）。 */}
-                        {/* ✅✅ **2026-10-16: 常時出すようにした**（受領モックのフッタは
-                            `条件をクリア` と `検索` が常に並んでいる）。
-                            ⚠️ **以前は「絞り込みが 1 つでも効いているときだけ」だった** ——
-                            「押しても何も起きないボタンを常設しない」という規律による。
-                            🔴 **その規律を曲げた理由**: 絞り込みの帯が 3 行になり、
-                            **どこまでが条件なのかが一目で分からなくなった**。クリアが常に
-                            同じ位置に在ることのほうが、空振りの 1 クリックより価値が高い
-                            （押した結果は「条件なしの一覧」であり、壊れる操作ではない）。 */}
-                        <Link
-                          className={SECONDARY_BUTTON_LINK_CLASSES}
-                          href="/projects"
-                          data-testid="project-list-clear"
-                        >
-                          {messages.searchClear}
-                        </Link>
-                        <Button type="submit" data-testid="project-list-search">
-                          {messages.searchSubmit}
-                        </Button>
-                      </div>
-                    </div>
-                  </fieldset>
-                </form>
-
-              </CardContent>
-            </Card>
+            // ====================================================================
+            // ✅✅ **2026-10-19: 検索エリアを `_search/` の島にまるごと出した**
+            //    （人間の改修指示書 `BizOrch_SearchArea_ClaudeCode.md`）
+            // ====================================================================
+            // 🔴 **指示書が求めるものは、サーバだけでは書けない**:
+            //    ・`draftFilters`（編集中）と `appliedFilters`（適用済み）の分離と「未適用」の印
+            //    ・バッジが欄幅を超えたときの「＋N」（**実幅の測定**が要る）
+            //    ・検索条件の保存・再適用・上書き・削除
+            //    ・本文の折りたたみを**再訪時に復元**する
+            // 🔴 **一覧（50 行 × 9 列）と案件サマリはサーバのままである** ——
+            //    境界は検索エリアのファイル群に閉じている。
+            // 🔴 **検索の経路は 1 文字も変わっていない**（素の `<form method="get" action="/projects">`）。
+            <SearchPanel
+              applied={applied}
+              options={searchOptions}
+              passThroughParams={passThroughParams}
+              storageTenantId={storageTenantId}
+              storageUserId={storageUserId}
+              defaultExpanded={defaultExpanded}
+              messages={searchMessages}
+            />
           }
         />
+        </div>
       </div>
 
       {messages.partnerScopeNotice === null ? null : (
@@ -803,67 +504,60 @@ export function ProjectListScreen({
         </p>
       )}
 
-      <DataTable
-        testIdPrefix="project-list-"
-        // 🔴 ✅ 2026-10-03: **9 列の表は 1280px の器に収まらない**（実測: 内容 1,313px）。
-        //    §7.1 は「列を削らないことが先」なので列は減らさず、**切れ目を示して語で伝える**。
-        //    器の側の印（`overflow-indicator-x`）は `Table` が常に持つ（CSS で、
-        //    スクロールできるときにだけ出る）。
-        overflowNote={messages.overflowNote}
-        columns={projectColumns(messages, showVisibilityColumn)}
-        rows={rows}
-        rowKey={(row) => row.id}
-        linkComponent={Link}
-        // 🔴 利用者が外した列（`hideable` を持つ列だけが対象。`priority` とは別の仕組み）。
-        //    値の出所は URL であり、既定（`?hide=` 無し）では**9 列すべてが出る**。
-        hiddenColumnIds={hiddenColumnIds}
-        // 🔴 副カラムで開いている行の印（`data-selected`）。**選択（一括操作）ではない**ので
-        //    `selection`（チェックボックス）は渡さない —— Phase 1 に一括操作は 1 つも無い。
-        rowAttributes={(row) => ({ 'data-selected': row.id === selectedId ? 'true' : undefined })}
-        // 🔴 操作列（1 行につき 1 つ。`docs/04` §7.1「既定 8 列 + 操作列」）。
-        //    行の名称セルは `S-011` へ遷移する（`docs/04` §S-010「行クリック → `S-011`」。
-        //    **閲覧の監査記録は遷移先が書く**）。ここは**副カラムを開くだけ**の導線であり、
-        //    語は §7.8 の統一語（`内容を見る`）である。
-        rowActionHeader={messages.columnAction}
-        rowAction={(row) => (
-          <Link
-            className={SECONDARY_LINK_CLASSES}
-            href={selectHrefOf(row.id)}
-            data-testid={`project-list-panel-open-${row.id}`}
-            // 🔴 同じ語のリンクが 50 行に並ぶので、読み上げでは案件名で区別できるようにする。
-            aria-label={`${messages.panelOpen}: ${row.name}`}
-          >
-            {messages.panelOpen}
-          </Link>
-        )}
-        empty={
-          // 🔴 docs/04 §10.1 `S-010`: **初回空と絞込 0 で文言が違う**（呼び出し側が選ぶ）。
-          //    取引先の初回空は「案件が無い」ではなく「公開されていない」である。
-          //    ⚠️ 器の `data-testid` は凍結済みの `project-list-empty` である（`U-22`）。
-          <div data-testid="project-list-empty">
-            <EmptyState
-              testIdPrefix="project-list-empty-state-"
-              description={`${messages.emptyTitle}${messages.emptyLead}`}
-            />
-          </div>
-        }
-      />
-
-      {/* 🔴 カーソルページング（docs/05 §6.1）。**「全 N ページ中 M ページ目」を出さない**。
-          🔴 リンクは検索条件を保った URL である（`projectListHref`）。
-          ⚠️ 器の `data-testid` は凍結済みの `project-list-paging` である（`U-22`）。 */}
-      {nextPageHref === null && firstPageHref === null ? null : (
-        <div className="mt-4" data-testid="project-list-paging">
-          <Pagination
+          <DataTable
+            containerClassName="rounded-none border-x-0"
+            className="[&_tbody_tr]:border-b [&_tbody_tr]:border-border-row [&_td]:py-3 [&_thead]:bg-bg"
             testIdPrefix="project-list-"
-            nextHref={nextPageHref}
-            nextLabel={messages.nextPage}
-            prevHref={firstPageHref}
-            prevLabel={messages.firstPage}
-            linkComponent={ProjectPagingLink}
+            // 🔴 ✅ 2026-10-03: **9 列の表は 1280px の器に収まらない**（実測: 内容 1,313px）。
+            //    §7.1 は「列を削らないことが先」なので列は減らさず、**切れ目を示して語で伝える**。
+            //    器の側の印（`overflow-indicator-x`）は `Table` が常に持つ（CSS で、
+            //    スクロールできるときにだけ出る）。
+            overflowNote={messages.overflowNote}
+            columns={projectColumns(messages, selectHrefOf, messages.partnerScopeNotice === null)}
+            rows={rows}
+            rowKey={(row) => row.id}
+            linkComponent={Link}
+            // 🔴 利用者が外した列（`hideable` を持つ列だけが対象。`priority` とは別の仕組み）。
+            //    値の出所は URL であり、既定（`?hide=` 無し）では**9 列すべてが出る**。
+            hiddenColumnIds={hiddenColumnIds}
+            // 🔴 副カラムで開いている行の印（`data-selected`）。**選択（一括操作）ではない**ので
+            //    `selection`（チェックボックス）は渡さない —— Phase 1 に一括操作は 1 つも無い。
+            rowAttributes={(row) => ({
+              'data-selected': row.id === selectedId ? 'true' : undefined,
+              'data-state': row.id === selectedId ? 'selected' : undefined,
+            })}
+            empty={
+              // 🔴 docs/04 §10.1 `S-010`: **初回空と絞込 0 で文言が違う**（呼び出し側が選ぶ）。
+              //    取引先の初回空は「案件が無い」ではなく「公開されていない」である。
+              //    ⚠️ 器の `data-testid` は凍結済みの `project-list-empty` である（`U-22`）。
+              <div data-testid="project-list-empty">
+                <EmptyState
+                  testIdPrefix="project-list-empty-state-"
+                  description={`${messages.emptyTitle}${messages.emptyLead}`}
+                />
+              </div>
+            }
           />
+
+          {/* 🔴 カーソルページング（docs/05 §6.1）。**「全 N ページ中 M ページ目」を出さない**。
+              🔴 リンクは検索条件を保った URL である（`projectListHref`）。
+              ⚠️ 器の `data-testid` は凍結済みの `project-list-paging` である（`U-22`）。 */}
+          {nextPageHref === null && firstPageHref === null ? null : (
+            <div className="mt-4" data-testid="project-list-paging">
+              <Pagination
+                testIdPrefix="project-list-"
+                nextHref={nextPageHref}
+                nextLabel={messages.nextPage}
+                prevHref={firstPageHref}
+                prevLabel={messages.firstPage}
+                linkComponent={ProjectPagingLink}
+              />
+            </div>
+          )}
         </div>
-      )}
+        {summaryPanel === undefined ? null : (
+          <aside className={cn(PAGE_BODY_ASIDE_WIDTH_CLASSES, DETAIL_PANE_VIEWPORT_CLASSES, 'bg-bg-subtle p-3')}>{summaryPanel}</aside>
+        )}
     </div>
   );
 }

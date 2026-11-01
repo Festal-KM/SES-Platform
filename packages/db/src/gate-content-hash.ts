@@ -17,6 +17,7 @@
 // 🔴 `packages/domain` に置けないのは `node:crypto` を import できないためだけである
 //    （`tests/static/domain-purity.test.ts`。docs/05 §17.2 #14 / §11.9 ⑧-1）。
 import { createHash } from 'node:crypto';
+import { projectPublicContent } from './project-public-content.js';
 import { Prisma } from '@prisma/client';
 import {
   gateHashSource,
@@ -264,7 +265,7 @@ export async function readProjectPublishGateHashInput(
 ): Promise<ProjectPublishGateHashInput | null> {
   const project = await db.project.findUnique({
     where: { id: projectId },
-    select: { name: true, publicSummary: true, endClientName: true, internalUnitPrice: true },
+    select: { name: true, publicSummary: true, publicMemo: true, locationDetail: true, endClientName: true, internalUnitPrice: true },
   });
   if (project === null) return null;
 
@@ -280,7 +281,7 @@ export async function readProjectPublishGateHashInput(
     // 🔴 案件名と要件のフリーテキストも検査対象の欄である（docs/05 §11.11 ⑧）。
     name: project.name,
     requirementTexts: await readProjectRequirementTexts(db, projectId),
-    publicSummary: project.publicSummary,
+    publicSummary: projectPublicContent(project),
     endClientName: project.endClientName,
     internalUnitPrice: decimal(project.internalUnitPrice),
     // 🔴 「すでに公開済み ∪ これから公開する」の和。重複は畳む（同じ相手を 2 回数えない）。

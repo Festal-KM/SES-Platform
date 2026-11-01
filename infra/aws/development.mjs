@@ -20,8 +20,10 @@ export function developmentTemplate() {
           Policies: [{ PolicyName: 'session-manager-only', PolicyDocument: { Version: '2012-10-17', Statement: [
             { Effect: 'Allow', Action: ['ssm:UpdateInstanceInformation', 'ssmmessages:CreateControlChannel', 'ssmmessages:CreateDataChannel', 'ssmmessages:OpenControlChannel', 'ssmmessages:OpenDataChannel'], Resource: '*' },
             { Effect: 'Allow', Action: 's3:GetObject', Resource: sub('arn:${AWS::Partition}:s3:::ses-platform-development-files-${AWS::AccountId}-${AWS::Region}/bootstrap/*') },
-            { Effect: 'Allow', Action: 'kms:Decrypt', Resource: ref('StorageKeyArn'), Condition: { StringEquals: { 'kms:ViaService': sub('s3.${AWS::Region}.amazonaws.com') } } },
-            { Effect: 'Deny', Action: 's3:*', NotResource: sub('arn:${AWS::Partition}:s3:::ses-platform-development-files-${AWS::AccountId}-${AWS::Region}/bootstrap/*') },
+            { Effect: 'Allow', Action: ['s3:ListBucket', 's3:GetBucketVersioning'], Resource: sub('arn:${AWS::Partition}:s3:::ses-platform-development-files-${AWS::AccountId}-${AWS::Region}') },
+            { Effect: 'Allow', Action: ['s3:GetObject', 's3:GetObjectVersion', 's3:PutObject', 's3:DeleteObject'], Resource: sub('arn:${AWS::Partition}:s3:::ses-platform-development-files-${AWS::AccountId}-${AWS::Region}/*') },
+            { Effect: 'Allow', Action: ['kms:Decrypt', 'kms:Encrypt', 'kms:GenerateDataKey'], Resource: ref('StorageKeyArn'), Condition: { StringEquals: { 'kms:ViaService': sub('s3.${AWS::Region}.amazonaws.com') } } },
+            { Effect: 'Deny', Action: 's3:*', NotResource: [sub('arn:${AWS::Partition}:s3:::ses-platform-development-files-${AWS::AccountId}-${AWS::Region}'), sub('arn:${AWS::Partition}:s3:::ses-platform-development-files-${AWS::AccountId}-${AWS::Region}/*')] },
             { Effect: 'Deny', Action: 'kms:*', NotResource: ref('StorageKeyArn') },
             { Effect: 'Deny', Action: ['secretsmanager:*', 'ssm:GetParameter', 'ssm:GetParameters', 'ssm:GetParametersByPath', 'sts:AssumeRole', 'iam:*', 'ses:*', 'sns:Publish'], Resource: '*' },
           ] } }],

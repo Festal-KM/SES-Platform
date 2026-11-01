@@ -44,3 +44,6 @@ Thumbs.db
 
 # エージェントの一時 worktree（Agent tool の isolation: worktree）
 .claude/worktrees/
+.runtime.env
+.aws-development-*
+.aws-source-manifest*

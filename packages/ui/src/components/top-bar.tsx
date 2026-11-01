@@ -43,7 +43,8 @@ import type { SidebarLinkProps } from './sidebar.js';
 import { cn } from '../lib/cn.js';
 import {
   CONTENT_PADDING_X_CLASSES,
-  HEADER_HEIGHT_CLASS,
+  HEADER_ROW_HEIGHT_CLASSES,
+  HEADER_STICKY_CLASSES,
   HEADER_SEARCH_MAX_WIDTH_CLASS,
 } from '../lib/layout-tokens.js';
 import { TRANSITION_CLASSES } from '../lib/state-classes.js';
@@ -112,13 +113,15 @@ function DefaultLink({ href, children, ...rest }: SidebarLinkProps) {
  * 🔴 **影を足さない**（階層は border と背景の差で表す。§7.9）。
  */
 // ✅ 2026-10-13: 高さ **56**（`docs/design-system.md` §4）。地は Card と同じ白（`surface`）。
-const HEADER_CLASSES = 'border-b border-border bg-surface';
+// デスクトップは固定し、モバイルは内容の高さを確保して本文とスクロールする。
+const HEADER_CLASSES = cn(HEADER_STICKY_CLASSES, 'border-b border-border bg-surface');
 // 🔴 左 28 / 右 16 は本文の gutter と揃える（`CONTENT_PADDING_X_CLASSES`）—— ヘッダの検索欄の
 //    左端と本文の h1 の左端が 1px でもずれると、縦の通りが崩れて「別の面」に見える。
 const HEADER_ROW_CLASSES = cn(
   'flex flex-wrap items-center gap-x-4 gap-y-1 py-2',
   CONTENT_PADDING_X_CLASSES,
-  `md:flex-nowrap md:py-0 ${HEADER_HEIGHT_CLASS}`,
+  'md:flex-nowrap md:py-0',
+  HEADER_ROW_HEIGHT_CLASSES,
 );
 
 /**

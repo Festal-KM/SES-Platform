@@ -32,6 +32,7 @@
 // `tx.engineerSkill.*` のデリゲート参照を**復活させない**（`tests/static/gate-engineer-facts-single-path.test.ts`）。
 
 import { Prisma } from '@prisma/client';
+import { projectPublicContent } from './project-public-content.js';
 import {
   frozenCareersToInspectionText,
   hasInspectableText,
@@ -411,6 +412,8 @@ async function loadProjectPublishGateInput(
           id: true,
           name: true,
           publicSummary: true,
+          publicMemo: true,
+          locationDetail: true,
           endClientName: true,
           internalUnitPrice: true,
         },
@@ -452,7 +455,7 @@ async function loadProjectPublishGateInput(
         audience: { kind: 'PARTNER', partnerCompanyIds: audienceIds },
         sections: [
           { field: 'project_name', text: project.name },
-          { field: 'public_summary', text: project.publicSummary ?? '' },
+          { field: 'public_summary', text: projectPublicContent(project) ?? '' },
           // 🔴 1 欄に綴じる（1 件ごとに欄を並べると、欄別のオフセット表が衝突する。§11.11 ⑧）。
           { field: 'requirement', text: requirementTexts.join('\n') },
         ],

@@ -134,9 +134,12 @@ const SEMANTIC_COLORS: ReadonlyArray<readonly [token: string, primitive: string]
  *    「意味に割り当てた階調」であって人間が hex で確定したものではない（§7.4）。
  */
 const BRAND_COLORS: ReadonlyArray<readonly [token: string, value: string]> = [
-  ['--color-brand', '#2563eb'],
-  ['--color-brand-hover', '#1d4ed8'],
-  ['--color-brand-active', '#1e40af'],
+  // ✅✅ 2026-10-16: 人間の指摘「青が明るすぎて目がちかちかする」が **2 度目**だったので、
+  //    族の中で 1 段ずつ暗くした（v3 の blue-700 / 800 / 900）。
+  // 🔴 **3 段の関係を保つ**（同じ色にすると押した手応えが消える）。
+  ['--color-brand', '#1d4ed8'],
+  ['--color-brand-hover', '#1e40af'],
+  ['--color-brand-active', '#1e3a8a'],
 ];
 
 /**
@@ -585,6 +588,8 @@ const SHADOW_ALLOWANCES: ReadonlyArray<readonly [file: string, utility: string]>
 const CIRCLE_ALLOWANCES: ReadonlyArray<readonly [file: string, utility: string]> = [
   ['packages/ui/src/components/avatar.tsx', 'rounded-full'],
   ['packages/ui/src/components/rail-card.tsx', 'rounded-full'],
+  // 2026-10-29: 人間の添付画像・指示書で明示された、検索のセグメントだけの例外。
+  ['packages/ui/src/components/segmented-control.tsx', 'rounded-full'],
 ];
 
 function isAllowedCircle(file: string, utility: string): boolean {

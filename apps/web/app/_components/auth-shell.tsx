@@ -65,11 +65,12 @@
 // 🔴 **`PageWidthClass` に 4 つ目を足していない** —— 「中央寄せのカード」を幅クラスへ昇格させる
 //    のは `docs/04` §7.1 の改訂（= 人間の判断。`CLAUDE.md` §8.6）であり、ここでは先取りしない。
 import type { ReactNode } from 'react';
-import { AUTH_CARD_WIDTH_CLASSES, PageBody, cn, type PageWidthClass } from '@ses/ui';
+import { AUTH_CARD_WIDTH_CLASSES, BrandLogo, PageBody, cn, type PageWidthClass } from '@ses/ui';
 
 export type AuthShellProps = {
   /** ワードマーク（`t('product.name')`）。🔴 文言はここで解決しない。 */
   readonly wordmark: ReactNode;
+  readonly logoAlt?: string;
   /**
    * `docs/04` §7.1 の幅クラス。認証 5 画面はいずれも **C（読み幅）**である。
    * ✅ **段⑤ で `A-001`（`admin/signin/page.tsx`）も明示的に渡すようになった**（検査 (k) が
@@ -82,11 +83,11 @@ export type AuthShellProps = {
   readonly children: ReactNode;
 };
 
-export function AuthShell({ wordmark, widthClass = 'prose', children }: AuthShellProps) {
+export function AuthShell({ wordmark, logoAlt, widthClass = 'prose', children }: AuthShellProps) {
   return (
-    <main className="flex min-h-dvh justify-center px-4 py-6">
+    <main className="flex min-h-dvh justify-center px-4 py-12">
       <PageBody widthClass={widthClass} className={cn(AUTH_CARD_WIDTH_CLASSES, 'px-0')}>
-        <p className="mb-8 text-lg font-bold">{wordmark}</p>
+        <div className="mb-8">{typeof wordmark === 'string' ? <BrandLogo src="/brand-logo.png" alt={logoAlt ?? wordmark} context="authentication" /> : wordmark}</div>
         {children}
       </PageBody>
     </main>

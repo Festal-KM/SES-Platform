@@ -30,6 +30,26 @@ export type Locale = (typeof LOCALES)[number];
 export const DEFAULT_LOCALE: Locale = 'ja';
 
 const ja = {
+  'auth.accounts.role': 'ロール',
+  'auth.accounts.account': 'アカウント',
+  'auth.accounts.company': 'テナント',
+  'auth.accounts.standard': '通常の画面確認',
+  'auth.accounts.twoFactor': '2FAの検証',
+  'auth.accounts.submit': 'このアカウントでログイン',
+  'auth.accounts.submitting': '認証中…',
+  'auth.accounts.error': 'このアカウントでログインできません。別のアカウントを選ぶか、管理者に確認してください。',
+  'auth.accounts.emailMethod': 'メールアドレスでログイン',
+  'auth.accounts.accountMethod': 'アカウント選択に戻る',
+  'auth.accounts.platformLink': '運営コンソールにログイン',
+  'auth.accounts.tenantLink': '利用者のログインに戻る',
+  'auth.accounts.role.OWNER': '自社オーナー',
+  'auth.accounts.role.ADMIN': '自社管理者',
+  'auth.accounts.role.SALES': '自社営業',
+  'auth.accounts.role.VIEWER': '閲覧専用',
+  'auth.accounts.role.PARTNER_ADMIN': '取引先管理者',
+  'auth.accounts.role.PARTNER_SALES': '取引先営業',
+  'auth.accounts.role.PLATFORM_OWNER': '運営管理者',
+  'auth.accounts.role.PLATFORM_SUPPORT': '運営サポート',
   // --- プロダクト（docs/04 U-01。表示箇所はヘッダとサインイン系の画面に限る）---
   'product.name': PRODUCT_NAME,
   // 🔴 狭い場所（サイドバーのロゴ）で使う短い呼び名。`glossary.ts` の 🔴 を参照。
@@ -2870,7 +2890,7 @@ const ja = {
   'projects.recheckNotice.publishedToPrefix': 'この案件は ',
   'projects.recheckNotice.publishedToSuffix': ' 社に公開中です。',
   'projects.recheckNotice.willRun':
-    '案件名 / 外部公開用の記載 / 要件の自由記述 のいずれかを変更して保存すると、保存後に再検査が実行されます。検査で問題が見つかると、この案件の公開は解除され、取引先の画面から見えなくなります。',
+    '案件名 / 業務概要 / 勤務地の詳細 / 公開メモ / 要件の自由記述 のいずれかを変更して保存すると、保存後に再検査が実行されます。検査で問題が見つかると、この案件の公開は解除され、取引先の画面から見えなくなります。',
   // 🔴 **走らない条件も同じ帯に書く。** 書かないと「保存のたびに公開が消えるかもしれない」と
   //    読まれて編集が避けられ、台帳が更新されなくなる（`docs/01` 章 1.1-1 の再発）。
   'projects.recheckNotice.willNotRun':
@@ -2972,7 +2992,9 @@ const ja = {
   // 🔴 `F-014 AC-4` / `BR-07`: 取引先向けの文言に**他社の存在を示す語を 1 つも置かない**
   //    （「他 N 社にも公開されています」「全 N 件中」に相当する語彙を作らない）。
   // 🔴 `F-009 AC-2` と同じ Phase 1 の規律: **スコア・順位・重みの語を使わない。**
-  'projects.list.title': '案件一覧',
+  // ✅ 2026-10-16: 人間の明示指示「タイトルの『案件一覧』は『自社案件管理』にして」。
+  //    🔴 サイドバーの項目名（`shell.nav.host.projects`）と同じ語になった。
+  'projects.list.title': '自社案件管理',
   // ⚠️ T-22-09: 同上（入口は `SummaryStrip` の `案件` の値）。🔴 キーは消さない（`U-22`）。
   'projects.list.open': '案件一覧を開く',
   // --- ✅ SP-22 段④: 帯の説明 1 行（`docs/04` §3.1 のレイアウト図「説明 1 行」）---
@@ -3000,12 +3022,42 @@ const ja = {
   //    🔴 **できないことだけを書く**（できるようになったものを残すと、画面が嘘をつく）。
   'projects.list.searchComingSoon':
     'スキル要件での絞り込みは、後続のリリースで行えます。',
-  'projects.list.register': '案件を登録',
+  // ✅ 2026-10-16: 人間の明示指示「『案件を登録』ボタンは『新規案件登録』にして」。
+  'projects.list.register': '新規案件登録',
   'projects.list.readOnlyNote': '案件の登録は、閲覧のみの権限では行えません。',
   'projects.list.column.name': '案件名',
-  'projects.list.column.status': '状態',
+  'projects.list.column.status': 'ステータス',
+  'projects.list.panel.status.changeToOpen': 'ステータスを募集中に変更',
+  'projects.list.panel.status.changeToClosed': 'ステータスを終了に変更',
+  'projects.list.panel.status.saved': '変更しました',
+  'projects.list.panel.status.failed': '変更できませんでした。もう一度お試しください。',
+  'projects.list.panel.copy.action': 'サマリをコピー',
+  'projects.list.panel.copy.copied': 'コピーしました',
+  'projects.list.panel.copy.failed': 'コピーできませんでした。本文を選択してコピーしてください。',
   'projects.list.column.mustRequirements': '必須要件の要約',
   'projects.list.column.unitPrice': '単価レンジ',
+  'projects.list.column.purchaseUnitPrice': '想定仕入単価',
+  'projects.list.columnToggle.hide.purchaseUnitPrice': '想定仕入単価を隠す',
+  'projects.list.columnToggle.show.purchaseUnitPrice': '想定仕入単価を表示',
+  'projects.basic.endClientName': 'エンドクライアント',
+  'projects.basic.upperCompanyName': '上位会社',
+  'projects.basic.category': 'カテゴリ',
+  'projects.basic.businessOverview': '業務概要',
+  'projects.basic.remoteMode': '稼働形態',
+  'projects.basic.unitPrice': '卸単価',
+  'projects.basic.purchaseUnitPrice': '想定仕入単価',
+  'projects.basic.location': '勤務地/最寄駅',
+  'projects.basic.startDate': '開始時期',
+  'projects.basic.endDate': '終了時期',
+  'projects.basic.headcount': '募集人数',
+  'projects.basic.distributionLimit': '商流制限',
+  'projects.basic.publicMemo': '公開メモ',
+  'projects.basic.remarks': '備考',
+  'projects.basic.assignee': '担当者',
+  'projects.basic.updatedOn': '更新日',
+  'projects.basic.legacyPriceRange': '卸単価の補足（従来のレンジ）',
+  'projects.basic.remarksNote': '内部用の備考です。単価の幅や交渉条件の補足を記載してください。',
+  'projects.list.column.wholesaleUnitPrice': '卸単価',
   'projects.list.column.startDate': '開始日',
   // ✅ **2026-10-15: `勤務地・リモート` → 2 列に分けた**（[Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101)
   //    の回答 C「値の表記を短くする（勤務地と稼働形態を分けて `埼玉` + Badge）」）。
@@ -3022,13 +3074,141 @@ const ja = {
   //    判断材料の全量ではない（同節の 🔴）。
   'projects.list.column.action': '操作',
   'projects.list.panel.open': '内容を見る',
-  'projects.list.panel.title': '案件の要点',
-  'projects.list.panel.empty': '行の「内容を見る」を押すと、ここに案件の要点が出ます。',
-  // 🔴 要点パネルからの導線。**一覧には無かった画面を新しく足していない**
-  //    （`S-011` / `S-012` / `S-016` はいずれも `S-011` から到達できる既存の画面である）。
-  'projects.list.panel.detail': '案件詳細を開く',
+  // ✅✅ **2026-10-16（人間の明示指示「右側の案件の要点は案件サマリに文言を変更して」）。**
+  //    🔴 **キーは動かしていない**（`U-22` の凍結。値だけを変えた）。
+  //    ⚠️ **上の 🔴「`詳細` を使わない」はこの 2 行には効かない** —— 語を決めたのは人間であり、
+  //       §7.8 の統一語より人間の明示指示が優先する（`CLAUDE.md` §8.6）。
+  'projects.list.panel.title': '案件サマリ',
+  // 🔴 **「内容を見る」を書かない** —— 操作列はこの日に消えており（人間の明示指示
+  //    「操作列もいらない。列をクリックしたら右側エリアに表示されるようにする」）、
+  //    **画面に無い操作を案内すると嘘になる**。
+  'projects.list.panel.empty': '行をクリックすると、ここに案件サマリが出ます。',
+  // ✅✅ **2026-10-16（人間の明示指示「案件サマリのボタンは、詳細を開くだけでよい」）。**
+  //    🔴 **語も `詳細を開く` にする**（指示の語そのもの）。`編集する` /
+  //       `この案件に合う人材を探す` は**画面から外した**（キーは凍結なので残す）。
+  'projects.list.panel.detail': '詳細を開く',
+  // ⚠️ 以下 2 つは**もう描いていない**（`U-22` の凍結によりキーは消せない）。
+  //    行き先は `S-011`（詳細）からそのまま辿れる。
   'projects.list.panel.edit': '編集する',
   'projects.list.panel.candidates': 'この案件に合う人材を探す',
+  // ============================================================================
+  // ✅✅ 2026-10-16（人間の明示指示「タイル内にタブを設置して、基本情報とコピペ用サマリ」）
+  // ============================================================================
+  // 🔴 **語は指示そのものである。**
+  'projects.list.panel.tab.basic': '基本情報',
+  'projects.list.panel.tab.copy': 'コピペ用サマリ',
+  // 🔴 **「そのまま貼れる」ことを書く**（人間の指示「LINE やメールとかにそのままコピペできる
+  //    形式のテキストにする」）。何に使う面なのかが語だけでは分からない。
+  'projects.list.panel.copy.hint': 'LINE やメールにそのまま貼り付けられる形式です。',
+  // 🔴 **できないことを黙って隠さない**（`projects.list.searchComingSoon` と同じ規律）。
+  //    人間の指示は「案件登録時に生成され、情報がアップデート都度生成される。人が書き換えて
+  //    保存も可能」である。**保存できる列がまだ無い**ので、いまは案件の情報から毎回組んでいる。
+  'projects.list.panel.copy.generatedNote':
+    'いまは案件の情報から自動で組んでいます。書き換えて保存できるようにする作業は後続です。',
+  // 🔴 **コピペ用サマリの組み立ての部品**（`lib/projects/copy-summary.ts`）。
+  //    記号も語であり、画面・モジュールにベタ書きしない（`CLAUDE.md` §3.5）。
+  'projects.search.expressionSeparator': '：',
+  'projects.search.keywordTotalLimit': '詳細検索の条件が長すぎます。キーワードを減らしてください。',
+  'projects.search.keywordLimit': 'キーワードは1グループ10個、1個200文字以内で入力してください。',
+  'projects.search.addKeyword': 'キーワードを追加',
+  'projects.search.removeKeyword': 'キーワードを解除',
+  'projects.search.groupMode': 'グループ内',
+  'projects.search.modeOR': 'いずれかに一致（OR）',
+  'projects.search.modeAND': 'すべてに一致（AND）',
+  'projects.search.addKeywordHint': 'Enterで追加',
+  'projects.search.keywordGuide': 'キーワードを入力して Enter または［追加］で登録。グループ内は OR / AND を選択、グループ同士は AND で結合されます。',
+  'projects.search.firstKeyword': '最初のキーワードを追加',
+  'projects.search.keywordInput': 'キーワードを入力',
+  'projects.search.conditionPreview': '検索条件のイメージ',
+  'projects.search.noKeywords': 'キーワード未設定',
+  'projects.search.openParenthesis': '(',
+  'projects.search.closeParenthesis': ')',
+  'projects.search.expression': '検索式',
+  'projects.search.groupCountSuffix': 'グループ',
+  'projects.search.or': 'OR',
+  'projects.search.advancedLead': 'キーワードをグループ化して、AND/OR条件で検索できます。',
+  'projects.search.advancedHint': 'グループ内はAND/ORを選択。グループ同士はANDで結合します。',
+  'projects.search.advancedTargets': '検索対象：案件名・業務概要・スキル・公開メモ（部分一致）。自社ユーザーは内部備考も対象。',
+  'projects.search.skillTarget': '必須・尚可スキルを対象',
+  'projects.search.addTerm': '追加',
+  'projects.search.remove': '削除',
+  'projects.search.title': '案件検索',
+  'projects.search.band.FULL': '1.0人月',
+  'projects.search.band.HALF_TO_FULL': '0.5～1.0人月',
+  'projects.search.band.UNDER_HALF': '0.5人月未満',
+  'projects.search.all': 'すべて',
+  'projects.search.phaseShort.PLANNING': '企画',
+  'projects.search.phaseShort.REQUIREMENTS': '要件定義',
+  'projects.search.phaseShort.BASIC_DESIGN': '基本設計',
+  'projects.search.phaseShort.DETAIL_DESIGN': '詳細設計',
+  'projects.search.phaseShort.INTEGRATION_TEST': '結合テスト',
+  'projects.search.phaseShort.SYSTEM_TEST': 'システムテスト',
+  'projects.search.phaseShort.OPERATIONS': '運用/保守',
+  'projects.search.multiOR': '複数選択・OR検索',
+  'projects.search.submit': 'この条件で検索',
+  'projects.search.clearAll': 'すべての条件をクリア',
+  'projects.search.saved': '保存した条件',
+  'projects.search.save': '条件を保存',
+  'projects.search.group': 'グループ',
+  'projects.search.legacyUtilization': '以前の稼働率の範囲を適用中',
+  'projects.search.cancel': 'キャンセル',
+  'projects.search.examples': '検索例',
+  'projects.search.basic': '基本検索',
+  'projects.search.advanced': '詳細検索',
+  'projects.search.phase': '開発フェーズ',
+  'projects.search.phasePlaceholder': '開発フェーズを選択',
+  'projects.search.method': '開発方式',
+  'projects.search.utilizationPercent': '稼働率（%）',
+  'projects.search.utilization': '稼働率',
+  'projects.search.utilizationMin': '稼働率の下限',
+  'projects.search.utilizationMax': '稼働率の上限',
+  'projects.search.groups': 'キーワード条件',
+  'projects.search.addGroup': 'キーワードグループを追加',
+  'projects.search.removeGroup': 'この条件を削除',
+  'projects.search.any': '指定なし',
+  'projects.search.keywordPlaceholder': 'Java | Springboot',
+  'projects.search.hint': '同じ行のキーワードは | で区切るとOR検索、行を追加するとAND検索になります。案件名・業務概要・スキル・公開メモを部分一致で検索します。自社ユーザーは内部備考も対象です。',
+  'projects.search.keywordGroup': 'キーワード',
+  'projects.search.and': 'AND',
+  'projects.search.method.WATERFALL': 'ウォーターフォール',
+  'projects.search.method.AGILE': 'アジャイル',
+  'projects.search.phase.PLANNING': '企画',
+  'projects.search.phase.REQUIREMENTS': '要件定義',
+  'projects.search.phase.BASIC_DESIGN': '基本設計／外部設計',
+  'projects.search.phase.DETAIL_DESIGN': '詳細設計／内部設計／プログラム設計',
+  'projects.search.phase.INTEGRATION_TEST': 'IT／結合テスト',
+  'projects.search.phase.SYSTEM_TEST': 'ST／システムテスト',
+  'projects.search.phase.OPERATIONS': '運用/保守',
+  'projects.copy.project': '案件',
+  'projects.copy.content': '内容',
+  'projects.copy.skills': 'スキル',
+  'projects.copy.required': '[必須]',
+  'projects.copy.preferred': '[尚可]',
+  'projects.copy.period': '期間',
+  'projects.copy.place': '場所',
+  'projects.copy.recruitment': '募集',
+  'projects.copy.distribution': '商流',
+  'projects.copy.notes': '備考',
+  'projects.copy.bullet': '・',
+  'projects.copy.periodSeparator': '～',
+  'projects.copy.parenthesisOpen': '（',
+  'projects.copy.parenthesisClose': '）',
+  'projects.list.panel.copy.labelOpen': '【',
+  'projects.list.panel.copy.labelClose': '】',
+  // 🔴 一覧の行は必須要件を上位 3 件しか持たない。**超過を黙って落とさない**
+  //    （`copy-summary.ts` の 🔴）。`+2` の記号は文章の中では読めないので語に組み直す。
+  'projects.list.panel.copy.moreOpen': '（ほか ',
+  'projects.list.panel.copy.moreClose': ' 件）',
+  // 🔴 語は「貼られた先で読む人」に向けたものである（一覧の列見出しより具体的に書く
+  //    —— `必須要件の要約` は社内の列名であって、送られた相手には通じない）。
+  'projects.list.panel.copy.label.name': '案件名',
+  'projects.list.panel.copy.label.status': 'ステータス',
+  'projects.list.panel.copy.label.mustRequirements': '必須要件',
+  'projects.list.panel.copy.label.unitPrice': '単価',
+  'projects.list.panel.copy.label.startDate': '開始時期',
+  'projects.list.panel.copy.label.location': '勤務地',
+  'projects.list.panel.copy.label.remoteMode': '稼働形態',
+  'projects.list.panel.copy.label.headcount': '募集人数',
   // --- 🔴 列表示切替（`T-22-06`。`docs/04` §7.1「既定 8 列 + 操作列。9 列目以降は列表示切替に格納する」）---
   // 🔴 **項目の語は「いまの状態に対する操作」で書く** —— メニューの項目はチェックの印を持たない
   //    （§5-13）ため、`公開先の設定状況` とだけ書くと開いても表示中か非表示中か分からない。
@@ -3053,7 +3233,12 @@ const ja = {
   //    🔴 **キーは動かしていない**（`U-22` の凍結。値だけを変えた）。
   //    🔴 **画像の「企業名」は書かない** —— `#25` の `q` は案件名と外部公開用の記載しか見ない。
   'projects.list.search.q': 'フリーワード',
-  'projects.list.search.qPlaceholder': '案件名・外部公開用の記載から探す',
+  // ✅✅ **2026-10-16（人間の明示指示「プレースホルダーは『案件名・キーワードで検索』、
+  //    曖昧検索ができるようにする」）。語をそのまま使う。**
+  // 🔴 **「曖昧検索」はすでに成立している** —— 述語は `ILIKE '%…%'`（部分一致・大文字小文字
+  //    を区別しない）であり、空白区切りの複数語は AND、対象列は案件名と外部公開用の記載の OR
+  //    である（`packages/db/src/search/free-word.ts`）。**実装を増やしていない。**
+  'projects.list.search.qPlaceholder': '案件名・キーワードで検索',
   // ✅ 2026-10-16: 受領モックの語に合わせた（旧「案件の状態」）。🔴 キーは動かしていない。
   'projects.list.search.status': 'ステータス',
   'projects.list.search.statusAll': 'すべて',
@@ -3101,6 +3286,134 @@ const ja = {
   'projects.list.search.parallelOkAll': 'すべて',
   'projects.list.search.startWithin': '開始時期',
   'projects.list.search.startWithinAll': 'すべて',
+  // ============================================================================
+  // ✅✅ 2026-10-16（人間の明示指示「スキル（リストから複数選択できる、or 検索）」）
+  // ============================================================================
+  // 🔴 **「複数選べる」と「いずれかに一致」を画面に書く。** `<select multiple>` は
+  //    操作の仕方（Ctrl / ⌘ を押しながら、またはドラッグ）が見た目から分からず、
+  //    **OR か AND かはもっと分からない**。書かないと、選んだのに 0 件になった利用者が
+  //    絞り込みの不具合と区別できない。
+  'projects.list.search.skill': 'スキル',
+  // ✅✅ **2026-10-16（人間の明示指示「スキルの部分はポップアップや Tip で選択肢を表示して、
+  //    選択させるような形で、表示させるのはバッチ風の表示にするのがいい」）。**
+  // 🔴 **1 つも選んでいないときの引き金の語**。空の引き金にすると「壊れている」と
+  //    「何も選んでいない」の区別が付かない。他の欄の「すべて」と同じ語にする。
+  'projects.list.search.skillAll': 'すべて',
+  // ✅✅ **2026-10-18（人間の明示指示「選択したらバッジで表示するようにして」+ 受領画像の `×`）。**
+  // 🔴 読み上げは「Java を外す」になる（辞書の語 + この語）。`×` だけを読み上げても
+  //    **どのスキルを外すのか分からない**。
+  'projects.list.search.skillRemove': 'を外す',
+  'projects.list.search.skillHint':
+    'スキルは複数選べます（選んだいずれかを要件に持つ案件が出ます）。',
+  // 🔴 辞書に 1 件も無いときの語（選択肢が空の `<select>` を黙って置かない）。
+  'projects.list.search.skillEmpty': 'スキル辞書に登録がありません。',
+  // ✅✅ **2026-10-19（人間の明示指示「スキル選択部分は添付のようなデザインにして」+ 受領モック）:
+  //    ポップアップの中の検索欄。**
+  // 🔴 **読み上げの語（`skillSearchLabel`）を別に持つ** —— 見えるラベルを持たない欄であり、
+  //    プレースホルダは読み上げのラベルの代わりにならない（`CLAUDE.md` §13.3 の
+  //    「劣化はさせても遮断しない」と同じ判断。フリーワード欄が `sr-only` のラベルを
+  //    残しているのと揃える）。
+  'projects.list.search.skillSearchLabel': 'スキルを名前で絞り込む',
+  'projects.list.search.skillSearchPlaceholder': 'スキルを検索…',
+  // 🔴 空のパネルを出さない（絞り込んだ結果が 0 件なのか、壊れたのか分からない）。
+  'projects.list.search.skillNoMatch': '該当するスキルがありません。',
+  // ==========================================================================
+  // ✅✅ 2026-10-19: 検索エリアの改修（人間の指示書 `BizOrch_SearchArea_ClaudeCode.md`）
+  // ==========================================================================
+  // 🔴 指示書 §2 の 3 層（ヘッダ / 本文 / 条件バー）の語。
+  // 🔴 **既存のキーを 1 つも改名・削除していない**（`U-22` の凍結。追加のみ）。
+  'projects.list.search.tabsLabel': '検索エリアの切り替え',
+  'projects.list.search.tabSearch': '検索条件',
+  'projects.list.search.tabSaved': '保存した条件',
+  'projects.list.search.save': '条件を保存',
+  'projects.list.search.collapse': '折りたたむ',
+  'projects.list.search.expand': '展開する',
+  // 🔴 条件バー（指示書 §4）。
+  'projects.list.search.selectedLabel': '選択中の条件',
+  'projects.list.search.selectedEmpty': '条件は指定されていません',
+  // 🔴 **「未適用」は「検索結果がまだ以前の条件のまま」という意味である**（指示書 §6）。
+  'projects.list.search.pending': '未適用',
+  'projects.list.search.pendingHint':
+    '一覧はまだ以前の条件の結果です。「検索」を押すとこの条件が適用されます。',
+  // 🔴 読み上げは「Python を解除」になる（対象の語 + これ）。
+  'projects.list.search.chipRemove': 'を解除',
+  'projects.list.search.chipOverflow': '表示しきれない条件を開く',
+  'projects.list.search.fieldSeparator': '：',
+  // 🔴 スキルの複数選択（指示書 §3）。
+  'projects.list.search.skillPlaceholder': 'スキルを選択',
+  'projects.list.search.skillOverflow': '選んだスキルをすべて見る',
+  'projects.list.search.skillSelectedCount': '件選択',
+  'projects.list.search.skillModeAll': 'すべて',
+  'projects.list.search.skillModeSelected': '選択中',
+  'projects.list.search.skillSelectedSummary': '件選択中',
+  'projects.list.search.skillClearSelection': '選択をクリア',
+  // 🔴 単一選択のプルダウン（2026-10-19 の人間の指示「プルダウンの UI が要素によって
+  //    異なるから、スキルのプルダウンと同じ UI にして」）。
+  //    🔴 語は**項目に依らない共通**である（欄の名前は `Field` のラベルが持つ）。
+  'projects.list.search.selectSearchLabel': '選択肢を名前で絞り込む',
+  'projects.list.search.selectSearchPlaceholder': '絞り込む…',
+  'projects.list.search.selectNoMatch': '該当する選択肢がありません。',
+  // 🔴 適用中の保存条件をその場で上書きする（2026-10-19 の人間の指示）。
+  'projects.list.search.overwriteCurrent': '条件を上書きする',
+  // 🔴 保存した条件（指示書 §5）。
+  'projects.list.search.savedTable.search': '保存条件名・スキルで絞り込み',
+  'projects.list.search.savedTable.sort': '並び順',
+  'projects.list.search.savedTable.sortRecent': '最近使った順',
+  'projects.list.search.savedTable.sortUpdated': '更新が新しい順',
+  'projects.list.search.savedTable.sortName': '名前順',
+  'projects.list.search.savedTable.columnName': '条件名',
+  'projects.list.search.savedTable.columnFilters': '保存した検索条件',
+  'projects.list.search.savedTable.columnActions': '操作',
+  'projects.list.search.savedTable.countSuffix': '件',
+  'projects.list.search.savedTable.range': '{total}件中 {from}–{to}件を表示',
+  'projects.list.search.savedTable.noResults': '該当する保存条件がありません。',
+  'projects.list.search.savedTable.previous': '前へ',
+  'projects.list.search.savedTable.next': '次へ',
+  'projects.list.search.selectedSavedLabel': '選択中の保存条件',
+  'projects.list.search.selectedSavedModified': '変更あり',
+  'projects.list.search.savedApply': '適用',
+  'projects.list.search.savedActive': '適用中',
+  'projects.list.search.savedMenu': 'の操作メニュー',
+  'projects.list.search.savedRename': '名前を変更',
+  'projects.list.search.savedOverwrite': '現在の条件で上書き',
+  'projects.list.search.savedRemove': '削除',
+  'projects.list.search.savedEmpty': '保存した条件はまだありません。',
+  'projects.list.search.savedEmptyAction': '現在の条件を保存',
+  'projects.list.search.savedBroken':
+    '保存した条件を読み込めませんでした（保存されていたデータが壊れています）。',
+  // 🔴🔴 **ブラウザー保存であることを画面に明示する**（指示書 §5）——
+  //    サーバ保存が完成したかのような UI にしない。
+  'projects.list.search.savedStorageNote':
+    '保存した条件はこのブラウザーに保存しています（他の端末とは同期されません）。',
+  'projects.list.search.savedNoCondition': '条件なし',
+  // 🔴 保存・名前変更・上書き・削除の確認（指示書 §5）。
+  'projects.list.search.saveDialogTitle': '条件を保存',
+  'projects.list.search.saveDialogNameLabel': '保存名',
+  'projects.list.search.saveDialogNamePlaceholder': '例：Python 案件（リモート）',
+  'projects.list.search.saveDialogConfirm': '保存',
+  'projects.list.search.saveDialogBodyPrefix': '次の条件をこのブラウザーに保存します：',
+  'projects.list.search.saveDialogBodyEmpty': '条件を 1 つも指定していません。',
+  'projects.list.search.renameDialogTitle': '名前を変更',
+  'projects.list.search.overwriteDialogTitle': '現在の条件で上書き',
+  'projects.list.search.overwriteDialogConfirm': '上書き',
+  'projects.list.search.overwriteDialogBodySuffix':
+    '」を現在の条件で上書きします。元の条件には戻せません。',
+  'projects.list.search.removeDialogTitle': '保存した条件を削除',
+  'projects.list.search.removeDialogConfirm': '削除',
+  'projects.list.search.removeDialogBodySuffix': '」を削除します。元には戻せません。',
+  'projects.list.search.quoteOpen': '「',
+  'projects.list.search.nameError': '保存名は 1〜40 文字で入力してください。',
+  'projects.list.search.limitError': '保存できる条件は 30 件までです。',
+  // 🔴 **失敗しているのに「保存しました」と表示しない**（指示書 §5）。
+  'projects.list.search.writeError':
+    'このブラウザーに保存できませんでした（保存領域の上限か、サイトデータが遮断されています）。',
+  // 🔴 **操作ごとに語を分ける** —— 削除したのに「保存しました」と出ると、
+  //    何が起きたのかが画面から読めない。
+  'projects.list.search.savedDone': '保存しました。',
+  'projects.list.search.renamedDone': '名前を変更しました。',
+  'projects.list.search.overwrittenDone': '現在の条件で上書きしました。',
+  'projects.list.search.removedDone': '削除しました。',
+  'projects.list.search.summaryJoiner': '、',
   // 🔴 カテゴリの 7 つ（`PROJECT_CATEGORIES` と 1 対 1。写像は `lib/projects/labels.ts`）。
   'projects.category.BACKEND': 'バックエンド',
   'projects.category.FRONTEND': 'フロントエンド',
@@ -4686,6 +4999,15 @@ const ja = {
   'chat.projectCard.countUnit': '件',
   'chat.projectCard.open': '案件詳細を開く',
   'chat.projectCard.quote': '条件を引用',
+  // ✅ 2026-10-29（紺野）: 案件カードの「案件詳細を開く」はチャットを離れずに右の欄（スマホは全画面）で開く。
+  'chat.projectPanel.loading': '読み込んでいます',
+  'chat.projectPanel.failed': 'この案件は表示できません',
+  'chat.projectPanel.openPage': '案件のページで開く',
+  'chat.projectPanel.close': '閉じる',
+  'chat.projectPanel.status': '状態',
+  'chat.projectPanel.headcount': '募集人数',
+  'chat.projectPanel.headcountUnit': '名',
+  'chat.projectPanel.summary': '案件の概要',
   'chat.compose.write': '書く',
   'chat.compose.preview': 'プレビュー',
   'chat.compose.previewEmpty': 'プレビューする内容がありません',
@@ -4712,6 +5034,31 @@ const ja = {
   'chat.compose.pending': 'まもなく送信します',
   'chat.compose.undo': '取り消す',
   'chat.compose.sendNow': '今すぐ送る',
+  // ✅ 2026-10-29（F-038 ⑮）: 送った発言をその場で出す（5 秒の取り消し待ちをやめた）。上の 3 つは使わなくなったが、キーは消さない（追加のみ）。
+  'chat.compose.outbox.sending': '送信中',
+  'chat.compose.outbox.uploading': 'アップロード中',
+  'chat.compose.outbox.failed': '送れませんでした',
+  'chat.compose.outbox.resend': '再送',
+  'chat.compose.outbox.discard': '取り消す',
+  // ✅ 2026-10-29（F-038 ⑯）: 左の列の並び替え（この端末に覚える）。
+  'chat.rail.reorder': '並び替え',
+  'chat.rail.reorderDone': '完了',
+  'chat.rail.reorderReset': '最初の並びに戻す',
+  'chat.rail.reorderLabel': '左の列の並び',
+  'chat.rail.reorderHint': '並びはこの端末に保存されます',
+  'chat.rail.reorderMoveUp': 'を上へ',
+  'chat.rail.reorderMoveDown': 'を下へ',
+  // ✅ 2026-10-29（F-038 ⑰）: この会話の中を検索する。
+  'chat.search.open': 'この会話を検索',
+  'chat.search.close': '検索を閉じる',
+  'chat.search.label': 'この会話の発言を検索',
+  'chat.search.placeholder': '発言の本文で検索',
+  'chat.search.hint': '2 文字以上で検索します',
+  'chat.search.loading': '検索しています',
+  'chat.search.empty': '見つかりませんでした',
+  'chat.search.failed': '検索できませんでした。もう一度お試しください',
+  'chat.search.results': '検索結果（新しい順・50 件まで）',
+  'chat.search.notLoaded': 'この発言の位置まで読み込めませんでした',
   'chat.compose.template.label': '定型文を入れる',
   'chat.compose.template.placeholder': '定型文を選ぶ',
   'chat.compose.template.interview': '面談日程の候補',

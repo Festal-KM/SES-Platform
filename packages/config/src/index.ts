@@ -88,3 +88,4 @@ export {
   TENANT_NAME_MAX_LENGTH,
   USAGE_GAP_CHECK_LOOKBACK_DAYS,
 } from './limits.js';
+export { createRoleAccountAccess, ROLE_ACCOUNT_ROLES, ROLE_ACCOUNT_PASSWORD, type RoleAccount } from './nonproduction-accounts.js';

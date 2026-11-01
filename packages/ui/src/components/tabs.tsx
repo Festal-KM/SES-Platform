@@ -41,6 +41,7 @@ import * as TabsPrimitive from '@radix-ui/react-tabs';
 import type { ReactNode } from 'react';
 import { Icon, type IconName } from '../icons.js';
 import { cn } from '../lib/cn.js';
+import { Badge } from './badge.js';
 import { TAB_BAR_HEIGHT_CLASS } from '../lib/layout-tokens.js';
 import { DISABLED_CLASSES, FOCUS_RING_CLASSES, TRANSITION_CLASSES } from '../lib/state-classes.js';
 
@@ -52,6 +53,7 @@ export type TabsItem = {
   readonly value: string;
   /** タブの語（`packages/i18n`）。 */
   readonly label: string;
+  readonly count?: number;
   /**
    * ✅ 2026-10-13（`docs/design-system.md` §3.5）: タブの印。
    * 🔴 **印であって意味ではない**（`aria-hidden` は `Icon` が立てる）。語はラベルが担うので
@@ -81,6 +83,17 @@ export type TabsProps = {
   readonly defaultValue?: string;
   /** タブ帯の読み上げ名（`packages/i18n`。`aria-label`）。 */
   readonly label: string;
+  /**
+   * ✅✅ **2026-10-19: タブ帯の右端に置く操作**（`S-010` の検索エリアの
+   * 「条件を保存」「折りたたむ / 展開する」）。
+   *
+   * 🔴 **画面側でタブ帯を自作させないためのスロットである。** これが無いと、
+   *    「タブの右にボタンを置きたい」だけの理由で `role="tablist"` を画面に書くことになり、
+   *    Radix が持つキーボード操作（←→ / Home / End）と `aria-selected` がその画面だけ欠ける
+   *    （`tests/static/ui-primitive-single-impl.test.ts` が防いでいる二重実装そのもの）。
+   * 🔴 **渡さなければ帯の形は 1px も変わらない**（既存 6 画面に影響が無い）。
+   */
+  readonly headerRight?: ReactNode;
   readonly className?: string;
   readonly 'data-testid'?: string;
 };
@@ -91,6 +104,7 @@ export function Tabs({
   onValueChange,
   defaultValue,
   label,
+  headerRight,
   className,
   ...passThrough
 }: TabsProps) {
@@ -114,14 +128,32 @@ export function Tabs({
       defaultValue={value === undefined ? (defaultValue ?? first.value) : undefined}
       {...passThrough}
     >
-      <TabsPrimitive.List className={TABS_LIST_CLASSES} aria-label={label}>
-        {items.map((item) => (
-          <TabsPrimitive.Trigger key={item.value} value={item.value} className={TABS_TRIGGER_CLASSES}>
-            {item.icon === undefined ? null : <Icon name={item.icon} size="md" />}
-            {item.label}
-          </TabsPrimitive.Trigger>
-        ))}
-      </TabsPrimitive.List>
+      {/* 🔴 `headerRight` が無いときは**帯そのものをそのまま返す**（器を 1 つ増やさない。
+          器を常に入れると、`flex-wrap` で折り返していた既存の 4 タブの帯の挿るまいが変わる）。 */}
+      {headerRight === undefined ? (
+        <TabsPrimitive.List className={TABS_LIST_CLASSES} aria-label={label}>
+          {items.map((item) => (
+            <TabsPrimitive.Trigger key={item.value} value={item.value} className={TABS_TRIGGER_CLASSES}>
+              {item.icon === undefined ? null : <Icon name={item.icon} size="md" />}
+              {item.label}
+              {item.count === undefined ? null : <Badge variant="brand">{item.count}</Badge>}
+            </TabsPrimitive.Trigger>
+          ))}
+        </TabsPrimitive.List>
+      ) : (
+        <div className={TABS_HEADER_ROW_CLASSES}>
+          <TabsPrimitive.List className={cn(TABS_LIST_CLASSES, 'min-w-0 px-0')} aria-label={label}>
+            {items.map((item) => (
+              <TabsPrimitive.Trigger key={item.value} value={item.value} className={TABS_TRIGGER_CLASSES}>
+                {item.icon === undefined ? null : <Icon name={item.icon} size="md" />}
+                {item.label}
+                {item.count === undefined ? null : <Badge variant="brand">{item.count}</Badge>}
+              </TabsPrimitive.Trigger>
+            ))}
+          </TabsPrimitive.List>
+          <div className={TABS_HEADER_RIGHT_CLASSES}>{headerRight}</div>
+        </div>
+      )}
       {items.map((item) => (
         <TabsPrimitive.Content key={item.value} value={item.value}>
           {item.content}
@@ -130,6 +162,27 @@ export function Tabs({
     </TabsPrimitive.Root>
   );
 }
+
+/**
+ * ✅✅ **タブ帯と右端の操作を 1 行に並べる器**（2026-10-19。`headerRight` を渡したときだけ）。
+ *
+ * 🔴 **高さは 48px を下限にする**（`min-h-12`）—— 帯の中に 36px のボタンが
+ *    入るため、帯単体の 40px（`TAB_BAR_HEIGHT_CLASS`）では上下の余白が 2px しか残らない。
+ * 🔴🔴 **`h-12`（固定）にしない。** この器は `flex-wrap` を持ち、右の操作群も
+ *    「狭いときは折り返す」と宣言している。高さを固定すると、折り返した 2 行目が
+ *    48px の箱から溢れて**下線と本文に重なる**（375px 幅で実際に折り返す）。
+ *    `CLAUDE.md` §13.3「Tier 3 の画面をモバイルで破綻させない」。
+ *    条件バー（`FILTER_SUMMARY_BAR_CLASSES`）を `min-h-11` にしたのと**同じ判断**である。
+ * 🔴 **下端の 1px で帯を閉じる** —— 帯と本文の境界はここに 1 本だけ置く
+ *    （§7.9「階層は border と background の差で表す」。影を使わない）。
+ * 🔴 **帯の面（`bg-surface`）を消す** —— この器は白いカードの中に入るので、
+ *    帯だけが 2 重の面になる（`px-0` と対で呼び出し側が指定する）。
+ */
+export const TABS_HEADER_ROW_CLASSES =
+  'flex min-h-12 flex-wrap items-center justify-between gap-2 border-b border-border px-4';
+
+/** 帯の右端の操作群。🔴 **狭いときは折り返す**（横に溢れさせない。§S-003 と同じ判断）。 */
+export const TABS_HEADER_RIGHT_CLASSES = 'flex min-w-0 flex-wrap items-center gap-2';
 
 /**
  * タブ帯。

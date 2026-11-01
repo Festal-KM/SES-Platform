@@ -48,6 +48,7 @@ export function foundationTemplate(environment) {
       Properties: {
         BucketName: sub(`${prefix}-files-` + '${AWS::AccountId}-${AWS::Region}'),
         VersioningConfiguration: { Status: 'Enabled' },
+        ...(environment === 'development' ? { CorsConfiguration: { CorsRules: [{ AllowedOrigins: ['https://dev-es.bizorch.com'], AllowedMethods: ['GET', 'PUT', 'HEAD'], AllowedHeaders: ['*'], ExposedHeaders: ['ETag', 'x-amz-version-id'], MaxAge: 3600 }] } } : {}),
         OwnershipControls: { Rules: [{ ObjectOwnership: 'BucketOwnerEnforced' }] },
         PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true },
         BucketEncryption: { ServerSideEncryptionConfiguration: [{ BucketKeyEnabled: true, ServerSideEncryptionByDefault: { SSEAlgorithm: 'aws:kms', KMSMasterKeyID: attr('StorageKey', 'Arn') } }] },
@@ -79,6 +80,8 @@ export function foundationTemplate(environment) {
         Policies: [{ PolicyName: 'environment-files-only', PolicyDocument: { Version: '2012-10-17', Statement: [
           { Effect: 'Allow', Action: ['s3:ListBucket', 's3:GetBucketVersioning'], Resource: attr('Files', 'Arn') },
           { Effect: 'Allow', Action: ['s3:GetObject', 's3:GetObjectVersion', 's3:PutObject', 's3:DeleteObject', 's3:DeleteObjectVersion'], Resource: sub('${Files.Arn}/*') },
+          // 配備の証跡とビルド元をアプリから書き換えさせない。業務ファイルとは分ける。
+          { Effect: 'Deny', Action: 's3:*', Resource: [sub('${Files.Arn}/releases/*'), sub('${Files.Arn}/bootstrap/*')] },
           { Effect: 'Allow', Action: ['kms:Decrypt', 'kms:Encrypt', 'kms:GenerateDataKey'], Resource: attr('StorageKey', 'Arn'), Condition: { StringEquals: { 'kms:ViaService': sub('s3.${AWS::Region}.amazonaws.com') } } },
           // 他のロール・追加ポリシーを誤って付けても環境を越えない。
           { Effect: 'Deny', Action: 's3:*', NotResource: [attr('Files', 'Arn'), sub('${Files.Arn}/*')] },

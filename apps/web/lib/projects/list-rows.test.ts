@@ -55,6 +55,7 @@ function hostView(overrides: Partial<HostProjectView> = {}): HostProjectView {
   return {
     ...sharedView(),
     audience: 'HOST',
+    internalUnitPrice: 900_000,
     visibleToCount: 3,
     publishStatus: 'PUBLISHED',
     ...overrides,
@@ -68,6 +69,21 @@ function partnerView(overrides: Partial<PartnerProjectView> = {}): PartnerProjec
 function query(overrides: Partial<ProjectListQuery> = {}): ProjectListQuery {
   return { limit: 50, ...overrides };
 }
+
+describe('仕入単価と卸単価', () => {
+  it('ホストは内部単価と外部公開レンジを別々に表示する', () => {
+    const row = projectListRow(hostView());
+    expect(row.purchaseUnitPrice).toBe('90 万円');
+    expect(row.unitPrice).toBe('65 万円');
+    expect(projectListRow(hostView({ internalUnitPrice: null })).purchaseUnitPrice).toBe('—');
+    expect(projectListRow(hostView({ internalUnitPrice: 0 })).purchaseUnitPrice).toBe('0 万円');
+  });
+  it('取引先の表示値に仕入単価を入れない', () => {
+    const row = projectListRow(partnerView());
+    expect(row.purchaseUnitPrice).toBeNull();
+    expect(row.unitPrice).toBe('65 万円');
+  });
+});
 
 describe('必須要件の要約（docs/04 §S-010 の「必須要件の要約」列）', () => {
   it('スキル名 + 必要年数で 1 件を表す', () => {
@@ -165,6 +181,7 @@ describe('🔴 F-014 AC-4 / BR-07: 取引先の行に公開先の情報が入ら
       'moreMustRequirements',
       'mustRequirements',
       'name',
+      'purchaseUnitPrice',
       // ✅ 2026-10-15: `稼働形態` を `勤務地` から分けた（`#101` の C）。**値は元から出ていたもの**であり、
       //    取引先に新しく見えるものは 1 つも無い（商流情報ではない）。
       'remoteMode',
@@ -189,7 +206,7 @@ describe('1 行の表示値', () => {
 
     expect(row.status).toBe('募集中');
     // ✅ 2026-10-15: 一覧の表は万円表記（`#101` の C）。詳細・承認は円のままである。
-    expect(row.unitPrice).toBe('65〜75 万円');
+    expect(row.unitPrice).toBe('65 万円');
     expect(row.startDate).toBe('2026-10-01');
     expect(row.headcount).toBe('2 名');
     expect(row.updatedOn).toBe('2026-09-05');
@@ -325,8 +342,8 @@ describe('🔴 絞込 0 と初回空の判定（docs/04 §10.1 `S-010`）', () =
 //    ②切替のリンクは**検索条件といま見ているページ（`cursor`）を保つ**
 //    ③許可リスト外の値は効かない（URL 直打ちで壊れない）
 describe('🔴 列表示切替の対象（格納できる列）', () => {
-  it('✅ 2026-10-15: 外せるのは `必須要件の要約` と `公開先の設定状況` の 2 列である', () => {
-    expect(PROJECT_HIDEABLE_COLUMN_IDS).toEqual(['mustRequirements', 'visibility']);
+  it('必須要件の要約・公開先の設定状況・想定仕入単価の表示を切り替えられる', () => {
+    expect(PROJECT_HIDEABLE_COLUMN_IDS).toEqual(['mustRequirements', 'visibility', 'purchaseUnitPrice']);
   });
 
   // ✅✅ **2026-10-15（同日の 2 回目）: 既定で格納する列は無くなった**—— [Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101)
@@ -376,7 +393,7 @@ describe('🔴 列表示切替のリンク（条件とページの位置を保�
     // 2 列隠している状態から 1 列だけ戻すと、もう片方は残る。
     expect(
       projectColumnToggleHref(query({ q: '基幹' }), null, PROJECT_HIDEABLE_COLUMN_IDS, 'visibility'),
-    ).toBe('/projects?q=%E5%9F%BA%E5%B9%B9&hide=mustRequirements');
+    ).toBe('/projects?q=%E5%9F%BA%E5%B9%B9&hide=mustRequirements%2CpurchaseUnitPrice');
   });
 
   it('🔴 ページングのリンクでも列の表示状態が落ちない', () => {
@@ -399,6 +416,8 @@ describe('🔴 帯の primary（docs/04 §S-010「案件を登録（primary、�
       labelKey: 'projects.list.register',
       href: '/projects/new',
       kind: 'ACTION',
+      // 2026-10-16: 人間の明示指示「＋アイコンもつけて」。
+      icon: 'plus',
     });
   });
 

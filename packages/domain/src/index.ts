@@ -132,3 +132,5 @@ export * from './retention/index.js';
 // 🔴 T-10-09: 返却データ（`F-064 AC-5`。docs/05 §9.6 `export.generate` / §14.1）の CSV・ZIP エンコードとファイル契約。
 //    二重境界の判定は持たない（`packages/db` が RLS で読んだ行を CSV にするだけ）。匿名候補のファイルは存在しない。
 export * from './export/index.js';
+
+export * from './project-search.js';

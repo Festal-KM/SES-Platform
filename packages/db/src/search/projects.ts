@@ -1,3 +1,4 @@
+import { parseProjectKeywordGroups, type ProjectKeywordGroup } from '@ses/domain';
 // packages/db/src/search/projects.ts
 // 案件の検索と既定の並び（`GET /api/projects`。docs/05 §6.4 #25 / `F-015` / `S-010`）。
 // T-06-03 → 🔴 T-06-05 で `apps/web/lib/projects/list.ts` から**検索に相当する部分だけ**を
@@ -29,7 +30,7 @@ import {
   type ProjectStatus,
   type RemoteMode,
 } from '../schema-value-sets.js';
-import { freeWordAllOf, type FreeWordFilter } from './free-word.js';
+import { freeWordTerms, freeWordFilter, type FreeWordFilter } from './free-word.js';
 import { unitPriceOverlapConditions } from './unit-price-range.js';
 
 /**
@@ -57,6 +58,25 @@ export type ProjectWhereFragment = {
    */
   unitPriceMin?: null | { lte: number };
   unitPriceMax?: null | { gte: number };
+  /**
+   * ✅✅ **2026-10-16（人間の明示指示「スキル（リストから複数選択できる、or 検索）」）。**
+   *
+   * 🔴 **`project_requirements` への `some` である**（1 件でも一致すれば案件が残る = **OR**）。
+   *    `every` / `none` を置かない —— AND で絞りたくなった実装がここに現れないよう、
+   *    **型として `some` しか持たない**。
+   * 🔴 **`kind` を見ない** —— 必須（`MUST`）と尚可（`NICE`）の**どちらで一致してもよい**。
+   *    営業が「Java の案件」を探すとき、Java が尚可要件の案件を落とすのは期待と違う
+   *    （区分は一覧の `必須要件の要約` 列と詳細で読む）。
+   * 🔴 **境界の条件ではない。** `project_requirements` にも `projects` と同じ C4 が効く
+   *    （migration 20260903050000 の `project_requirements_c4_select`）ので、
+   *    パートナー文脈では**自社に公開された案件の要件しか結合されない**。
+   */
+  requirements?: { some: { skillId?: { in: string[] }; OR?: { freeText?: FreeWordFilter; skill?: { name: FreeWordFilter } }[] } };
+  publicMemo?: FreeWordFilter;
+  remarks?: FreeWordFilter;
+  developmentPhases?: { hasSome: string[] };
+  developmentMethod?: string;
+  utilizationRate?: { gte?: number; lte?: number };
   OR?: ProjectWhereFragment[];
   /**
    * 🔴 **単価レンジの 2 条件はここに入る**（`OR` ではなく `AND`）。フリーワードが
@@ -73,6 +93,14 @@ export type ProjectWhereFragment = {
  *    この型に構造的に適合する（`EngineerSearchCriteria` と同じ契約の結び方）。
  */
 export type ProjectSearchCriteria = {
+  readonly developmentPhases?: readonly string[];
+  readonly developmentMethod?: string;
+  readonly utilizationBand?: string;
+  readonly utilizationMin?: number;
+  readonly utilizationMax?: number;
+  readonly keywordGroups?: string;
+  /** 認証文脈からだけ指定する。リクエストから受け取らない。 */
+  readonly searchInternalRemarks?: boolean;
   readonly status?: ProjectStatus;
   /** 開始日が**この日以降**（`YYYY-MM-DD`）。 */
   readonly startFrom?: string;
@@ -112,6 +140,17 @@ export type ProjectSearchCriteria = {
   readonly category?: ProjectCategory;
   readonly sourceKind?: ProjectSourceKind;
   readonly parallelOk?: boolean;
+  /**
+   * ✅✅ **2026-10-16（人間の明示指示「スキル（リストから複数選択できる、or 検索）」）。**
+   *
+   * 🔴 **OR である** —— 指定したスキルの**いずれか**を要件に持つ案件が残る。選んだ全部を
+   *    満たす案件（AND）に絞ると、2 つ選んだ瞬間にほぼ 0 件になり、使えない絞り込みになる。
+   * 🔴 **グローバル辞書（`Skill`）の ID** である（`F-010`）。ここで名前を照合しない ——
+   *    表記ゆれの吸収は `SkillAlias` の仕事であり、検索の述語に 2 本目の正規化を作らない。
+   * 🔴 **空配列を渡さない**（呼び出し側が `undefined` に畳む）。`{ in: [] }` は**常に偽**なので、
+   *    「スキルを 1 つも選んでいない」が**全件 0 件**になる。
+   */
+  readonly skills?: readonly string[];
   /**
    * ✅ **2026-10-16（人間の明示指示「チェックボックス『募集中のみ』。ON で ステータス = 募集中に
    *    絞る（ステータスセレクトと併用時は AND）」）。**
@@ -199,17 +238,6 @@ export function assertStatusPriority(priority: readonly ProjectStatus[]): void {
 assertStatusPriority(PROJECT_STATUS_LIST_PRIORITY);
 
 /**
- * 🔴 フリーワードの対象列（`docs/04` §S-010 の検索条件）。
- *
- * 🔴 **`end_client_name` を検索対象にしない** —— ホストだけが一致する検索を作ると、`where` が
- *    ロールで分岐して「一覧と `COUNT` が同じ述語」という担保（docs/05 §4.8）が崩れる
- *    （`F-013 AC-2` の趣旨にも反する）。`ProjectWhereFragment` に列自体を持たせていない。
- * 🔴 フリーワードは索引で加速されない（`free-word.ts` 冒頭の実測）。母集団は RLS の C4 が
- *    テナント / 公開範囲で絞っており、その中を走査する。
- */
-const PROJECT_FREE_WORD_COLUMNS = ['name', 'publicSummary'] as const;
-
-/**
  * ✅ **2026-10-16: 「募集中のみ」が指す状態**（人間の明示指示のチェックボックス）。
  *
  * 🔴 **`'OPEN'` を直書きしない。** 状態の値集合は 2026-10-16 に 3 値から 2 値へ変わった
@@ -244,19 +272,45 @@ export function projectSearchWhere(criteria: ProjectSearchCriteria): ProjectWher
     //    人材検索（`#15`）と同じものを通る（T-06-03 の申し送りの決着）。
     ...unitPriceOverlapConditions(criteria),
   ];
-  if (criteria.q !== undefined) {
-    // ✅ **2026-10-16: 複数語 AND**（語は AND、列は OR。`freeWordAllOf` の 🔴）。
-    //    🔴 空白だけの入力は `null`（条件なし）になる —— 空語の `contains` は全件に一致するので、
-    //    「絞り込んだのに全件」を作らない。
-    const freeWord = freeWordAllOf(criteria.q, PROJECT_FREE_WORD_COLUMNS);
-    if (freeWord !== null) and.push(...freeWord.AND);
+  const keywordCondition = (term: string): ProjectWhereFragment => ({ OR: [
+    { name: freeWordFilter(term) }, { publicSummary: freeWordFilter(term) },
+    { publicMemo: freeWordFilter(term) },
+    { requirements: { some: { OR: [{ freeText: freeWordFilter(term) }, { skill: { name: freeWordFilter(term) } }] } } },
+    ...(criteria.searchInternalRemarks === true ? [{ remarks: freeWordFilter(term) }] : []),
+  ] });
+  const groups: ProjectKeywordGroup[] = criteria.keywordGroups ? [...(parseProjectKeywordGroups(JSON.parse(criteria.keywordGroups)) ?? [])] : [];
+  if (criteria.q?.includes('|')) groups.unshift({ mode: 'OR', terms: criteria.q.split('|').map(term => term.trim()).filter(Boolean) });
+  for (const group of groups) {
+    const terms = group.terms.map(term => term.trim()).filter(Boolean);
+    if (terms.length) and.push(group.mode === 'AND' ? { AND: terms.map(keywordCondition) } : { OR: terms.map(keywordCondition) });
   }
+  // 従来の空白区切りANDも、新しい検索対象で一貫して照合する。
+  if (criteria.q !== undefined && !criteria.q.includes('|')) {
+    and.push(...freeWordTerms(criteria.q).map(keywordCondition));
+  }
+  if (criteria.utilizationBand === 'FULL') and.push({ utilizationRate: { gte: 100, lte: 100 } });
+  if (criteria.utilizationBand === 'HALF_TO_FULL') and.push({ utilizationRate: { gte: 50, lte: 99 } });
+  if (criteria.utilizationBand === 'UNDER_HALF') and.push({ utilizationRate: { gte: 1, lte: 49 } });
   if (criteria.recruitingOnly === true) {
     // 🔴 `status` と独立に積む（併用して矛盾したら 0 件が正しい。`recruitingOnly` の 🔴）。
     and.push({ status: RECRUITING_STATUS });
   }
+  // ✅✅ **2026-10-16: スキル（複数選択 / OR）。**
+  // 🔴 **空配列は述語を積まない。** `{ in: [] }` は常に偽であり、1 つも選んでいない状態が
+  //    **全件 0 件**になる（`ProjectSearchCriteria.skills` の 🔴）。境界側（Zod）でも
+  //    空を `undefined` に畳んでいるが、**述語の側でも落ちないようにしておく**
+  //    （この関数は API 以外の呼び手からも使われる）。
+  if (criteria.skills !== undefined && criteria.skills.length > 0) {
+    // 🔴 `AND` に積む（トップレベルに置くとフリーワードの `AND` と同じキーで衝突する
+    //    …… ことは無いが、**`OR` を内包する条件はすべて `AND` の要素として積む**という
+    //    この関数の規律に合わせる。`some` + `in` は 1 つの要素で OR を表せる）。
+    and.push({ requirements: { some: { skillId: { in: [...criteria.skills] } } } });
+  }
   return {
     ...(and.length === 0 ? {} : { AND: and }),
+    ...(criteria.developmentPhases?.length ? { developmentPhases: { hasSome: [...criteria.developmentPhases] } } : {}),
+    ...(criteria.developmentMethod === undefined ? {} : { developmentMethod: criteria.developmentMethod }),
+    ...(criteria.utilizationMin === undefined && criteria.utilizationMax === undefined ? {} : { utilizationRate: { ...(criteria.utilizationMin === undefined ? {} : { gte: criteria.utilizationMin }), ...(criteria.utilizationMax === undefined ? {} : { lte: criteria.utilizationMax }) } }),
     ...(criteria.status === undefined ? {} : { status: criteria.status }),
     // 🔴 `start_date` が未設定の案件は「開始日 X 以降」に一致しない（NULL は比較で偽）。
     //    絞り込みを掛けたときだけ落ちる挙動であり、既定（未指定）では全件が出る。

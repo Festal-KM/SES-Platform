@@ -108,6 +108,8 @@ const FORBIDDEN_ADMIN_URL_SEGMENTS: readonly string[] = ['gate', 'gates', 'retry
  */
 const ALLOWED_MUTATING_ADMIN_ROUTES: ReadonlyMap<string, readonly string[]> = new Map([
   ['/api/admin/auth/signin', ['POST']],
+  // 開発・デモ限定の合成アカウント選択。通常の運営者認証と2FAは必須のまま。
+  ['/api/admin/auth/test-signin', ['POST']],
   ['/api/admin/auth/signout', ['POST']],
   ['/api/admin/auth/2fa/setup', ['POST']],
   ['/api/admin/auth/2fa/verify', ['POST']],

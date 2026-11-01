@@ -1,0 +1,30 @@
+name: AWS運用スクリプト
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/**'
+      - 'scripts/aws/**'
+      - 'scripts/aws-*.mjs'
+      - '.github/workflows/aws-tools.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/**'
+      - 'scripts/aws/**'
+      - 'scripts/aws-*.mjs'
+      - '.github/workflows/aws-tools.yml'
+permissions:
+  contents: read
+jobs:
+  tools:
+    name: AWS操作を伴わない運用テスト
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test infra/aws/*.test.mjs scripts/aws/*.test.mjs
+      - run: bash -n scripts/aws-bootstrap-development.sh

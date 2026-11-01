@@ -56,7 +56,7 @@ test.describe('モバイルビューポートのスモーク（S-010 / S-011 は
         session.page.getByRole('heading', { name: t('projects.list.title') }),
       ).toBeVisible();
 
-      // ③ 判断材料が可視: 母集団の明示 + 並び順の説明 + `seed:isolation` の公開案件の行。
+      // ③ 母集団・一覧のメタ情報と公開案件の行が可視。旧注記のIDもメタ情報の器に残す。
       //    🔴 行が実際に描画されることまで見る（「空だから溢れなかった」を green にしない）。
       await expect(session.page.getByTestId('project-list-population')).toBeVisible();
       await expect(session.page.getByTestId('project-list-order-note')).toBeVisible();

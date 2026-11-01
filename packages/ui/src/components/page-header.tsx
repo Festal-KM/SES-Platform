@@ -29,6 +29,8 @@
 //    サイドバーの形態の境界（`xl`）を帯に持ち込まない —— 帯は幅で形を変えない）。
 import type { ComponentType } from 'react';
 import type { SidebarLinkProps } from './sidebar.js';
+// ✅ 2026-10-16: primary の語の前に置く印（人間の明示指示「＋アイコンもつけて」）。
+import { Icon, type IconName } from '../icons.js';
 import { cn } from '../lib/cn.js';
 import { PRIMARY_LINK_CLASSES } from '../lib/link-classes.js';
 import { FOCUS_RING_CLASSES, TRANSITION_CLASSES } from '../lib/state-classes.js';
@@ -53,6 +55,12 @@ export type PageHeaderCrumb = {
 export type PageHeaderAction = {
   readonly label: string;
   readonly href: string;
+  /**
+   * ✅ **2026-10-16（人間の明示指示「＋アイコンもつけて」）: 語の前に置く印。**
+   * 🔴 **`IconName` で受ける**（部品が自分でアイコンを選ばない。写像は `@ses/ui` の 1 つに閉じる）。
+   * 🔴 **語を置き換えない** —— アイコンだけの primary を作らない（押す前に何が起きるか分からない）。
+   */
+  readonly icon?: IconName;
 };
 
 export type PageHeaderProps = {
@@ -149,6 +157,8 @@ export function PageHeader({
         {title === null ? null : <h1 className={TITLE_CLASSES}>{title}</h1>}
         {action === null ? null : (
           <Link className={ACTION_CLASSES} href={action.href} data-testid={testId}>
+            {/* 🔴 印は語の前（読み上げでは `aria-hidden` のまま飛ばされ、語だけが読まれる）。 */}
+            {action.icon === undefined ? null : <Icon name={action.icon} className="mr-1.5" />}
             {action.label}
           </Link>
         )}

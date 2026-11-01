@@ -72,6 +72,9 @@ function none(): string {
  * 🔴 **片側だけのレンジを `—` に畳まない**（「60 万円以上」は取引先の判断に使える情報である）。
  */
 export function formatProjectUnitPriceRange(min: number | null, max: number | null): string {
+  if (min !== null && min === max) {
+    return `${formatThousands(min)} ${t('projects.unitPrice.unit')}`;
+  }
   return formatUnitPriceRange(min, max, {
     unit: t('projects.unitPrice.unit'),
     orMore: t('projects.detail.unitPrice.orMore'),
@@ -115,7 +118,7 @@ export function projectConditionRows(view: ProjectSummaryLike): readonly Project
   return [
     {
       key: 'unitPrice',
-      label: t('projects.unitPrice.label'),
+      label: t('projects.basic.unitPrice'),
       value: formatProjectUnitPriceRange(view.unitPriceMin, view.unitPriceMax),
     },
     {

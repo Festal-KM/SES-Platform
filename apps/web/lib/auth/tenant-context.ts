@@ -56,7 +56,7 @@ export async function buildTenantCtx(
     { deviceKind: meta.deviceKind },
     // 🔴 **渡さないと `ENFORCED`（従来どおり）に倒れる**（`resolveTenantCtx` の既定）。
     //    緩める判断は起動時の 1 箇所が持ち、ここは結果を運ぶだけである。
-    twoFactorPolicy(),
+    twoFactorPolicy(claims.userId),
   );
 }
 

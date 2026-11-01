@@ -30,6 +30,16 @@ function rejectedVariable(input: Record<string, string | undefined>, variable: s
 }
 
 describe('同一AWSアカウントでも環境別の接続先を強制する', () => {
+  it('AWS開発の公開HTTPS画面は固定資格情報なしで自環境S3に接続する', () => {
+    const input = { ...sharedEnv('development'), APP_URL: 'https://dev-es.bizorch.com', S3_ENDPOINT: undefined, S3_ACCESS_KEY_ID: undefined, S3_SECRET_ACCESS_KEY: undefined };
+    expect(loadAppEnv(input).S3_ENDPOINT).toBeUndefined();
+    rejectedVariable({ ...input, S3_ACCESS_KEY_ID: 'fixed-key' }, 'S3_ACCESS_KEY_ID');
+    rejectedVariable({ ...input, APP_URL: 'http://dev-es.bizorch.com' }, 'APP_URL');
+    rejectedVariable({ ...input, S3_BUCKET: sharedEnv('production').S3_BUCKET }, 'S3_BUCKET');
+  });
+  it('従来の開発環境のS3互換サービス設定は省略できない', () => {
+    rejectedVariable(buildValidEnv('development', { S3_ENDPOINT: undefined }), 'S3_ENDPOINT');
+  });
   it.each(['development', 'demo', 'production'] as const)('%sの専用リソースなら起動可能', (kind) => {
     expect(loadAppEnv(sharedEnv(kind)).AWS_ISOLATION_MODE).toBe('resource');
   });

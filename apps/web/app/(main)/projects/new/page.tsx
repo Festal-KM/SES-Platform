@@ -16,6 +16,7 @@ import { PageBody } from '@ses/ui';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { isProjectEditorRole } from '../../../../lib/projects/policy';
 import { listSkills } from '../../../../lib/skills/service';
+import { projectAssigneeOptions } from '../../../../lib/projects/service';
 import { ProjectForm } from '../_form/project-form';
 // 🔴 登録直後の遷移先はサーバ / クライアントの共有モジュールから読む
 //    （`'use client'` のモジュールから値 import しない。`lib/projects/created-href.ts` 冒頭）。
@@ -60,6 +61,7 @@ export default async function NewProjectPage() {
         mode="CREATE"
         projectId={null}
         initial={EMPTY_PROJECT_FORM_VALUES}
+        assigneeOptions={await projectAssigneeOptions(outcome.ctx)}
         skillDictionary={skillDictionary}
         statusOptions={projectStatusOptions}
         remoteModeOptions={projectRemoteModeOptions}

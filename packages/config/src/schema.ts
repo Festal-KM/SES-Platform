@@ -282,9 +282,9 @@ const envUnion = z.discriminatedUnion('APP_ENV', [
       CLAMAV_PORT: z.coerce.number().int().positive(),
       SMTP_HOST: z.string().min(1),
       SMTP_PORT: z.coerce.number().int().positive(),
-      S3_ENDPOINT: z.string().url(),
-      S3_ACCESS_KEY_ID: z.string().min(1),
-      S3_SECRET_ACCESS_KEY: z.string().min(1),
+      S3_ENDPOINT: z.string().url().optional(),
+      S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+      S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
       MAIL_PROVIDER_DAILY_QUOTA: z.coerce.number().int().positive().default(200),
     }),
 
@@ -407,8 +407,14 @@ function checkResourceIsolation(data: EnvUnionData, ctx: IssueSink): void {
     if (!data.APP_URL.startsWith('https://')) addIssue(ctx, 'APP_URL', 'クラウドの営業デモ・本番にはHTTPSが必要です');
   } else {
     const endpoint = data.S3_ENDPOINT === undefined ? undefined : parsedUrl(data.S3_ENDPOINT);
-    if (!endpoint || !['http:', 'https:'].includes(endpoint.protocol) || !isLoopback(endpoint.hostname)) {
+    if (data.S3_ENDPOINT !== undefined && (!endpoint || !['http:', 'https:'].includes(endpoint.protocol) || !isLoopback(endpoint.hostname))) {
       addIssue(ctx, 'S3_ENDPOINT', '開発のS3互換サービスはループバックのHTTP／HTTPS接続に限定します');
+    }
+    if (data.S3_ENDPOINT === undefined) {
+      for (const variable of ['S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const) {
+        if (data[variable] !== undefined) addIssue(ctx, variable, 'AWS開発のS3接続はIAMロールを使用してください');
+      }
+      if (!data.APP_URL.startsWith('https://')) addIssue(ctx, 'APP_URL', 'AWS開発画面にはHTTPSが必要です');
     }
   }
 }
@@ -422,6 +428,11 @@ function crossFieldChecks(data: EnvUnionData, ctx: IssueSink): void {
   const isProduction = data.APP_ENV === 'production';
   const resourceIsolation = data.AWS_ISOLATION_MODE === 'resource';
   if (resourceIsolation) checkResourceIsolation(data, ctx);
+  if (data.APP_ENV === 'development' && (!resourceIsolation || data.S3_ENDPOINT !== undefined)) {
+    for (const variable of ['S3_ENDPOINT', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const) {
+      if (data[variable] === undefined) addIssue(ctx, variable, 'ローカルのS3互換サービスの接続設定が必要です');
+    }
+  }
 
   if (isProduction && !data.APP_URL.startsWith('https://')) {
     addIssue(ctx, 'APP_URL', 'production では https:// で始まる必要があります');

@@ -3,12 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { conversationLayoutFor, conversationTitleFor, isSendKey } from './layout';
 
 describe('conversationLayoutFor', () => {
-  it('案件スレッドは話題型（全員左寄せ）', () => {
-    expect(conversationLayoutFor('PROJECT')).toBe('topic');
-  });
-
-  it('企業スレッドは会話型（自分は右）', () => {
-    expect(conversationLayoutFor('COMPANY')).toBe('chat');
+  it('✅ 2026-10-29: どの部屋でも会話型（自分の発言は右）。案件スレッドも同じ', () => {
+    for (const kind of ['PROJECT', 'COMPANY', 'DM', 'GROUP'] as const) expect(conversationLayoutFor(kind)).toBe('chat');
   });
 });
 

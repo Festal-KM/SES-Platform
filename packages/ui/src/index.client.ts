@@ -76,7 +76,14 @@ export type {
   DropdownMenuLinkItem,
   DropdownMenuProps,
 } from './components/dropdown-menu.js';
-export { TABS_LIST_CLASSES, TABS_MAX_ITEMS, TABS_TRIGGER_CLASSES, Tabs } from './components/tabs.js';
+export {
+  TABS_HEADER_RIGHT_CLASSES,
+  TABS_HEADER_ROW_CLASSES,
+  TABS_LIST_CLASSES,
+  TABS_MAX_ITEMS,
+  TABS_TRIGGER_CLASSES,
+  Tabs,
+} from './components/tabs.js';
 export type { TabsItem, TabsItems, TabsProps } from './components/tabs.js';
 export { Toast } from './components/toast.js';
 export type { ToastKind, ToastProps, ToastSubject } from './components/toast.js';

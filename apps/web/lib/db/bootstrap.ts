@@ -19,6 +19,7 @@ import {
   GATE_FAIL_RATE_BASELINE_DAYS,
   GATE_FAIL_RATE_WINDOW_HOURS,
   initializeRuntimeConfig,
+  createRoleAccountAccess,
   // ✅ 2026-10-16: demo でだけ 2FA の設定強制を外す（判定式は @ses/config の 1 本）。
   isTwoFactorRelaxedEnv,
   SCHEDULER_HEARTBEAT_STALE_HOURS,
@@ -126,6 +127,7 @@ let cachedGuardDutyWebhookSecrets: readonly string[] | null = null;
 // 🔴 **`null` が「まだ決めていない」である**（`ENFORCED` を初期値にすると、起動が未完了でも
 //    「厳しいほうで動いている」と読めてしまい、不変条件の破れが隠れる）。
 let cachedTwoFactorPolicy: TwoFactorPolicy | null = null;
+let cachedRoleAccountAccess = createRoleAccountAccess({ APP_ENV: 'production', AWS_ISOLATION_MODE: 'account' });
 let cachedSendingDomainRuntime: { readonly region: string; readonly verificationRequired: boolean } | null =
   null;
 /**
@@ -319,6 +321,7 @@ export function ensureDbConfigured(): void {
   // 🔴 **`demo` ではテナント利用者の 2 要素認証を丸ごと止める**（設定の強制も提示の要求も）。
   //    運営者（`PlatformUser`）は別経路であり、環境を問わず必須のままである（§10.5）。
   cachedTwoFactorPolicy = isTwoFactorRelaxedEnv(env.APP_ENV) ? 'RELAXED' : 'ENFORCED';
+  cachedRoleAccountAccess = createRoleAccountAccess(env);
   // 🔴 T-05-04: ストレージ（docs/05 §14.1 / §14.2 / docs/03 §4.5）。値の出所は `packages/config`
   //    だけであり、ルートも画面も `process.env` を読まない（`CLAUDE.md` §3.5）。
   //    🔴 実装種別（`connectors.objectStore`）もここで確定させる。**リクエストごとに
@@ -644,7 +647,7 @@ export function inviteUrlRuntime(): InviteUrlRuntime {
  * 🔴 **呼び手は `lib/auth/tenant-context.ts` の 1 箇所**である（ctx を組む唯一の経路）。
  *    ここを他から呼んで 2FA を回避する経路を作らない。
  */
-export function twoFactorPolicy(): TwoFactorPolicy {
+export function twoFactorPolicy(userId?: string): TwoFactorPolicy {
   // 🔴🔴 **ここで `ensureDbConfigured()` を呼ばない。**（2026-10-16。CI が落ちて分かった）
   //    呼ぶと**環境変数の一式が揃っていない経路**（分離テストのハーネスなど）で
   //    `EnvValidationError` が飛び、**2 要素認証とは無関係の失敗に化ける** ——
@@ -654,8 +657,11 @@ export function twoFactorPolicy(): TwoFactorPolicy {
   //    経路で 2FA が黙って無効になる。
   // ⚠️ 実アプリでは必ず解決済みである —— 呼び手（`resolveSignInNext` / `buildTenantCtx`）は
   //    いずれも**先に DB を読んでおり**、その時点で `ensureDbConfigured()` を通っている。
-  return cachedTwoFactorPolicy ?? 'ENFORCED';
+  return cachedRoleAccountAccess.twoFactorPolicy(userId, cachedTwoFactorPolicy ?? 'ENFORCED');
 }
+
+/** 未初期化では本番相当の無効設定を返す。 */
+export function roleAccountAccess() { ensureDbConfigured(); return cachedRoleAccountAccess; }
 
 /**
  * 🔴 `#71` / `#72` が使う起動時解決済みの値（docs/05 §8.3）。

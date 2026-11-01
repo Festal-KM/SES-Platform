@@ -51,6 +51,7 @@ type ChatMessageItemState = Pick<ChatConversationState,
   | 'jumpToQuoted'
   | 'quoteMissingIds'
   | 'mentionsMe'
+  | 'highlightId'
 >;
 
 /**
@@ -59,7 +60,7 @@ type ChatMessageItemState = Pick<ChatConversationState,
  * 🔴 色はトークンだけ（成功・警告などの状態色は使わない）。差は面と枠で付け、文字色は変えない（読みやすさを保つ）。
  */
 /** ✅ 2026-10-27（紺野「まだ区別しにくい」）: 自分の発言は濃い青に白い文字（LINE・Teams と同じ。ひと目で自分と分かる）。 */
-const MINE_SURFACE_CLASSES = 'bg-brand text-brand-fg';
+export const MINE_SURFACE_CLASSES = 'bg-brand text-brand-fg';
 /** 同僚（自社の別の人）は薄い青に青い枠。 */
 const OWN_SURFACE_CLASSES = 'border border-info-border bg-brand-bg';
 const OTHER_SURFACE_CLASSES = 'border border-border-strong bg-bg';
@@ -105,7 +106,11 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
     jumpToQuoted,
     quoteMissingIds,
     mentionsMe,
+    highlightId,
   } = conversation;
+  // ✅ 2026-10-29（F-038 ⑰）: 検索・一覧から移った発言を少しの間だけ目立たせる（現在地の色）。
+  const highlighted = highlightId === item.id;
+  const highlightClass = highlighted ? 'rounded-md bg-brand-bg transition-colors motion-reduce:transition-none' : null;
   const quoteLabels = messages.quote;
   /**
    * 吹き出しと、その下の操作（続きを読む・コピー）。🔴 自分 / 相手の吹き出しの差は**面の色だけ**
@@ -442,7 +447,8 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                     data-own="true"
                     data-layout="chat"
                     data-continued={continued ? 'true' : 'false'}
-                    className={cn('relative flex flex-col items-end gap-1', continued ? null : 'mt-3', fadeClass(item.id))}
+                    className={cn('relative flex flex-col items-end gap-1', continued ? null : 'mt-3', fadeClass(item.id), highlightClass)}
+                    data-highlighted={highlighted ? 'true' : undefined}
                     onMouseEnter={() => setHoveredId(item.id)}
                     onClick={(event) => selectOnTouch(event, item.id)}
                   >
@@ -475,7 +481,8 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                 data-testid={`chat-message-${item.id}`}
                 data-own={item.own ? 'true' : 'false'}
                 data-continued={continued ? 'true' : 'false'}
-                className={cn('relative flex gap-3', continued ? null : 'mt-3', fadeClass(item.id))}
+                className={cn('relative flex gap-3', continued ? null : 'mt-3', fadeClass(item.id), highlightClass)}
+                data-highlighted={highlighted ? 'true' : undefined}
                 onMouseEnter={() => setHoveredId(item.id)}
                 onClick={(event) => selectOnTouch(event, item.id)}
               >

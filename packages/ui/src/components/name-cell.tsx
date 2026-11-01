@@ -53,6 +53,24 @@ export const NAME_CELL_TEXT_WRAP_CLASSES = 'block';
  */
 export const NAME_CELL_LINK_CLASSES = 'font-medium text-fg underline outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2';
 
+/**
+ * ✅✅ **行全体を当たり判定にするリンク**（2026-10-16。人間の明示指示「列をクリックしたら
+ * 右側エリアに表示されるようにする。案件タイトルもリンクにしない」）。
+ *
+ * 🔴 **`<tr>` にリンクは張れない**ので、名称セルの中の `<a>` を**疑似要素で行いっぱいに
+ *    広げる**（`::after` を `position:absolute; inset:0`。親の `<tr>` が `relative`）。
+ *    行あたり `<a>` は **1 つ**であり、全セルを `<a>` で包む案（8 列 × 50 行 = 400 個）とは違う。
+ * 🔴 **クライアント JS を使わない。** この表はサーバで描く（`DataTable` 冒頭の受け入れ基準 3）。
+ * 🔴 **キーボードで到達できる** —— 実体は `<a>` であり、Tab で止まり Enter で開く。
+ *    読み上げは名称を読む（`<a>` の中身が名称だから）。
+ * 🔴 **下線を引かない。** これは「詳細画面へのリンク」ではなく**行を開く操作**であり、
+ *    人間の指示は「案件タイトルもリンクにしない」である。見た目は素の文字のままにする。
+ * ⚠️ **行の中に他の操作を置かない。** 置くとこの `::after` が上に乗って押せなくなる
+ *    （置きたくなったら、その操作に `relative z-10` を与えること）。
+ */
+export const NAME_CELL_ROW_LINK_CLASSES =
+  'font-medium text-fg outline-none after:absolute after:inset-0 after:content-[""] focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2';
+
 /** 導線の部品が受け取る props（`next/link` の `Link` がそのまま満たす）。 */
 export type NameCellLinkProps = {
   readonly href: string;
@@ -97,6 +115,11 @@ export type NameCellProps = Omit<TableCellProps, 'whitespace' | 'children' | 'ti
   /** 導線（`<a>`）または行内操作（`nameComponent`）に付ける `data-testid`。セル自身の testid は `data-testid` で渡す。 */
   readonly linkTestId?: string;
   /**
+   * ✅ **2026-10-16: 行全体を当たり判定にする**（`NAME_CELL_ROW_LINK_CLASSES` の 🔴）。
+   * 🔴 **切り詰めない** —— 行を開くのが目的であり、名称は折り返して全文が読める形にする。
+   */
+  readonly stretch?: true;
+  /**
    * ✅ **2026-10-15: 名称の前に置く小さな印**（人間が提示した案件一覧の画像: 状態の色の点）。
    *
    * 🔴 **語を持たせない。** ここに入るのは `StatusDot` のような**同じ行の語の補助**であり、
@@ -109,6 +132,7 @@ export type NameCellProps = Omit<TableCellProps, 'whitespace' | 'children' | 'ti
 export function NameCell({
   name,
   href,
+  stretch,
   linkComponent: LinkComponent = DefaultLink,
   nameComponent: NameComponent,
   linkTestId,
@@ -119,10 +143,20 @@ export function NameCell({
   return (
     <TableCell
       whitespace="normal"
-      className={cn(NAME_CELL_MIN_WIDTH_CLASS, href === null ? null : NAME_CELL_MAX_WIDTH_CLASS, className)}
+      className={cn(
+        NAME_CELL_MIN_WIDTH_CLASS,
+        // 🔴 行いっぱいのリンクのときは切り詰めない（上の 🔴）。
+        href === null || stretch === true ? null : NAME_CELL_MAX_WIDTH_CLASS,
+        className,
+      )}
       {...props}
     >
-      <span className={href === null ? NAME_CELL_TEXT_WRAP_CLASSES : NAME_CELL_TEXT_CLASSES} title={name}>
+      <span
+        className={
+          href === null || stretch === true ? NAME_CELL_TEXT_WRAP_CLASSES : NAME_CELL_TEXT_CLASSES
+        }
+        title={name}
+      >
         {/* 🔴 **印は名称の器の「中」に置く。** 器は `block`（`lg:truncate` のため）なので、
             外に素の兄弟として置くと**行が分かれて行高が 2 倍になる**（2026-10-15 の実測:
             47 → 70px）。中に置けば同じ行に流れ、切り詰めも効いたままである。
@@ -139,7 +173,11 @@ export function NameCell({
             </NameComponent>
           )
         ) : (
-          <LinkComponent href={href} className={NAME_CELL_LINK_CLASSES} data-testid={linkTestId}>
+          <LinkComponent
+            href={href}
+            className={stretch === true ? NAME_CELL_ROW_LINK_CLASSES : NAME_CELL_LINK_CLASSES}
+            data-testid={linkTestId}
+          >
             {name}
           </LinkComponent>
         )}

@@ -21,6 +21,7 @@
 // 5. **I/O を持たない**（`app/**` はユニットテストの対象外であるため、ここに置いて単体で固定する。
 //    `lib/engineers/list-rows.ts` 冒頭と同じ判断）。
 import type { TenantRole } from '@ses/db';
+import type { IconName } from '@ses/ui';
 import type { MessageKey } from '@ses/i18n';
 import { ENGINEER_LIST_PATH } from '../engineers/list-rows';
 import { PROJECT_LIST_PATH } from '../projects/list-rows';
@@ -55,6 +56,8 @@ export type PagePrimaryAction = {
   readonly labelKey: MessageKey;
   readonly href: string;
   readonly kind: PagePrimaryActionKind;
+  /** ✅ 2026-10-16: 語の前に置く印（人間の明示指示「＋アイコンもつけて」）。 */
+  readonly icon?: IconName;
 };
 
 // 🔴 primary の `data-testid` も同じ理由で**画面側が `testId` に文字列リテラルで書く**

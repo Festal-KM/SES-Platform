@@ -26,6 +26,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Button, Field, FieldError, Input, SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { OtpauthQr } from '../../../_components/otpauth-qr';
+import { NonproductionAccountPicker, type RoleAccountOptions } from '../../../_components/nonproduction-account-picker';
 
 export type SignInFormMessages = {
   readonly emailLabel: string;
@@ -67,14 +68,17 @@ const TOO_MANY_REQUESTS = 429;
 export function SignInForm({
   messages,
   initialStage = 'credentials',
+  roleAccounts,
 }: {
   messages: SignInFormMessages;
   initialStage?: SignInStage;
+  roleAccounts?: RoleAccountOptions;
 }) {
   const [stage, setStage] = useState<SignInStage>(initialStage);
   const [state, setState] = useState<FormState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
+  const [entryMethod, setEntryMethod] = useState<'account' | 'email'>(roleAccounts ? 'account' : 'email');
 
   /**
    * 2 段階目に入るときに `#3 setup` を呼ぶ。
@@ -244,8 +248,12 @@ export function SignInForm({
     );
   }
 
+  if (roleAccounts && entryMethod === 'account') return <NonproductionAccountPicker options={roleAccounts} realm="tenant" onManual={() => setEntryMethod('email')}
+    onAuthenticated={async (next) => { setError(null); if (next === '2fa') await beginTwoFactor(); else window.location.assign(HOME_PATH); }} />;
+
   return (
     <form method="post" onSubmit={onSubmitCredentials} noValidate data-testid="signin-form">
+      {roleAccounts ? <Button type="button" variant="secondary" className="mb-6 w-full" onClick={() => setEntryMethod('account')}>{roleAccounts.messages.accountMethod}</Button> : null}
       {errorBlock}
       <Field className="mb-4" label={messages.emailLabel}>
         <Input

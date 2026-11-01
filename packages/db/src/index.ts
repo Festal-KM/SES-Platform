@@ -38,6 +38,7 @@ export {
   TWO_FACTOR_SUBJECT_TYPE_PLATFORM_USER,
   withPlatformAuthLookup,
 } from './platform-auth.js';
+export { projectPublicContent } from './project-public-content.js';
 export type {
   PlatformAuthUser,
   PlatformIdentity,

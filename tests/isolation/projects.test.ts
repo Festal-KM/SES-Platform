@@ -1123,13 +1123,14 @@ describe('🔴 F-013 AC-2: 一覧にも商流情報が現れない', () => {
     expect(raw).not.toContain('internalUnitPrice');
   });
 
-  it('🔴 ホストの一覧にも商流情報が出ない（一覧は 2 列を取得しない）', async () => {
+  it('ホストの一覧は仕入単価を持ち、エンド企業名は返さない', async () => {
     const ctx = await ctxOf(HOST_1, 'SALES');
 
     const raw = await (await getProjects(ctx)).text();
 
     expect(raw).not.toContain(ISOLATION_FORBIDDEN_MARKERS.endClientName);
     expect(raw).not.toContain('endClientName');
+    expect(raw).toContain('internalUnitPrice');
   });
 
   it('🔴 フリーワードでエンド企業名を検索しても当たらない（検索対象が 2 列だけ）', async () => {
@@ -1152,6 +1153,8 @@ describe('🔴 F-013 AC-2: 一覧にも商流情報が現れない', () => {
       'audience',
       'headcount',
       'id',
+      // 想定仕入単価の列はホストの一覧だけに含む。取引先の許可リストには足さない。
+      'internalUnitPrice',
       'moreMustRequirementCount',
       'mustRequirements',
       'name',
@@ -1721,5 +1724,31 @@ describe('🔴 F-015 AC-2 の前提: 索引と実行計画（判定は SP-12 / T
     expect(plan).toContain('project_visibilities');
     expect(plan).toContain("current_setting('app.partner_company_id'");
     expect(plan).toContain('revoked_at IS NULL');
+  });
+});
+
+describe('詳細検索の条件結合と内部備考の境界', () => {
+  it('尚可と公開メモをグループ検索でき、内部備考はホストだけに一致する', async () => {
+    const id = TENANT_1.publishedProjectId;
+    const original = await admin.project.findUniqueOrThrow({ where: { id }, select: { remarks: true, publicMemo: true, developmentPhases: true, developmentMethod: true, utilizationRate: true, updatedAt: true } });
+    const req = await admin.projectRequirement.create({ data: { tenantId: TENANT_1.tenantId, projectId: id, kind: 'NICE', freeText: 'Springboot詳細検索検証' } });
+    try {
+      await admin.project.update({ where: { id }, data: { remarks: '内部備考境界検証語', publicMemo: '公開メモ条件結合検証語', developmentPhases: ['BASIC_DESIGN'], developmentMethod: 'AGILE', utilizationRate: 80 } });
+      const host = await ctxOf(HOST_1, 'SALES');
+      const partner = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+      const other = await ctxOf(PARTNER_USER_2, 'PARTNER_SALES');
+      const query = new URLSearchParams({ keywordGroups: JSON.stringify([{ mode: 'OR', terms: ['Java存在しない語', 'Springboot詳細検索検証'] }, { mode: 'AND', terms: ['公開メモ条件結合検証語'] }]), developmentPhases: 'BASIC_DESIGN', developmentMethod: 'AGILE', utilizationMin: '80', utilizationMax: '100' });
+      expect(idsOf(await listBodyOf(await getProjects(host, `?${query}`)))).toEqual([id]);
+      expect(idsOf(await listBodyOf(await getProjects(partner, `?${query}`)))).toEqual([id]);
+      expect(idsOf(await listBodyOf(await getProjects(other, `?${query}`)))).not.toContain(id);
+      const internal = new URLSearchParams({ q: '内部備考境界検証語', searchInternalRemarks: 'true' });
+      expect(idsOf(await listBodyOf(await getProjects(host, `?${internal}`)))).toEqual([id]);
+      expect((await listBodyOf(await getProjects(partner, `?${internal}`))).total).toBe(0);
+      const foreign = await ctxOf(HOST_2, 'SALES');
+      expect((await listBodyOf(await getProjects(foreign, `?${query}`))).total).toBe(0);
+    } finally {
+      await admin.projectRequirement.delete({ where: { id: req.id } });
+      await admin.project.update({ where: { id }, data: original });
+    }
   });
 });

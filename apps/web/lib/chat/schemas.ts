@@ -12,6 +12,7 @@ import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolat
 import { cursorPageQuerySchema, idCursorPageQuerySchema } from '../api/pagination';
 import { optionalFilter } from '../api/query-filters';
 import { isChatThreadCursor } from './thread-cursor';
+import { MESSAGE_SEARCH_MIN_LENGTH } from './thread-tree';
 import { CHAT_ATTACHMENT_CONTENT_TYPES, CHAT_ATTACHMENT_MAX_BYTES, type ChatAttachmentContentType } from '@ses/domain';
 import { CHAT_REACTIONS } from './views';
 
@@ -139,6 +140,20 @@ export const chatProjectCandidateQuerySchema = z.object({
 export type ChatProjectCandidateQuery = z.infer<typeof chatProjectCandidateQuerySchema>;
 export type ChatProjectCandidateQueryIsolationGuard = AssertNoIsolationKeys<ChatProjectCandidateQuery>;
 assertNoIsolationKeys(Object.keys(chatProjectCandidateQuerySchema.shape), 'chatProjectCandidateQuerySchema');
+
+/** ✅ 2026-10-29: この会話の中の検索語の長さ。下限は一覧の本文の検索と同じ（2 文字未満では走査しない）。 */
+export const CHAT_MESSAGE_SEARCH_Q_MAX_LENGTH = 100;
+
+/**
+ * ✅ 2026-10-29（F-038 ⑰）: `GET /api/threads/{id}/messages/search`（#51s。この会話の中の検索）。検索語だけを受ける。
+ * 🔴 部屋は URL の 1 つだけ（ほかの部屋を指定する口を作らない）。件数の指定も受けない（上限はサーバが決める）。
+ */
+export const chatMessageSearchQuerySchema = z.object({
+  q: z.string().trim().min(MESSAGE_SEARCH_MIN_LENGTH).max(CHAT_MESSAGE_SEARCH_Q_MAX_LENGTH),
+});
+export type ChatMessageSearchQuery = z.infer<typeof chatMessageSearchQuerySchema>;
+export type ChatMessageSearchQueryIsolationGuard = AssertNoIsolationKeys<ChatMessageSearchQuery>;
+assertNoIsolationKeys(Object.keys(chatMessageSearchQuerySchema.shape), 'chatMessageSearchQuerySchema');
 
 /** 🔴 分離キーが混入したらコンパイルエラーになる。 */
 export type ChatThreadListQueryIsolationGuard = AssertNoIsolationKeys<ChatThreadListQuery>;

@@ -13,7 +13,7 @@ import { SeedNotAllowedError } from '@ses/config';
 import { SeedArgsError, parseSeedArgs, resolveSeedDatabaseUrl } from './args.js';
 import { runSeed, runSeedReset } from './index.js';
 import { getSeedPreset } from './presets/index.js';
-import { DEMO_SEED_IDS, DEMO_SEED_NAME_RULES, demoPreset, demoSeedCompanyNames } from './presets/demo.js';
+import { DEMO_SEED_IDS, DEMO_SEED_NAME_RULES, demoPreset, demoSeedCompanyNames, buildDemoProjectSamples, DEMO_ADDITIONAL_PROJECT_COUNT } from './presets/demo.js';
 import { ISOLATION_SEED_IDS, isolationPreset } from './presets/isolation.js';
 import {
   buildPerfTenantPlans,
@@ -31,6 +31,32 @@ import { createSeedRng } from './rng.js';
 import { addDays, advanceState, dateOnly, seedUuid } from './support.js';
 
 const INVALID_URL = 'postgresql://seed:seed@127.0.0.1:1/none?sslmode=disable';
+
+it('一覧用の追加デモ案件は再現可能で、元の案件と衝突せず、固定卸単価で利ザヤを持つ', () => {
+  const now = new Date('2026-10-26T00:00:00Z');
+  const samples = buildDemoProjectSamples(1, now);
+  expect(samples).toEqual(buildDemoProjectSamples(1, now));
+  expect(samples.projects).toHaveLength(DEMO_ADDITIONAL_PROJECT_COUNT);
+  expect(samples.requirements).toHaveLength(DEMO_ADDITIONAL_PROJECT_COUNT);
+  const originalIds = new Set(Object.values(DEMO_SEED_IDS.tenants[0].projects));
+  expect(new Set(samples.projects.map(p => p.id)).size).toBe(samples.projects.length);
+  for (const project of samples.projects) {
+    expect(originalIds.has(project.id)).toBe(false);
+    expect(project.unitPriceMin).toBeGreaterThan(project.internalUnitPrice);
+    expect(project.unitPriceMax).toBe(project.unitPriceMin);
+  }
+  expect(new Set(samples.projects.map(p => p.category)).size).toBe(7);
+});
+
+it('ダミー案件は想定仕入単価より高い固定の卸単価を持つ', () => {
+  const plans = buildPerfTenantPlans(createSeedRng('price-margin-check'), new Date('2026-10-26T00:00:00Z'));
+  const projects = plans.flatMap((plan) => plan.projects);
+  expect(projects.length).toBeGreaterThan(0);
+  for (const project of projects) {
+    expect(project.unitPriceMin).toBeGreaterThan(project.internalUnitPrice);
+    expect(project.unitPriceMax).toBe(project.unitPriceMin);
+  }
+});
 
 describe('🔴 環境ガードは投入・削除の前にある（F-053 AC-6 / docs/05 §13.6）', () => {
   it.each(['production', 'sandbox', 'staging', undefined, ''])(

@@ -366,7 +366,6 @@ describe('🔴 分割レイアウト: 幅を広げると悪化する挙動が無
 
   it('🔴 ⑧ `main-min` を使う画面が実在し、旧実装の語が 1 つも残っていない', () => {
     const screens = [
-      'apps/web/app/(main)/projects/(list)/page.tsx',
       'apps/web/app/(main)/proposal-requests/proposal-request-screen.tsx',
       'apps/web/app/(main)/proposals/send-failures/send-failure-screen.tsx',
     ];
@@ -382,5 +381,10 @@ describe('🔴 分割レイアウト: 幅を広げると悪化する挙動が無
       expect(source).not.toMatch(/^\s*PAGE_BODY_ASIDE_WIDTH_CLASSES_FROM_2XL,$/m);
       expect(source).not.toMatch(/\{PAGE_BODY_ASIDE_WIDTH_CLASSES_FROM_2XL\}/);
     }
+    // 案件一覧は人間の2026-10-23指示で、lg以上は表の幅によらず右側388pxを確保する。
+    const projectSource = readFileSync(path.join(repoRoot, 'apps/web/app/(main)/projects/project-list-screen.tsx'), 'utf8');
+    expect(projectSource).toContain('PAGE_BODY_ASIDE_ROW_CLASSES_BY_FROM.lg');
+    expect(projectSource).toContain('DETAIL_PANE_VIEWPORT_CLASSES');
+    expect(projectSource).not.toMatch(/className=[^\n]*2xl:flex-row/);
   });
 });

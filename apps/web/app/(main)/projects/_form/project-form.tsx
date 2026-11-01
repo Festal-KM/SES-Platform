@@ -1,4 +1,6 @@
 'use client';
+import { t } from '@ses/i18n';
+import { PROJECT_DEVELOPMENT_PHASES, PROJECT_DEVELOPMENT_METHODS } from '@ses/domain';
 
 // apps/web/app/(main)/projects/_form/project-form.tsx
 // `S-012` 案件の登録・編集 — フォーム本体（docs/04 §S-012 / `F-013` / `F-010`）。T-06-01。
@@ -28,6 +30,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import {
   Button,
   Field,
+  Checkbox,
   Input,
   SECONDARY_LINK_CLASSES,
   Select,
@@ -76,6 +79,16 @@ export type ProjectFormRequirement = {
  *    （`F-045` の還流ジョブだけが書く列。`lib/projects/schemas.ts` の注記）。
  */
 export type ProjectFormValues = {
+  readonly upperCompanyName: string;
+  readonly endDate: string;
+  readonly distributionLimit: string;
+  readonly assigneeUserId: string;
+  readonly developmentPhases?: readonly string[];
+  readonly developmentMethod?: string;
+  readonly utilizationRate?: string;
+  readonly locationDetail: string;
+  readonly publicMemo: string;
+  readonly remarks: string;
   readonly name: string;
   readonly status: string;
   readonly headcount: string;
@@ -102,6 +115,14 @@ export type ProjectFormValues = {
 };
 
 export type ProjectFormMessages = {
+  readonly upperCompanyNameLabel: string;
+  readonly endDateLabel: string;
+  readonly distributionLimitLabel: string;
+  readonly assigneeLabel: string;
+  readonly locationDetailLabel: string;
+  readonly publicMemoLabel: string;
+  readonly remarksLabel: string;
+  readonly remarksNote: string;
   readonly sectionBasic: string;
   readonly sectionConditions: string;
   readonly sectionCommerce: string;
@@ -189,6 +210,7 @@ export type ProjectFormProps = {
   readonly sourceKindOptions: readonly SelectOption[];
   readonly parallelOkOptions: readonly SelectOption[];
   readonly prefectureOptions: readonly SelectOption[];
+  readonly assigneeOptions?: readonly SelectOption[];
   /** 要件の 2 区分（`'MUST'` / `'NICE'`）。順序がそのままブロックの並びになる。 */
   readonly requirementKinds: readonly string[];
   readonly cancelHref: string;
@@ -238,12 +260,20 @@ function numberOrNull(value: string): number | null {
  */
 export function toRequestBody(values: ProjectFormValues) {
   return {
+    upperCompanyName: emptyToNull(values.upperCompanyName),
+    endDate: emptyToNull(values.endDate),
+    distributionLimit: emptyToNull(values.distributionLimit),
+    assigneeUserId: emptyToNull(values.assigneeUserId),
+    developmentPhases: [...(values.developmentPhases ?? [])], developmentMethod: emptyToNull(values.developmentMethod ?? ''), utilizationRate: values.utilizationRate ? Number(values.utilizationRate) : null,
+    locationDetail: emptyToNull(values.locationDetail),
+    publicMemo: emptyToNull(values.publicMemo),
+    remarks: emptyToNull(values.remarks),
     name: values.name.trim(),
     status: values.status,
     headcount: numberOrNull(values.headcount) ?? 1,
     startDate: emptyToNull(values.startDate),
     unitPriceMin: numberOrNull(values.unitPriceMin),
-    unitPriceMax: numberOrNull(values.unitPriceMax),
+    unitPriceMax: numberOrNull(values.unitPriceMin),
     prefecture: emptyToNull(values.prefecture),
     remoteMode: emptyToNull(values.remoteMode),
     // ✅ 2026-10-16（受領モック + Issue #113）。
@@ -275,6 +305,7 @@ export function ProjectForm({
   sourceKindOptions,
   parallelOkOptions,
   prefectureOptions,
+  assigneeOptions = [],
   requirementKinds,
   cancelHref,
   createdHrefPattern,
@@ -686,35 +717,54 @@ export function ProjectForm({
       {/* --- 4. 条件 ------------------------------------------------------- */}
       <section data-testid="project-section-conditions">
         <h2 className="mb-3 text-lg font-bold text-fg">{messages.sectionConditions}</h2>
-        <fieldset className="mb-2">
-          <legend className="text-body text-fg">
-            {messages.unitPriceLabel}（{messages.unitPriceUnit}）
-          </legend>
-          <Field className="mb-4" label={messages.unitPriceMin}>
+          <Field className="mb-4" label={<>{messages.unitPriceLabel}（{messages.unitPriceUnit}）</>}>
             <Input
               name="unitPriceMin"
               type="number"
               inputMode="numeric"
               min={0}
               value={values.unitPriceMin}
-              onChange={(event) => update({ unitPriceMin: event.target.value })}
+              onChange={(event) => update({ unitPriceMin: event.target.value, unitPriceMax: event.target.value })}
               disabled={phase === 'submitting'}
               data-testid="project-unit-price-min"
             />
           </Field>
-          <Field className="mb-4" label={messages.unitPriceMax}>
-            <Input
+            <input
               name="unitPriceMax"
-              type="number"
-              inputMode="numeric"
-              min={0}
-              value={values.unitPriceMax}
-              onChange={(event) => update({ unitPriceMax: event.target.value })}
-              disabled={phase === 'submitting'}
+              type="hidden"
+              value={values.unitPriceMin}
               data-testid="project-unit-price-max"
             />
-          </Field>
-        </fieldset>
+        <Field as="div" className="mb-4" label={t('projects.search.phase')}>
+          <div className="flex flex-wrap gap-3">{PROJECT_DEVELOPMENT_PHASES.map(phase => <label key={phase} className="flex items-center gap-2 text-body">
+            <Checkbox checked={(values.developmentPhases ?? []).includes(phase)} onChange={event => update({ developmentPhases: event.currentTarget.checked ? [...(values.developmentPhases ?? []), phase] : (values.developmentPhases ?? []).filter(value => value !== phase) })} data-testid={`project-form-development-phase-${phase}`} />
+            {t(`projects.search.phase.${phase}`)}
+          </label>)}</div>
+        </Field>
+        <Field className="mb-4" label={t('projects.search.method')}>
+          <Select value={values.developmentMethod ?? ''} onChange={event => update({ developmentMethod: event.currentTarget.value })} data-testid="project-form-development-method">
+            <option value="">{t('projects.search.any')}</option>{PROJECT_DEVELOPMENT_METHODS.map(value => <option key={value} value={value}>{t(`projects.search.method.${value}`)}</option>)}
+          </Select>
+        </Field>
+        <Field className="mb-4" label={t('projects.search.utilizationPercent')}>
+          <Input type="number" min={1} max={100} value={values.utilizationRate ?? ''} onChange={event => update({ utilizationRate: event.currentTarget.value })} data-testid="project-form-utilization-rate" />
+        </Field>
+        <Field className="mb-4" label={messages.locationDetailLabel}>
+          <Input name="locationDetail" value={values.locationDetail}
+            onChange={(event) => update({ locationDetail: event.target.value })}
+            disabled={phase === 'submitting'} data-testid="project-location-detail" />
+          <p className="text-xs text-fg-muted">{messages.publicFieldNotice}</p>
+        </Field>
+        <Field className="mb-4" label={messages.endDateLabel}>
+          <Input name="endDate" type="date" value={values.endDate}
+            onChange={(event) => update({ endDate: event.target.value })}
+            disabled={phase === 'submitting'} data-testid="project-end-date" />
+        </Field>
+        <Field className="mb-4" label={messages.distributionLimitLabel}>
+          <Input name="distributionLimit" value={values.distributionLimit}
+            onChange={(event) => update({ distributionLimit: event.target.value })}
+            disabled={phase === 'submitting'} data-testid="project-distribution-limit" />
+        </Field>
         <Field className="mb-4" label={messages.prefectureLabel}>
           <Select
             name="prefecture"
@@ -821,6 +871,25 @@ export function ProjectForm({
             data-testid="project-end-client-name"
           />
         </Field>
+        <Field className="mb-4" label={messages.upperCompanyNameLabel}>
+          <Input name="upperCompanyName" value={values.upperCompanyName}
+            onChange={(event) => update({ upperCompanyName: event.target.value })}
+            disabled={phase === 'submitting'} data-testid="project-upper-company-name" />
+        </Field>
+        <Field className="mb-4" label={messages.assigneeLabel}>
+          <Select name="assigneeUserId" value={values.assigneeUserId}
+            onChange={(event) => update({ assigneeUserId: event.target.value })}
+            disabled={phase === 'submitting'} data-testid="project-assignee">
+            <option value="">{messages.valueUnset}</option>
+            {assigneeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </Select>
+        </Field>
+        <Field className="mb-4" label={messages.remarksLabel}>
+          <Textarea name="remarks" value={values.remarks}
+            onChange={(event) => update({ remarks: event.target.value })}
+            disabled={phase === 'submitting'} data-testid="project-remarks" />
+          <p className="text-xs text-fg-muted">{messages.remarksNote}</p>
+        </Field>
         <Field
           className="mb-4"
           label={
@@ -869,6 +938,12 @@ export function ProjectForm({
             disabled={phase === 'submitting'}
             data-testid="project-public-summary"
           />
+        </Field>
+        <Field className="mb-4" label={messages.publicMemoLabel}>
+          <Textarea name="publicMemo" value={values.publicMemo}
+            onChange={(event) => update({ publicMemo: event.target.value })}
+            disabled={phase === 'submitting'} data-testid="project-public-memo" />
+          <p className="text-xs text-fg-muted">{messages.publicFieldNotice}</p>
         </Field>
       </section>
 

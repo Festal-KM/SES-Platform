@@ -173,7 +173,7 @@ export async function resolveSignInNext(email: string): Promise<SignInNext> {
   //    実際 2026-10-16 に、ゲートだけ緩めてここを直し忘れ、デモで TOTP を求められ続けた。
   // 🔴 **判定の出所は 1 つ**（`twoFactorPolicy()` = 起動時に `APP_ENV` から解決した値）。
   //    ここで `APP_ENV` を読まない（`CLAUDE.md` §11.1）。
-  const policy = twoFactorPolicy();
+  const policy = twoFactorPolicy(user.userId);
   if (policy === 'RELAXED') return 'home';
   if (facts.twoFactorEnrolled) return '2fa';
   return requiresTwoFactor(facts.role, policy) ? '2fa' : 'home';
