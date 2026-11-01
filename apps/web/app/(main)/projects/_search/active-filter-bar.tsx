@@ -301,12 +301,13 @@ export function ActiveFilterBar({
             {messages.pending}
           </span>
         ) : null}
-        <Tooltip content={messages.clear}>
-          <IconButton type="button" variant="ghost" className="mr-auto" aria-label={messages.clear} icon={<Icon name="filter-x" />}
-            data-testid={`${testIdPrefix}clear`} onClick={onClear} />
-        </Tooltip>
         {/* ✅ 2026-11-01: 未反映の編集があるときだけ出す（押しても何も起きない状態を置かない）。 */}
         {onCancel && pending ? <Tooltip content={t('projects.search.cancelHint')}><IconButton type="button" variant="ghost" onClick={onCancel} aria-label={t('projects.search.cancelHint')} icon={<Icon name="undo-2" />} data-testid={`${testIdPrefix}cancel-search`} /></Tooltip> : null}
+        {/* ✅ 2026-11-01（人間の指示）: 条件クリアは検索ボタンの左隣に戻した（#200 で左端へ離れていた）。 */}
+        <Tooltip content={messages.clear}>
+          <IconButton type="button" variant="ghost" aria-label={messages.clear} icon={<Icon name="filter-x" />}
+            data-testid={`${testIdPrefix}clear`} onClick={onClear} />
+        </Tooltip>
         <Tooltip content={messages.submit}>
           <IconButton type="submit" variant="primary" aria-label={messages.submit} aria-busy={submitting} icon={<Icon name="search" />}
             data-testid={`${testIdPrefix}search`} />
