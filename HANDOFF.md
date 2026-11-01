@@ -18,6 +18,10 @@
 
 ~~案件一覧の上下へカーソル方式のページ送りと実件数を配置。~~ → 同じ PR の後のエントリ（番号式フッター、2026-10-30）で置き換え済み。以下は当時の記録。案件一覧の上下へカーソル方式のページ送りと実件数を配置。続く人間の指示で一覧のステータス列にもサマリと同じ切替部品を再利用。編集ロールだけに表示し、行全体リンクより前面で押せるようにする。更新後は同じURLをrefreshし、成功通知は行の高さを変えない。公開済み案件を終了すると既存の公開停止処理も動くため、動作検証は未公開の架空案件で行う。既存の末尾リンクIDを維持し、上部は専用ID。API・DB・境界・検索URLの生成経路は変更しない。総件数はlistProjectsの境界適用後COUNT、表示件数は実行数。全ページ番号や推測の範囲は表示しない。PCでアプリ・Docker・重い検査を起動せずAWSとCIで確認する。PRと検証結果を参照。
 
+## 2026-11-01 ⏳ 運用監視（Sentry）・本番メール基盤・証明書発行の定義（ブランチ `feat/monitoring-email-cert`）
+
+10-28 に旧ブランチ `feat/aws-development-url` で未コミットのまま残っていた作業を、最新 main から切り直して移した。AWS の下書き 9 ファイル（application / build / tasks / Dockerfile.aws ほか）は #195 / #197 で main に発展版が入っていたので**捨てて main 側を採った**（退避は取ってある）。移したのは main に無いものだけ: ① Sentry（web は `sentry.server.config.ts` + `onRequestError`、worker は `SENTRY_DSN` があるときだけ init）。🔴 送るのは例外の型とコード位置だけで、本文・利用者・ヘッダ・パンくず・ローカル変数・例外メッセージは `@ses/config` の `redactMonitoringEvent` が消す（#84 の既定「`err.message` を出さない」に沿う。§3.2 / §3.5）② 本番の SES 送信ドメイン・配信イベントの CloudFormation 定義（`infra/aws/email.mjs` / `scripts/aws-provision-email.mjs`。**実行していない**。本番アクセス申請もしていない）③ ACM 証明書の発行と Cloudflare に入れる CNAME の出力（`scripts/aws-certificates.mjs`）。PC では監視のユニット 2 件と構文検査だけ確認し、ビルド・型検査は CI に任せる。
+
 ## 2026-10-29 ⏳ チャット: 送った発言をその場で出す・左の列の並び替え・会話の中の検索（PR #199）
 
 紺野の決定（F-038 改訂 14 ⑮⑯⑰ / S-031 改訂 46 / docs/05 #51s）。DB は変えていない。⑮ 5 秒の取り消し待ちをやめ、送信箱（`apps/web/lib/chat/outbox.ts`。手元だけ）で「送信中」の吹き出しを先に出す。旧 `CHAT_UNDO_SEND_MS` と入力欄の「取り消す／今すぐ送る」は消した（文言キーは追加のみの約束で残す）。E2E `chat.compose.spec.ts` を書き直し、`chat.project-card.spec.ts` の「今すぐ送る」を外した。⑯ 並びは `localStorage` の `ses.chat.rail.order`（鍵の配列だけ）。⑰ 新 API `GET /api/threads/{id}/messages/search`（`lib/chat/search.ts`）。🔴 照合は `freeWordFilter` で絞り、引用の見出し・写しは `search-text.ts` で除く。分離テスト `tests/isolation/chat-search.test.ts`（ローカル緑）。E2E `chat.search.spec.ts` は手元で回していない（CI で確認）。

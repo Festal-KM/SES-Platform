@@ -33,13 +33,15 @@ import { formatStartupFailureLine, initializeRuntimeConfig } from '@ses/config';
  *    🔴 条件は「Edge のときだけ skip」と書く（「Node のときだけ実行」と書かない）。
  *      `NEXT_RUNTIME` が未設定の実行経路が増えたときに、既定が「検証する」側に倒れるため。
  */
-export function register(): void {
+export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === 'edge') return;
 
   try {
-    initializeRuntimeConfig(process.env, (line) => {
+    const runtime = initializeRuntimeConfig(process.env, (line) => {
       process.stdout.write(`${line}\n`);
     });
+    // 🔴 監視の初期化には解決済みの設定を渡す（設定を読むのはここ 1 箇所。§11.1）。
+    if (process.env.NEXT_RUNTIME === 'nodejs') (await import('./sentry.server.config')).initServerMonitoring(runtime.env);
   } catch (error) {
     // 🔴 握りつぶさない / モックにフォールバックしない。ここでの catch は
     //    「例外を無かったことにする」ためではなく、**より強い失敗に変換する**ためである:
@@ -52,3 +54,10 @@ export function register(): void {
     process.exit(1);
   }
 }
+
+/** Node側のリクエスト例外を監視へ送る。イベントの本文はbeforeSendで除去する。 */
+export const onRequestError: import('next').Instrumentation.onRequestError = async (...args) => {
+  if (process.env.NEXT_RUNTIME === 'edge') return;
+  const Sentry = await import('@sentry/nextjs');
+  Sentry.captureRequestError(...args);
+};

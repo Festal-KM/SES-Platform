@@ -26,7 +26,7 @@
 //      **後ろ**にあり、設定が不正なら `--verify-config` の有無にかかわらず exit 1 になる。
 //      「引数を付ければ検証を飛ばせる」形にはしていない。
 import process from 'node:process';
-import { formatStartupFailureLine } from '@ses/config';
+import { formatStartupFailureLine, MONITORING_DATA_COLLECTION, redactMonitoringEvent } from '@ses/config';
 import { bootstrapWorker } from './bootstrap.js';
 import { startWorkerRuntime, type WorkerRuntime } from './runtime.js';
 
@@ -61,6 +61,14 @@ export async function runWorkerMain(argv: readonly string[]): Promise<WorkerRunt
   if (argv.includes(VERIFY_CONFIG_FLAG)) {
     process.stdout.write(`${VERIFY_CONFIG_OK_LINE}\n`);
     return null;
+  }
+  if (config.env.SENTRY_DSN) {
+    const Sentry = await import('@sentry/node');
+    Sentry.init({ dsn: config.env.SENTRY_DSN, environment: config.env.APP_ENV, dataCollection: MONITORING_DATA_COLLECTION,
+      tracePropagationTargets: [],
+      tracesSampleRate: 0, beforeSend: (event) => redactMonitoringEvent(event),
+      initialScope: { tags: { service: 'worker' } },
+    });
   }
   const runtime = startWorkerRuntime(config);
   // 🔴 スケジュールの登録が Redis に届くまで待ってから「待ち受け中」を名乗る。
