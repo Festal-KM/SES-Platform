@@ -81,7 +81,6 @@
 import { useEffect, useId, useRef, useState, useTransition } from 'react';
 // 🔴 **クライアント遷移の入口**（ファイル冒頭の 🔴🔴）。`next/navigation` の router は
 //    App Router のクライアント側であり、文書を読み込み直さず RSC の差分だけを取りに行く。
-import { t } from '@ses/i18n';
 import { useRouter } from 'next/navigation';
 import {
   Badge,
@@ -97,7 +96,6 @@ import {
   Icon,
   IconButton,
   Input,
-  Select,
   cn,
 } from '@ses/ui';
 // 🔴 overlay 部品（Radix）は `@ses/ui/client` に分かれている。
