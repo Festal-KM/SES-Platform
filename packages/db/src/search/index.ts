@@ -51,6 +51,7 @@ export type {
 export {
   assertStatusPriority,
   PROJECT_LIST_ORDER_BY,
+  projectCursorPrefixWhere,
   PROJECT_STATUS_LIST_PRIORITY,
   projectSearchWhere,
 } from './projects.js';

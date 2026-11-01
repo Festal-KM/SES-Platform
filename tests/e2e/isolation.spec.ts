@@ -66,6 +66,7 @@ import {
   expectEnvironmentBannerPinned,
   expectNoBrokenLabels,
   expectNoHiddenCountHints,
+  expectNoHiddenCountHintsOnPage,
   expectNoMarkers,
 } from './support/assertions';
 import {
@@ -238,7 +239,7 @@ test.describe('② テナント A の OWNER で URL 直打ち（他テナント�
       for (const path of MAIN_PLANE_PAGES) {
         const html = await pageContent(session, path);
         expectNoMarkers(`URL 直打ち ${path}`, html, foreign);
-        expectNoHiddenCountHints(`URL 直打ち ${path}`, html);
+        await expectNoHiddenCountHintsOnPage(`URL 直打ち ${path}`, session.page);
       }
 
       // 🔴 平面をまたいだ直打ち: **主平面のセッションでは管理平面に到達できない**
@@ -868,7 +869,7 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
       // 🔴 公開先の設定状況（9 列目）は取引先には出ない（`docs/04` §S-010）。
       expect(listHtml).not.toContain(`project-list-visibility-${own.publishedProjectId}`);
       expectNoMarkers('パートナーの /projects', listHtml, forbiddenInHtml);
-      expectNoHiddenCountHints('パートナーの /projects', listHtml);
+      await expectNoHiddenCountHintsOnPage('パートナーの /projects', session.page);
       // 対照: 母集団が「御社に公開された案件」であることは画面に明示される（`F-006 AC-2`）。
       expect(listHtml).toContain(t('projects.list.population.partner'));
 
@@ -935,7 +936,7 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
       // 🔴 空状態の文言は「案件が無い」ではなく「御社に公開された案件はまだありません」
       //    （`docs/04` §10.1 `S-010`）。**「他社には公開されています」を示唆しない。**
       expect(html).toContain(t('projects.list.empty.partner.title'));
-      expectNoHiddenCountHints('A2 の /projects（空）', html);
+      await expectNoHiddenCountHintsOnPage('A2 の /projects（空）', session.page);
       expectNoMarkers('A2 の /projects（空）', html, [
         ...foreignPartnerMarkers(1, 1),
         ...hostOnlyProjectMarkers(1),
@@ -1017,7 +1018,7 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
       const html = await pageContent(partner, '/projects');
       expect(html).not.toContain(syntheticName);
       expect(html).not.toContain(`project-list-row-${createdId}`);
-      expectNoHiddenCountHints('境界外の変化のあとの /projects', html);
+      await expectNoHiddenCountHintsOnPage('境界外の変化のあとの /projects', partner.page);
 
       partner.outbound.assertNone();
       host.outbound.assertNone();

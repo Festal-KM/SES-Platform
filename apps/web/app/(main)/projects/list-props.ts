@@ -489,7 +489,7 @@ export function projectAppliedSearchDraft(query: {
   readonly keywordGroups?: string;
   readonly q?: string;
   readonly status?: string;
-  readonly category?: string;
+  readonly category?: readonly string[];
   readonly remoteMode?: string;
   readonly priceMin?: number;
   readonly priceMax?: number;
@@ -506,7 +506,7 @@ export function projectAppliedSearchDraft(query: {
     ...(query.keywordGroups ? { keywordGroups: query.keywordGroups } : {}),
     q: query.q ?? '',
     status: query.status ?? '',
-    category: query.category ?? '',
+    categories: query.category ?? [],
     remoteMode: query.remoteMode ?? '',
     priceMin: query.priceMin === undefined ? '' : String(query.priceMin),
     priceMax: query.priceMax === undefined ? '' : String(query.priceMax),
