@@ -56,14 +56,20 @@ test('案件検索のチップ入力・明示的な適用・保存条件の再�
     await page.getByTestId('project-list-search-save').click();
     await page.getByTestId('project-list-search-save-name').fill('検索UIの回帰検証');
     await page.getByTestId('project-list-search-save-confirm').click();
-    const selected = page.getByTestId('project-list-search-saved-select');
-    const option = selected.getByRole('option', {name:'検索UIの回帰検証',exact:true});
-    await expect(option).toHaveCount(1);
-    const savedId = await option.getAttribute('value'); expect(savedId).toBeTruthy();
-    await selected.selectOption(savedId!);
+    // ✅ 2026-11-01: 保存した条件はタブ（「保存した条件 N」）から行を押して適用する形に戻した（ヘッダーのプルダウンは撤去）。
+    const applySaved = async () => {
+      await page.getByRole('tab', { name: /保存した条件/ }).click();
+      const row = page.getByTestId('project-list-saved-apply').filter({ hasText: '検索UIの回帰検証' });
+      await expect(row).toHaveCount(1);
+      await row.click();
+    };
+    await applySaved();
+    await expect(page.getByTestId('project-list-search-selected-name')).toHaveText('検索UIの回帰検証');
+    await page.getByRole('tab', { name: '検索条件' }).click();
     await page.getByTestId('project-list-filter-development-method-segment-WATERFALL').locator('..').click();
     await expect(page.getByTestId('project-list-search-selected-modified')).toBeVisible();
-    await selected.selectOption(savedId);
+    await applySaved();
+    await page.getByRole('tab', { name: '検索条件' }).click();
     await expect(page.getByTestId('project-list-filter-development-method-segment-AGILE')).toBeChecked();
     await expect(page.getByTestId('project-list-filter-keyword-term-0-0')).toContainText('Java');
     await page.getByTestId('project-list-search-toggle').click();
