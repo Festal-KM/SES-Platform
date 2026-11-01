@@ -9,6 +9,7 @@
 import { Button, Icon, IconButton, Input } from '@ses/ui';
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 import { MESSAGE_SEARCH_MIN_LENGTH } from '../../../lib/chat/thread-tree';
+import { splitChatSearchMatches } from '../../../lib/chat/search-text';
 import type { ChatConversationState } from './use-chat-conversation';
 
 type ChatSearchPanelState = Pick<
@@ -92,7 +93,18 @@ export function ChatSearchPanel({ conversation }: { readonly conversation: ChatS
                         {formatDateTimeJst(hit.sentAt)}
                       </time>
                     </span>
-                    <span className="w-full break-words text-xs font-normal text-fg-muted">{hit.snippet}</span>
+                    <span className="w-full break-words text-xs font-normal text-fg-muted">
+                      {/* ✅ 2026-11-01: 一致した語だけ蛍光ペンの色にする（語は結果を取りに行ったときのもの）。 */}
+                      {splitChatSearchMatches(hit.snippet, searchResult.q).map((segment, index) =>
+                        segment.match ? (
+                          <mark key={index} className="rounded-sm bg-warning-border px-px text-fg" data-testid="chat-search-match">
+                            {segment.text}
+                          </mark>
+                        ) : (
+                          segment.text
+                        ),
+                      )}
+                    </span>
                   </Button>
                 </li>
               ))}

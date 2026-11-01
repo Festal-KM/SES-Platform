@@ -5,6 +5,10 @@
 紺野の決定（F-038 改訂 14 ⑮⑯⑰ / S-031 改訂 46 / docs/05 #51s）。DB は変えていない。⑮ 5 秒の取り消し待ちをやめ、送信箱（`apps/web/lib/chat/outbox.ts`。手元だけ）で「送信中」の吹き出しを先に出す。旧 `CHAT_UNDO_SEND_MS` と入力欄の「取り消す／今すぐ送る」は消した（文言キーは追加のみの約束で残す）。E2E `chat.compose.spec.ts` を書き直し、`chat.project-card.spec.ts` の「今すぐ送る」を外した。⑯ 並びは `localStorage` の `ses.chat.rail.order`（鍵の配列だけ）。⑰ 新 API `GET /api/threads/{id}/messages/search`（`lib/chat/search.ts`）。🔴 照合は `freeWordFilter` で絞り、引用の見出し・写しは `search-text.ts` で除く。分離テスト `tests/isolation/chat-search.test.ts`（ローカル緑）。E2E `chat.search.spec.ts` は手元で回していない（CI で確認）。
 同じブランチで続けて（紺野の追加依頼）: 左の列の印と一覧のアバターの色分けを #167 の前に戻した / 案件スレッドも自分の発言を右（`conversationLayoutFor` は常に `chat`）/ 案件カードの「案件詳細を開く」をチャットの中の `Drawer` で開く（既存の #27 を呼ぶだけ = 監査・公開範囲は従来どおり。分離テスト `chat-project-panel.test.ts`）。⚠️ `Drawer` の「閉じる」は共通部品の文字リンクでスマホ 44px を満たさない（宮田さんの判断待ち）。
 
+## 2026-11-01 ⏳ チャット: 会話の中の検索で、一致した語だけに印（紺野の許可）
+
+`docs/04` S-031 改訂 46「会話の中の検索」の追記。DB・API は変えていない。結果の冒頭を `lib/chat/search-text.ts` の `splitChatSearchMatches`（DB と同じく語全体・大文字小文字を区別しない。位置は元の文字列で切る）で分け、一致部分を `<mark>`（`bg-warning-border text-fg`）で包む。🔴 印の語は `use-chat-search.ts` の結果に足した `q`（取りに行ったときの語）—— 欄の `searchQuery` を使うと、入力中に結果と語がずれる。吹き出しの中には付けていない。
+
 ## 2026-10-30 詳細検索の入力導線改善
 
 PR #200への追加調整。詳細検索だけに操作ガイド、空状態の入力案内、Enterと共通処理の追加ボタン、下部の全幅グループ追加、グループ間AND接続線、構造化プレビューを追加。新しい空グループへフォーカスし、空グループは従来どおり検索条件から除外する。人間が空入力時の追加ボタン非活性を明示したため、このボタンに限定してdisabledを使用。フォーカスを奪わないようblur登録は廃止し、明示した登録操作に統一。基本検索・検索API・DB・保存条件の形式は変更しない。PCでアプリや重い検査を起動しない。最終検証結果はPR参照。
