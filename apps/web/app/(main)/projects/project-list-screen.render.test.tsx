@@ -100,7 +100,7 @@ const statusOptions = [
 const emptyApplied = {
   q: '',
   status: '',
-  category: '',
+  categories: [] as readonly string[],
   remoteMode: '',
   priceMin: '',
   priceMax: '',
@@ -535,7 +535,7 @@ describe('検索エリア（改修指示書 §2 の 3 層）', () => {
         ...emptyApplied,
         q: '基幹',
         status: 'OPEN',
-        category: 'BACKEND',
+        categories: ['BACKEND'],
         remoteMode: 'FULL_REMOTE',
         priceMin: '600000',
         priceMax: '800000',
@@ -576,7 +576,8 @@ describe('検索エリア（改修指示書 §2 の 3 層）', () => {
     for (const testId of [
       'project-list-filter-q',
       'project-list-filter-status',
-      'project-list-filter-category',
+      // ✅ 2026-11-01: カテゴリは複数選択（フェーズと同じ部品）になった。
+      'project-list-filter-category-skills',
       'project-list-filter-skills',
       'project-list-filter-remote-mode',
       'project-list-filter-price-min',

@@ -915,6 +915,9 @@ model Project {
   status             String   @default("OPEN")                   // ProjectStatus（上記参照。CHECK）
   // ✅✅ 2026-10-16（受領モックの絞り込み。Issue #113「設計から改訂して」が承認。migration 20261016030000）
   category           String?                                      // ProjectCategory（CHECK）。null = 未設定
+  // ✅✅ 2026-11-01（人間の明示指示）: 7 値 → 12 値（PM_PMO / BACKEND / FRONTEND / CLOUD / NETWORK / ON_PREMISES / DATA_AI / SECURITY / OPERATIONS / HELPDESK / SALES / OTHER）。
+  //    migration 20261101000000 で旧 INFRA → CLOUD / AI・DATA → DATA_AI に移送。一覧の検索（#25 `?category=`）は複数選択・OR（`IN`）。
+  //    旧値は検索 query と保存条件でだけ移送先に読み替える（`LEGACY_PROJECT_CATEGORY_MAP`）。登録・編集では受け取らない。
   sourceKind         String   @default("OWN")                     // ProjectSourceKind（CHECK）。🔴 どこから来たかの分類であって所有者ではない（RLS も越境経路も変わらない）
   parallelOk         Boolean?                                     // 並行可否。null = 未設定
   originAssignmentId String?  @db.Uuid                        // F-045 の後任募集の生成元

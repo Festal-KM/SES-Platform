@@ -29,6 +29,7 @@
 import { z } from 'zod';
 import {
   PROJECT_CATEGORIES,
+  normalizeLegacyProjectCategory,
   PROJECT_SOURCE_KINDS,
   PROJECT_START_WINDOWS,
   PROJECT_STATUSES,
@@ -398,7 +399,19 @@ export const projectListQuerySchema = idCursorPageQuerySchema.extend({
    * ✅✅ **2026-10-16（受領モックの絞り込み。[Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)
    *    「設計から改訂して」が列を足す承認である）: カテゴリ / 案件区分 / 並行可否 / 開始時期。**
    */
-  category: optionalFilter(z.enum(PROJECT_CATEGORIES)),
+  /**
+   * ✅✅ 2026-11-01（人間の明示指示「複数検索（OR検索）できるようにしてください」）: **複数選択・OR**。
+   * 🔴 キーは従来どおり `category`（`?category=A&category=B`）。1 個だけの古い URL もそのまま読める。
+   * 🔴 **旧値（INFRA / AI / DATA）は移送先に読み替える**（`normalizeLegacyProjectCategory`。
+   *    migration `20261101000000` と同じ写像）。古いリンクや保存した検索を 400 にしないため。
+   * 🔴 空は `undefined` に畳む（`optionalListFilter`）。`[]` を通すと `{ in: [] }` = 全件 0 件になる。
+   */
+  category: optionalListFilter(
+    z
+      .array(z.preprocess((value) => (typeof value === 'string' ? normalizeLegacyProjectCategory(value) : value), z.enum(PROJECT_CATEGORIES)))
+      .max(PROJECT_CATEGORIES.length * 2)
+      .transform((values) => [...new Set(values)]),
+  ),
   sourceKind: optionalFilter(z.enum(PROJECT_SOURCE_KINDS)),
   /**
    * 🔴 **`'1'` / `'0'` で受ける**（`z.coerce.boolean()` は空文字以外をすべて true にするので、

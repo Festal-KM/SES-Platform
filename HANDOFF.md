@@ -1,5 +1,8 @@
 # HANDOFF.md — 作業の引き継ぎ
 
+## 2026-11-01 ⏳ 案件検索のカテゴリを 12 値・複数選択（OR）にする（ブランチ `feat/project-category-or`）
+
+人間の指示でカテゴリの選択肢を 12 値に置き換え、検索を複数選択・OR にした。値集合の出所は `packages/db/src/schema-value-sets.ts` の `PROJECT_CATEGORIES` の 1 本（並び = 画面の順）。🔴 **migration `20261101000000` は既存行を書き換える**ので HANDOFF §3.1 の手順（FORCE 解除 → 旧 CHECK を外す → 移送 → 残存 0 件の検査 → 新 CHECK → FORCE 復帰 → カタログ検査）で書いた。移送は INFRA → CLOUD / AI・DATA → DATA_AI（INFRA の行き先は既定でクラウド系。違う案件は編集で直す）。URL のキーは従来どおり `category`（繰り返し）で、古い 1 値の URL・保存条件・旧値はそのまま読める（`LEGACY_PROJECT_CATEGORY_MAP`。検索欄はクライアント部品で `@ses/db` を読めないので `_search/legacy-categories.ts` に写しを置き、テストで一致を固定した）。デモの seed の旧値 3 行も新しい値に直した。🔴 **ローカルの `packages/*/dist` が main より古いと、`@ses/db` のビルドや render テストが無関係のエラーで落ちる**（今回 domain / ui を作り直して解消）。分離テスト（実 DB の `IN` と旧値の 400）と E2E は CI で確認する。
 ## 2026-10-30 アイコン操作の復帰と一覧ステータスの表示専用化
 
 人間の指示で検索の保存/クリア/取消/検索をIconButtonとTooltipへ統一。一覧のステータス切替は撤去し、サマリの既存切替は維持する。カード編集の入力追加や確認ダイアログの確定は、操作の意味を保つため文言を維持。最新の動作確認とCIはPR #201を参照。

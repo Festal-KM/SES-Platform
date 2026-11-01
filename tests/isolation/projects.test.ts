@@ -1315,12 +1315,31 @@ describe('検索条件（docs/05 §6.4 #25 / `F-015` の入力）', () => {
     const target = await createdIdOf(
       await postProject(ctx, { name: `${MARKER}カテゴリ`, category: 'BACKEND' }),
     );
-    await postProject(ctx, { name: `${MARKER}カテゴリ別`, category: 'INFRA' });
+    await postProject(ctx, { name: `${MARKER}カテゴリ別`, category: 'NETWORK' });
 
     const body = await listBodyOf(await getProjects(ctx, '?category=BACKEND'));
 
     expect(idsOf(body)).toEqual([target]);
     expect(body.total).toBe(1);
+  });
+
+  // ✅✅ 2026-11-01（人間の明示指示「複数検索（OR検索）」）: 実 DB で `IN` が効くこと。
+  it('🔴 カテゴリを複数選ぶと、どれか 1 つに一致する案件が出る（OR）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const backend = await createdIdOf(await postProject(ctx, { name: `${MARKER}OR-BE`, category: 'BACKEND' }));
+    const cloud = await createdIdOf(await postProject(ctx, { name: `${MARKER}OR-CL`, category: 'CLOUD' }));
+    await postProject(ctx, { name: `${MARKER}OR-SEC`, category: 'SECURITY' });
+
+    const body = await listBodyOf(await getProjects(ctx, '?category=BACKEND&category=CLOUD'));
+
+    // 🔴 母集団 0 件で通らないよう、出る側と出ない側の両方を見る（HANDOFF §6-16）。
+    expect([...idsOf(body)].sort()).toEqual([backend, cloud].sort());
+    expect(body.total).toBe(2);
+  });
+
+  it('🔴 廃止した旧値（INFRA）は登録できない', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    expect((await postProject(ctx, { name: `${MARKER}旧値`, category: 'INFRA' })).status).toBe(400);
   });
 
   it('🔴 値集合に無いカテゴリは 400（CHECK より手前で落ちる）', async () => {

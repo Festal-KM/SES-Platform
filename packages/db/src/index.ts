@@ -151,6 +151,8 @@ export {
   // 🔴 T-12-10: 公開後の再検査と自動解除の値集合（docs/05 §3.5 / §3.6。宣言は `packages/domain`）。
   // ✅ 2026-10-16（Issue #113 の「設計から改訂して」+ 受領モック）: カテゴリ / 案件区分。
   PROJECT_CATEGORIES,
+  LEGACY_PROJECT_CATEGORY_MAP,
+  normalizeLegacyProjectCategory,
   PROJECT_PUBLISH_REQUEST_KINDS,
   PROJECT_PUBLISH_RUN_TRIGGERS,
   PROJECT_SOURCE_KINDS,

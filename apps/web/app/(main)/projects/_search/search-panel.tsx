@@ -425,7 +425,7 @@ export function SearchPanel({
         chipsOf={(item) => projectSearchChips(item.filters, messages.chipLabels).map((chip) => ({
           ...chip,
           // 一覧では列見出しが文脈を担うので、バッジは条件の値を優先する。
-          label: ['q', 'category', 'price', 'prefecture', 'startWithin'].includes(chip.key)
+          label: ['q', 'price', 'prefecture', 'startWithin'].includes(chip.key) || chip.key.startsWith('category:')
             ? chip.label.slice(chip.label.indexOf(messages.chipLabels.fieldSeparator) + messages.chipLabels.fieldSeparator.length)
             : chip.label,
         }))}
@@ -641,9 +641,7 @@ export function SearchPanel({
         {draft.status === '' ? null : (
           <input type="hidden" name={PROJECT_SEARCH_FIELD_NAMES.status} value={draft.status} />
         )}
-        {draft.category === '' ? null : (
-          <input type="hidden" name={PROJECT_SEARCH_FIELD_NAMES.category} value={draft.category} />
-        )}
+        {draft.categories.map(category => <input key={`category:${category}`} type="hidden" name={PROJECT_SEARCH_FIELD_NAMES.categories} value={category} />)}
         {draft.remoteMode === '' ? null : (
           <input type="hidden" name={PROJECT_SEARCH_FIELD_NAMES.remoteMode} value={draft.remoteMode} />
         )}

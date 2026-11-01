@@ -137,8 +137,16 @@ describe('検索条件 → 述語（`F-015` の入力）', () => {
 
   // ✅✅ 2026-10-16（受領モック `デザインモック/自社案件管理_案件一覧.png` の絞り込み。
   //    [Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)「設計から改訂して」）。
-  it('カテゴリは等値で絞る', () => {
-    expect(projectSearchWhere({ category: 'BACKEND' })).toEqual({ category: 'BACKEND' });
+  // ✅✅ 2026-11-01（人間の明示指示「複数検索（OR検索）」）: 等値 → `in`。
+  it('カテゴリは複数選んだどれか 1 つに一致する（OR = in）', () => {
+    expect(projectSearchWhere({ category: ['BACKEND'] })).toEqual({ category: { in: ['BACKEND'] } });
+    expect(projectSearchWhere({ category: ['CLOUD', 'NETWORK', 'ON_PREMISES'] })).toEqual({
+      category: { in: ['CLOUD', 'NETWORK', 'ON_PREMISES'] },
+    });
+  });
+
+  it('🔴 カテゴリの空配列は「指定なし」（`{ in: [] }` で全件 0 件にしない）', () => {
+    expect(projectSearchWhere({ category: [] })).toEqual({});
   });
 
   it('案件区分は等値で絞る', () => {
@@ -236,7 +244,7 @@ describe('検索条件 → 述語（`F-015` の入力）', () => {
       q: '基幹',
       status: 'OPEN',
       sourceKind: 'OWN',
-      category: 'BACKEND',
+      category: ['BACKEND'],
       remoteMode: 'FULL_REMOTE',
       priceMin: 700_000,
       priceMax: 900_000,
@@ -248,7 +256,7 @@ describe('検索条件 → 述語（`F-015` の入力）', () => {
     });
     expect(where.status).toBe('OPEN');
     expect(where.sourceKind).toBe('OWN');
-    expect(where.category).toBe('BACKEND');
+    expect(where.category).toEqual({ in: ['BACKEND'] });
     expect(where.remoteMode).toBe('FULL_REMOTE');
     expect(where.prefecture).toBe('13');
     expect(where.parallelOk).toBe(true);
