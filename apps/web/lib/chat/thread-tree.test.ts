@@ -1,7 +1,7 @@
 // apps/web/lib/chat/thread-tree.test.ts
 // `S-031` のスレッド一覧を会社ごとの木にする（`lib/chat/thread-tree.ts`）。
 import { describe, expect, it } from 'vitest';
-import { buildThreadTree, lastMessageSnippet, type ChatThreadTreeInput } from './thread-tree';
+import { buildThreadTree, companyKeysOf, hideCompanyRooms, lastMessageSnippet, type ChatThreadTreeInput } from './thread-tree';
 import type { ChatThreadListItem } from './views';
 
 function item(
@@ -130,5 +130,37 @@ describe('lastMessageSnippet', () => {
   it('本文があれば本文の冒頭（案件を貼っていても）', () => {
     expect(lastMessageSnippet({ body: 'こちらです', attachedProjectId: 'p1' }, '案件を共有しました')).toBe('こちらです');
     expect(lastMessageSnippet({ body: null }, '案件を共有しました')).toBe('');
+  });
+});
+
+describe('✅ 2026-10-30（F-038 改訂 16 ⑱）hideCompanyRooms: 会社グループの部屋を一覧に出さない', () => {
+  const tree = buildThreadTree(INPUT, { sort: 'recent', q: null, fastReplyKeys: new Set(['A']) });
+  const { groups, hiddenIds } = hideCompanyRooms(tree);
+
+  it('会社グループの部屋だけを外し、案件スレッドは会社ごとのまとまりのまま残す', () => {
+    expect(groups.every((group) => group.chat === null)).toBe(true);
+    expect([...hiddenIds].sort()).toEqual(['a1', 'b1']);
+    expect(groups.find((group) => group.counterpartyName === 'アルファ')?.threads.map((thread) => thread.id)).toEqual(['a3', 'a2']);
+    expect(groups.find((group) => group.counterpartyName === 'ガンマ')?.threads.map((thread) => thread.id)).toEqual(['c1']);
+  });
+
+  it('🔴 鍵は変えない（会社グループの ID のまま。お気に入り・ミュート・返信の早さ・DM の会社の結び付きが同じ鍵を使う）', () => {
+    expect(groups.map((group) => group.key)).toEqual(tree.map((group) => group.key));
+    const keys = companyKeysOf(INPUT);
+    expect(groups.find((group) => group.counterpartyName === 'アルファ')?.key).toBe(keys.get('A'));
+    expect(keys.get('A')).toBe('a1');
+    expect(groups.find((group) => group.counterpartyName === 'アルファ')?.fastReply).toBe(true);
+  });
+
+  it('会社グループしか無い会社も、まとまり（名前と鍵）は残す（DM・グループをその会社から辿るため）', () => {
+    const only = hideCompanyRooms(buildThreadTree([{ groupKey: 'D', item: item('d1', 'COMPANY', 'デルタ', '2026-10-14T00:00:00.000Z') }], { sort: 'recent', q: null }));
+    expect(only.groups).toEqual([{ key: 'd1', counterpartyName: 'デルタ', chat: null, threads: [], fastReply: false }]);
+    expect([...only.hiddenIds]).toEqual(['d1']);
+  });
+
+  it('会社グループが無ければ何も外さない', () => {
+    const none = hideCompanyRooms(buildThreadTree([{ groupKey: 'C', item: C_ONLY_THREAD }], { sort: 'recent', q: null }));
+    expect(none.hiddenIds.size).toBe(0);
+    expect(none.groups[0]?.threads.map((thread) => thread.id)).toEqual(['c1']);
   });
 });

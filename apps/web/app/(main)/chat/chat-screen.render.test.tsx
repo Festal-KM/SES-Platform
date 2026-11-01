@@ -31,7 +31,7 @@ import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { buildThreadTree } from '../../../lib/chat/thread-tree';
+import { buildThreadTree, hideCompanyRooms } from '../../../lib/chat/thread-tree';
 import { t } from '@ses/i18n';
 import type {
   ChatMessageView,
@@ -946,5 +946,31 @@ describe('一覧の会社名と本文の抜粋', () => {
     expect(withSnippet).toContain('候補者をご紹介します');
     expect(withSnippet).not.toContain(' ・ ');
     expect(html).toContain(`data-testid="chat-thread-counterparty-${THREAD_COMPANY}"`);
+  });
+});
+
+describe('✅ 2026-10-30（F-038 改訂 16 ⑱）: 会社グループの部屋を一覧・左の列に出さない', () => {
+  it('page.tsx は一覧・左の列に会社グループを外したまとまりを渡し、未読・@ の数からも外す', () => {
+    const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
+    expect(page).toContain('hideCompanyRooms(tree.groups)');
+    expect(page).not.toContain('groups={tree.groups}');
+    expect(page.match(/groups=\{listed\.groups\}/g)).toHaveLength(2);
+    expect(page).not.toContain('unreadCounts={tree.unreadCounts}');
+    expect(page).not.toContain('mentionUnreadIds={data.mentionUnreadIds}');
+    expect(page).not.toMatch(/count: Object\.entries\(\{ \.\.\.tree\.unreadCounts/);
+  });
+
+  it('外したまとまりを渡すと、一覧に会社グループの行は出ず、案件スレッドの行は出る', () => {
+    const tree = buildThreadTree(
+      [
+        { groupKey: 'p1', item: { id: 'company-room', kind: 'COMPANY', project: null, counterpartyName: '架空パートナー A', lastMessageAt: '2026-10-29T00:00:00.000Z' } },
+        { groupKey: 'p1', item: { id: 'project-room', kind: 'PROJECT', project: { id: 'pr', name: '基幹移行' }, counterpartyName: '架空パートナー A', lastMessageAt: '2026-10-28T00:00:00.000Z' } },
+      ],
+      { sort: 'recent', q: null },
+    );
+    const { groups } = hideCompanyRooms(tree);
+    const html = renderToStaticMarkup(createElement(ChatThreadList, { groups, selectedThreadId: null, nextCursor: null }));
+    expect(html).not.toContain('chat-thread-row-company-room');
+    expect(html).toContain('data-testid="chat-thread-row-project-room"');
   });
 });

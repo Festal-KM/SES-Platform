@@ -130,6 +130,11 @@ export function ChatRail({ groups, rooms, unreadCounts, mentionUnreadIds = [], f
     groups.flatMap((group) => [...(group.chat === null ? [] : [group.chat.id]), ...group.threads.map((item) => item.id)]).filter((id) => unreadOf(id) > 0).length +
     rooms.filter((room) => room.companyKey !== null && unreadOf(room.id) > 0).length;
   const projectsUnread = projects.filter((item) => unreadOf(item.id) > 0).length;
+  // ✅ 2026-10-30（F-038 改訂 16 ⑱）: 会社グループの部屋は一覧に出さないので、押しても何も並ばない会社（スレッドも、
+  //    その会社の人との DM・グループも無い）は左の列にも出さない。
+  const companies = groups.filter(
+    (group) => group.chat !== null || group.threads.length > 0 || rooms.some((room) => room.companyKey === group.key),
+  );
   // ✅ 2026-10-29（F-038 ⑯）: 項目を「鍵・名前・中身」の並びにして、並べ方だけを利用者に任せる（`chat-rail-order.tsx`）。
   //    🔴 どの項目を出すか・件数・リンク先はここ（サーバ）が決める。並び替えで項目は増えも減りもしない。
   const blocks: ChatRailBlock[] = [
@@ -141,7 +146,7 @@ export function ChatRail({ groups, rooms, unreadCounts, mentionUnreadIds = [], f
   if (showSaved) {
     blocks.push({ key: 'saved', kind: 'link', label: t('chat.rail.saved'), node: <RailLink href={chatHref({ filter: { kind: 'saved' } })} active={is('saved')} mark="saved" markText={t('chat.rail.mark.saved')} label={t('chat.rail.saved')} testKey="saved" /> });
   }
-  if (groups.length > 0) {
+  if (companies.length > 0) {
     blocks.push({
       key: 'companies',
       kind: 'section',
@@ -149,7 +154,7 @@ export function ChatRail({ groups, rooms, unreadCounts, mentionUnreadIds = [], f
       node: (
         <ChatRailSection sectionKey="companies" heading={t('chat.rail.companies')} unread={companiesUnread}>
           <ul className="m-0 flex list-none gap-1 overflow-x-auto p-0 md:flex-col md:overflow-visible" data-testid="chat-rail-companies">
-            {groups.map((group) => {
+            {companies.map((group) => {
               const name = group.counterpartyName ?? t('chat.thread.unknownName');
               const ids = [...(group.chat === null ? [] : [group.chat.id]), ...group.threads.map((item) => item.id)];
               const unread = ids.filter((id) => unreadOf(id) > 0).length + rooms.filter((room) => room.companyKey === group.key && unreadOf(room.id) > 0).length;
