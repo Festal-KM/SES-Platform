@@ -272,7 +272,8 @@ export function projectListHref(
   // 🔴 `'1'` を載せる（`schemas.ts` が `z.literal('1')` で受ける唯一の形）。
   if (query.recruitingOnly === true) params.set('recruitingOnly', '1');
   // ✅ 2026-10-16（受領モック）: カテゴリ / 案件区分 / 並行可否 / 開始時期。
-  if (query.category !== undefined) params.set('category', query.category);
+  // ✅ 2026-11-01: カテゴリも複数選択・OR。🔴 `append`（`set` だとページを送った瞬間に 1 つに減る）。
+  for (const category of query.category ?? []) params.append('category', category);
   if (query.sourceKind !== undefined) params.set('sourceKind', query.sourceKind);
   // 🔴 `'1'` / `'0'` の 2 値（`false` を落とすと「不可」で絞った条件がページ送りで消える）。
   if (query.parallelOk !== undefined) params.set('parallelOk', query.parallelOk ? '1' : '0');
@@ -287,6 +288,7 @@ export function projectListHref(
   for (const key of ['developmentMethod', 'utilizationBand', 'utilizationMin', 'utilizationMax', 'keywordGroups'] as const) { if (query[key] !== undefined) params.set(key, String(query[key])); }
   if (query.limit !== PAGE_SIZE_DEFAULT) params.set('limit', String(query.limit));
   if (cursor !== null) params.set('cursor', cursor);
+  if (cursor === null && query.page !== undefined && query.page > 1) params.set('page', String(query.page));
   // ✅ 2026-10-15: 既定（2 列を格納）と同じなら URL に痕跡を残さない。既定から戻したときだけ
   //    `?hide=` が載る（空値 ＝ 1 つも隠していない）。
   const hide = hiddenColumnsParamValue(hiddenColumns, PROJECT_DEFAULT_HIDDEN_COLUMN_IDS);

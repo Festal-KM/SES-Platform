@@ -12,6 +12,7 @@
     "verify-config": "node dist/main.js --verify-config"
   },
   "dependencies": {
+    "@sentry/node": "11.9.0",
     "@ses/ai": "workspace:*",
     "@ses/config": "workspace:*",
     "@ses/connectors": "workspace:*",

@@ -649,7 +649,7 @@ model EngineerCareer {
 // 🔴 列挙は §3.1 規約どおり Prisma の `enum` を使わず `String` + 許容値コメントで宣言する。
 //    単一の出所は packages/db/src/schema-value-sets.ts（PROJECT_STATUSES / REQUIREMENT_KINDS）。
 //    ProjectStatus: 'OPEN'|'CLOSED'（募集中/終了）
-//    ProjectCategory: 'BACKEND'|'FRONTEND'|'INFRA'|'AI'|'DATA'|'PM_PMO'|'HELPDESK'（2026-10-16。Issue #113）
+//    ProjectCategory: 'PM_PMO'|'BACKEND'|'FRONTEND'|'CLOUD'|'NETWORK'|'ON_PREMISES'|'DATA_AI'|'SECURITY'|'OPERATIONS'|'HELPDESK'|'SALES'|'OTHER'（2026-10-16。Issue #113 → 2026-11-01 に 12 値）
 //    ProjectSourceKind: 'OWN'|'PARTNER'（案件区分。同上）
 //      ✅ 2026-10-16: 3 値から 2 値にした（Issue #98 の回答「募集中と終了の二つだけでよい」）。
 //      移送は migration 20261016000000_project_status_two_values（SUCCESSOR_WANTED→OPEN / FILLED→CLOSED）。

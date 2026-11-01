@@ -1,4 +1,5 @@
 import { parseProjectKeywordGroups, type ProjectKeywordGroup } from '@ses/domain';
+import type { Prisma } from '@prisma/client';
 // packages/db/src/search/projects.ts
 // 案件の検索と既定の並び（`GET /api/projects`。docs/05 §6.4 #25 / `F-015` / `S-010`）。
 // T-06-03 → 🔴 T-06-05 で `apps/web/lib/projects/list.ts` から**検索に相当する部分だけ**を
@@ -47,7 +48,8 @@ export type ProjectWhereFragment = {
   /** ✅ 2026-10-16: 稼働形態（`RemoteMode` の 3 値）。🔴 **未設定（null）の案件は一致しない** */
   remoteMode?: RemoteMode;
   /** ✅ 2026-10-16（Issue #113 + 受領モック）: カテゴリ / 案件区分 / 並行可否。 */
-  category?: ProjectCategory;
+  /** ✅ 2026-11-01: 複数選択・OR（`in`）。 */
+  category?: { in: ProjectCategory[] };
   sourceKind?: ProjectSourceKind;
   parallelOk?: boolean;
   name?: FreeWordFilter;
@@ -132,12 +134,17 @@ export type ProjectSearchCriteria = {
    * ✅✅ **2026-10-16（受領モックの絞り込み 2〜3 行目。[Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)
    *    「設計から改訂して」が列を足す承認である）: カテゴリ / 案件区分 / 並行可否。**
    *
-   * 🔴 **いずれも等値で絞る。** `category` / `parallelOk` は `null` を許す列であり、
+   * 🔴 **`sourceKind` / `parallelOk` は等値、`category` は 2026-11-01 から `in`（OR）で絞る。** `category` / `parallelOk` は `null` を許す列であり、
    *    **絞り込みを掛けると未設定の案件は落ちる**（`prefecture` / `remoteMode` と同じ挙動）。
    * 🔴 **`sourceKind` は「どこから来た案件か」の分類であって所有者ではない** ——
    *    述語は母集団の中を絞るだけで、`CLAUDE.md` §3.1 の境界には 1 ミリも触れない。
    */
-  readonly category?: ProjectCategory;
+  /**
+   * ✅✅ 2026-11-01（人間の明示指示「複数検索（OR検索）」）: **どれか 1 つに一致**（`in`）。
+   * 🔴 空配列は「指定なし」として扱う（`{ in: [] }` は常に偽 = 全件 0 件になるため）。
+   * 🔴 未設定（null）の案件は、絞り込みを掛けると落ちる（従来どおり）。
+   */
+  readonly category?: readonly ProjectCategory[];
   readonly sourceKind?: ProjectSourceKind;
   readonly parallelOk?: boolean;
   /**
@@ -209,6 +216,16 @@ export const PROJECT_LIST_ORDER_BY = [
   { startDate: { sort: 'asc', nulls: 'last' } },
   { id: 'desc' },
 ] as const;
+
+/** 旧カーソルURLを番号へ移すため、同じ並びでカーソルまでの行だけを数える。 */
+export function projectCursorPrefixWhere(row: {status: string; updatedAt: Date; startDate: Date | null; id: string}): Prisma.ProjectWhereInput {
+  return {OR:[
+    {status:{gt:row.status}},
+    {status:row.status,updatedAt:{gt:row.updatedAt}},
+    {status:row.status,updatedAt:row.updatedAt,startDate:row.startDate === null ? {not:null} : {lt:row.startDate}},
+    {status:row.status,updatedAt:row.updatedAt,startDate:row.startDate,id:{gte:row.id}},
+  ]};
+}
 
 /**
  * 🔴 **`ORDER BY status DESC` が `PROJECT_STATUS_LIST_PRIORITY` を与えることの検査。**
@@ -326,7 +343,7 @@ export function projectSearchWhere(criteria: ProjectSearchCriteria): ProjectWher
     ...(criteria.prefecture === undefined ? {} : { prefecture: criteria.prefecture }),
     ...(criteria.remoteMode === undefined ? {} : { remoteMode: criteria.remoteMode }),
     // ✅ 2026-10-16（Issue #113 + 受領モック）。🔴 等値のキーなので衝突しない（トップレベルでよい）。
-    ...(criteria.category === undefined ? {} : { category: criteria.category }),
+    ...(criteria.category?.length ? { category: { in: [...criteria.category] } } : {}),
     ...(criteria.sourceKind === undefined ? {} : { sourceKind: criteria.sourceKind }),
     ...(criteria.parallelOk === undefined ? {} : { parallelOk: criteria.parallelOk }),
   };

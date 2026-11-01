@@ -36,13 +36,18 @@ export const PROJECT_STATUS_MESSAGE_KEYS: Readonly<Record<ProjectStatus, Message
  *    （語の無い値を画面に出せない）。`PROJECT_STATUS_MESSAGE_KEYS` と同じ形である。
  */
 export const PROJECT_CATEGORY_MESSAGE_KEYS: Readonly<Record<ProjectCategory, MessageKey>> = {
+  PM_PMO: 'projects.category.PM_PMO',
   BACKEND: 'projects.category.BACKEND',
   FRONTEND: 'projects.category.FRONTEND',
-  INFRA: 'projects.category.INFRA',
-  AI: 'projects.category.AI',
-  DATA: 'projects.category.DATA',
-  PM_PMO: 'projects.category.PM_PMO',
+  CLOUD: 'projects.category.CLOUD',
+  NETWORK: 'projects.category.NETWORK',
+  ON_PREMISES: 'projects.category.ON_PREMISES',
+  DATA_AI: 'projects.category.DATA_AI',
+  SECURITY: 'projects.category.SECURITY',
+  OPERATIONS: 'projects.category.OPERATIONS',
   HELPDESK: 'projects.category.HELPDESK',
+  SALES: 'projects.category.SALES',
+  OTHER: 'projects.category.OTHER',
 };
 
 export const PROJECT_SOURCE_KIND_MESSAGE_KEYS: Readonly<Record<ProjectSourceKind, MessageKey>> = {

@@ -40,6 +40,7 @@
 import {
   PROJECT_LIST_ORDER_BY,
   projectSearchWhere,
+  projectCursorPrefixWhere,
   resolveStartWindow,
   withTenant,
   type AuthenticatedTenantCtx,
@@ -368,6 +369,17 @@ export function withStartWindow(query: ProjectListQuery, now: Date): ProjectList
   } as ProjectListQuery;
 }
 
+export async function projectPageFromCursor(ctx: AuthenticatedTenantCtx, query: ProjectListQuery): Promise<number> {
+  if (!query.cursor) return 1;
+  const where = projectSearchWhere({...withStartWindow(query,new Date()),searchInternalRemarks:ctx.partnerCompanyId === null});
+  return withTenant(ctx, async db => {
+    const row = await db.project.findFirst({where:{AND:[where,{id:query.cursor}]},select:{id:true,status:true,updatedAt:true,startDate:true}});
+    if (!row) return 1;
+    const preceding = await db.project.count({where:{AND:[where,projectCursorPrefixWhere(row)]}});
+    return Math.floor(preceding / query.limit) + 1;
+  });
+}
+
 export async function listProjects(
   ctx: AuthenticatedTenantCtx,
   query: ProjectListQuery,
@@ -395,7 +407,9 @@ export async function listProjects(
         select: PROJECT_LIST_SELECT,
         orderBy: [...PROJECT_LIST_ORDER_BY],
         take: takeForCursorPage(query.limit),
-        ...(query.cursor === undefined ? {} : { cursor: { id: query.cursor }, skip: 1 }),
+        // 番号指定も同じwhere・RLS・決定的な並びの内側で適用する。
+        ...(query.page !== undefined ? { skip: (query.page - 1) * query.limit }
+          : query.cursor === undefined ? {} : { cursor: { id: query.cursor }, skip: 1 }),
       }),
       // 🔴 `where` は上と同一の値である（docs/05 §4.8 / `F-015 AC-1`）。
       db.project.count({ where }),

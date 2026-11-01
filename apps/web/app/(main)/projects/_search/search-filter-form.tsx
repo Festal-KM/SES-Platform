@@ -154,18 +154,21 @@ export function SearchFilterForm({
         />
       </Field>
 
-      <Field as="div" labelClassName="text-xs text-fg-muted" label={messages.category}>
-        <FilterSelect
-          options={options.categoryOptions}
-          value={draft.category}
-          label={messages.category}
-          messages={messages.selectMessages}
-          testId={`${testIdPrefix}category`}
-          onChange={(category) => {
-            // 🔴 **カテゴリを変えてもスキルを消さない**（指示書 §3「カテゴリ変更でも、
-            //    既存の明示的な制約がない限りスキルを勝手に消さないでください」）。
-            onChange({ category });
+      {/* ✅ 2026-11-01（人間の明示指示「複数検索（OR検索）できるようにしてください」）:
+          単一選択 → フェーズと同じチェック付きの複数選択（OR）。
+          🔴 **カテゴリを変えてもスキルを消さない**（指示書 §3）。
+          🔴 選択肢から先頭の「すべて」（空文字）を外す —— 複数選択では「何も選ばない」がすべてである。 */}
+      <Field as="div" labelClassName="text-xs text-fg-muted" label={<span className="flex items-center gap-2">{messages.category}<span className="text-micro font-normal text-fg-muted">{t('projects.search.multiOR')}</span></span>}>
+        <SkillMultiSelect
+          options={options.categoryOptions.filter(option => option.value !== '')}
+          values={draft.categories}
+          onChange={(categories) => {
+            onChange({ categories });
           }}
+          messages={{ ...messages.skillMessages, placeholder: t('projects.search.categoryPlaceholder'), triggerLabel: messages.category, searchLabel: messages.category, searchPlaceholder: t('projects.search.categoryPlaceholder') }}
+          testIdPrefix={`${testIdPrefix}category-`}
+          checklist
+          topHint={t('projects.search.multiOR')}
         />
       </Field>
 
