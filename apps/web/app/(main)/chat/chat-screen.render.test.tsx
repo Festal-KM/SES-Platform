@@ -275,12 +275,14 @@ describe('🔴 ③: md 未満は「一覧 → 会話」の切替であって遮�
     // スクロールの連鎖を止め、左の列の開閉幅を追加したためクラスの期待値も更新する。
     // 🔴 一覧の器（選択中）は畳むが `md` で戻る。
     // ✅ 2026-10-22: `md` 以上は器の中だけでスクロールする（`md:overflow-y-auto`）。
-    expect(page).toContain("'hidden bg-bg md:block md:w-96 md:shrink-0 md:overflow-y-auto overscroll-contain md:border-r md:border-border'");
+    // ✅ 2026-11-01: 一覧は幅を変えられる器に入り、スクロールは内側の器に移した。
+    expect(page).toContain("'hidden min-h-0 bg-bg md:flex md:w-96 md:shrink-0 md:flex-col'");
+    expect(page).toContain('"min-h-0 flex-1 overflow-y-auto overscroll-contain"');
     // 🔴 会話の器（未選択）は `md` 未満では一覧が全幅なので畳む。こちらも `md` で戻る。
     expect(page).toContain("'hidden min-h-0 min-w-0 flex-1 md:flex md:flex-col'");
     // ✅ 2026-10-14: 右に並べた会話とドラッグの受け口は `md` 未満では出さない（モバイルは 1 列の切替）。
     //    🔴 どちらも `md` で戻る（遮断ではない）。
-    expect(page).toContain("'hidden min-h-0 min-w-0 flex-1 flex-col overscroll-contain border-l border-border md:flex'");
+    expect(page).toContain("'hidden min-h-0 min-w-0 flex-1 flex-col overscroll-contain md:flex'");
     expect(page).toContain("'hidden md:flex'");
     // ✅ 2026-10-19（v2）: 左の絞り込みの列も、会話を開いたときだけ畳み、`md` で戻る。
     expect(page).toContain("'hidden shrink-0 bg-bg-subtle md:block md:w-44 md:data-[collapsed=true]:w-16 md:overflow-y-auto overscroll-contain'");
@@ -902,6 +904,21 @@ describe('会話の幅の調節', () => {
     expect(html).toContain('aria-valuemin="320"');
     expect(html).toContain('aria-valuemax="1600"');
     expect(renderToStaticMarkup(<ChatResizablePane enabled={false} storageKey="primary" resizeLabel={t('chat.pane.resize')} className="flex">{null}</ChatResizablePane>)).not.toContain('role="separator"');
+  });
+
+  it('スレッド一覧の境目は 240〜640px の範囲を名乗る', () => {
+    const html = renderToStaticMarkup(<ChatResizablePane enabled storageKey="list" resizeLabel={t('chat.list.resize')} minExtent={240} maxExtent={640} className="flex">{null}</ChatResizablePane>);
+    expect(html).toContain('data-testid="chat-pane-resize-list"');
+    expect(html).toContain('aria-valuemin="240"');
+    expect(html).toContain('aria-valuemax="640"');
+    expect(html).toContain('--chat-pane-min:240px');
+  });
+
+  it('境目の線は普段 1px で、ホバー・フォーカス・ドラッグ中だけ 4px に太る', () => {
+    const html = renderToStaticMarkup(<ChatResizablePane enabled storageKey="list" resizeLabel={t('chat.list.resize')} className="flex">{null}</ChatResizablePane>);
+    for (const token of ['w-px', 'group-hover:w-1', 'group-focus-visible:w-1', 'group-active:w-1']) expect(html).toContain(token);
+    // 🔴 つかめる幅は塗らない（太い帯に戻さない）。
+    expect(html).not.toMatch(/role="separator"[^>]*class="[^"]*\bbg-border\b/);
   });
 });
 

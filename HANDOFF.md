@@ -1,5 +1,10 @@
 # HANDOFF.md — 作業の引き継ぎ
 
+## 2026-11-01 ⏳ チャット: スレッド一覧と会話の幅を境目で変える（紺野の許可）
+
+`docs/04` S-031 改訂 47。DB・API は変えていない。既存の `ChatResizablePane`（並べた会話の幅）に `minExtent` / `maxExtent` を足し、一覧にも使った（240〜640px、`storageKey="list"`）。一覧のスクロールは内側の器に移した（外側でスクロールすると境目が流れる）。境目は普段 1px・ホバー／フォーカス／ドラッグ中だけ 4px。🔴 線のクラスは画面に書けない（`tests/static/ui-state-in-primitives.test.ts` の (j)）ので `@ses/ui` の `RESIZE_HANDLE_LINE_CLASSES` に置いた。一覧の `border-r`・並べた会話の `border-l` は線が兼ねるので外した。文言キー `chat.list.resize` を追加。E2E `chat.layout.spec.ts` に 1 本足したがローカルでは回していない（CI で確認）。
+⚠️ **Mac（Apple Silicon）でローカルを立ち上げるときの罠 2 つ**: ① `docker/postgres/initdb/000-roles.sh` に実行権限が無く（`-rw-r--r--`）、初期化で `bad interpreter: Permission denied` になり DB ロールが作られない → `docker exec` で中から `bash` で流すと通る ② `clamav/clamav:1.5.4` に arm64 のイメージが無い → `docker pull --platform linux/amd64` してから `DOCKER_DEFAULT_PLATFORM=linux/amd64 docker compose up -d clamav`。また seed は `APP_ENV=development` を付けないと拒否される。
+
 ## 2026-10-29 ⏳ チャット: 送った発言をその場で出す・左の列の並び替え・会話の中の検索（PR #199）
 
 紺野の決定（F-038 改訂 14 ⑮⑯⑰ / S-031 改訂 46 / docs/05 #51s）。DB は変えていない。⑮ 5 秒の取り消し待ちをやめ、送信箱（`apps/web/lib/chat/outbox.ts`。手元だけ）で「送信中」の吹き出しを先に出す。旧 `CHAT_UNDO_SEND_MS` と入力欄の「取り消す／今すぐ送る」は消した（文言キーは追加のみの約束で残す）。E2E `chat.compose.spec.ts` を書き直し、`chat.project-card.spec.ts` の「今すぐ送る」を外した。⑯ 並びは `localStorage` の `ses.chat.rail.order`（鍵の配列だけ）。⑰ 新 API `GET /api/threads/{id}/messages/search`（`lib/chat/search.ts`）。🔴 照合は `freeWordFilter` で絞り、引用の見出し・写しは `search-text.ts` で除く。分離テスト `tests/isolation/chat-search.test.ts`（ローカル緑）。E2E `chat.search.spec.ts` は手元で回していない（CI で確認）。
