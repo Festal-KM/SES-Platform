@@ -160,6 +160,8 @@ const UNRESOLVED_ALLOWLIST: readonly string[] = [
   //    🔴 29 画面が同じ帯を使うため、受け取り側を 1 つにしないと同じ見た目の実装が 29 個できる。
   'apps/web/app/(main)/_shell/page-heading.tsx',
   'apps/web/app/_components/otpauth-qr.tsx',
+  // ✅ 2026-11-01: 複数選択の共通部品。凍結値は呼び出し側が `testId="engineer-list-filter-skills"` のように文字列リテラルで渡す。
+  'apps/web/app/_components/multi-select.tsx',
 ];
 
 /**
