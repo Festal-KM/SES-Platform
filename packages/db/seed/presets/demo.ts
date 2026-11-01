@@ -1660,13 +1660,19 @@ export function buildDemoProjectSamples(tenantIndex: number, now: Date) {
   const tenant = DEMO_SEED_IDS.tenants[tenantIndex - 1];
   if (tenant === undefined) throw new Error('Unknown demo tenant');
   const templates = [
+    // ✅ 2026-11-01: カテゴリ 12 値をすべて含める（絞り込みの見え方をデモで確かめられるように）。
+    { name: '業務改善プロジェクトの推進', skill: 'Java', category: 'PM_PMO' },
     { name: '受発注システムのAPI開発', skill: 'Java', category: 'BACKEND' },
     { name: '顧客向けポータル画面の刷新', skill: 'React', category: 'FRONTEND' },
-    { name: 'クラウド基盤の設計・構築', skill: 'AWS', category: 'INFRA' },
-    { name: '需要予測モデルの開発支援', skill: 'Python', category: 'AI' },
-    { name: 'データ分析基盤の整備', skill: 'SQL', category: 'DATA' },
-    { name: '業務改善プロジェクトの推進', skill: 'Java', category: 'PM_PMO' },
-    { name: '社内システムの運用改善', skill: 'SQL', category: 'HELPDESK' },
+    { name: 'クラウド基盤の設計・構築', skill: 'AWS', category: 'CLOUD' },
+    { name: '拠点間ネットワークの更改', skill: 'Linux', category: 'NETWORK' },
+    { name: '社内サーバーの更改', skill: 'Linux', category: 'ON_PREMISES' },
+    { name: '需要予測モデルの開発支援', skill: 'Python', category: 'DATA_AI' },
+    { name: 'コンテナ基盤のセキュリティ強化', skill: 'Kubernetes', category: 'SECURITY' },
+    { name: '基幹システムの運用保守', skill: 'SQL', category: 'OPERATIONS' },
+    { name: '社内システムの問い合わせ対応', skill: 'SQL', category: 'HELPDESK' },
+    { name: 'SaaS導入の技術営業支援', skill: 'TypeScript', category: 'SALES' },
+    { name: '社内ツールの小規模改修', skill: 'PHP', category: 'OTHER' },
   ] as const;
   const industries = ['金融', '流通', '製造', '物流', '通信', '医療'];
   const locations = [
