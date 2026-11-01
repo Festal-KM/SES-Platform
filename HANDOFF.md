@@ -524,6 +524,7 @@ OneDriveは追加の人間指示で既定OFFへ変更済み：HKCU RunのOneDriv
     - ⚠️ **止めても `next dev` の起動は通る。** `packages/config` の検証は `MALWARE_SCANNER='clamav'` のとき `CLAMAV_HOST` / `CLAMAV_PORT` が**在るか**しか見ない（`schema.ts:475`）—— 疎通は見ないので、落とした状態で再起動しても失敗しない。失敗するのは実際にスキャンを呼ぶ操作だけ。
     - 実測の効果: **ページインが 2,842/秒 → 512/秒**（約 5.5 分の 1）。物理の空き自体は 0.7 GB のままだが（Windows 側のアプリが吸う）、**ディスクの叩き方が目に見えて減る** —— メモリ監視に dev サーバーを止められる主因はこれである。
   - ⚠️ **`.wslconfig` の `memory=` は予約ではなく上限である。** 実測では `vmmemWSL` はコンテナの実使用ぶんしか持たない（5 本で 1.17 GB / 既定の上限は 6.70 GB）。**上限を絞っても空きは増えない** —— 効くのは「コンテナを止める」ことだけ。
+  - ✅ 2026-11-01 の実測: **Docker Desktop 自体が停止しており、コンテナは 0 本**（開発環境は AWS で動かす運用になったため）。空き 0.9 GB の内訳は Chrome 5.2 GB / VS Code 1.6 GB / WebView2 1.3 GB / Codex 0.8 GB / Claude Code 0.8 GB。不要なタブ・アプリを閉じて 2.1 GB まで回復した。Claude Code はメモリが逼迫するとバックグラウンドのコマンドを自動で止める（CI の見張りが止められた）。
   - 🔴 **逼迫の主因は Docker ではなく Windows 側のアプリである**（実測: Chrome 2.9 GB / WebView2 1.2 GB / Defender 0.87 GB / VS Code 0.71 GB / Edge 0.61 GB）。`next dev`（0.5〜1.5 GB）と `tsc`（`--max-old-space-size=6144` が必要）を**同時に走らせない**。
 - したがって **Playwright（`pnpm test:e2e`）と `tests/isolation` の全数はローカルで回せない。** **CI で検証する**（1 周 20 分程度）。
 - 長いコマンドはバックグラウンドで実行し、メモリ監視に止められたら**再実行せず CI に委ねる**。
