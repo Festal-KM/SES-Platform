@@ -68,12 +68,17 @@ for attempt in $(seq 1 60); do
   if docker exec ses-postgres pg_isready -U ses >/dev/null 2>&1; then break; fi
   sleep 2
 done
+# ✅ 2026-11-01: 画面は /workspaces/ses-platform-live のコピーから動いている（development.compose.yml）。
+#    ここ（ビルド用）でインストール・ビルド・migration を済ませてから、止めて差分だけ写して再起動する。
+#    止まるのは rsync と再起動の間だけ（以前はビルドの間ずっと 502 だった）。
 if [ "$initialize" = --initialize ] || [ "$needs_initialize" = yes ] || [ ! -d node_modules ]; then
-  "${compose[@]}" stop web worker || true
   "${compose[@]}" --profile tools run --rm tools bash -c 'apt-get update -qq >/dev/null && apt-get install -y -qq --no-install-recommends postgresql-client >/dev/null && node scripts/aws-development-initialize.mjs'
 fi
 # Webコンテナの利用者だけにビルドキャッシュの書込みを許す。管理用.envはroot所有のまま保つ。
 mkdir -p apps/web/.next
 chown -R 1000:1000 apps/web/.next
+"${compose[@]}" stop web worker || true
+# ビルド済みの作業ツリーを画面用のコピーへ写す（権限・リンクを保つ。.git と pnpm のストアは写さない）。
+rsync -a --delete --exclude '/.git/' --exclude '/.pnpm-store/' /workspaces/ses-platform/ /workspaces/ses-platform-live/
 "${compose[@]}" up -d web worker
 echo 'AWS開発アプリを起動しました。https://dev-es.bizorch.com/signin で確認してください。'
