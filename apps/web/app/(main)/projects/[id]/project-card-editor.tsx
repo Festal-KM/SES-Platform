@@ -60,15 +60,24 @@ const utilizationOptions = [
   ...(['FULL','HALF_TO_FULL','UNDER_HALF'] as const).map(value=>({value,label:t(`projects.search.band.${value}`)})),
 ];
 const required = new Set(["name", "status", "sourceKind", "headcount"]);
+// 🔴 公開先の取引先が読む欄（保存で再検査の対象。`projects.recheckNotice.willRun` と同じ集合）。
+const publicFields = new Set(["name", "publicSummary", "locationDetail", "publicMemo"]);
+// 公開欄を含むカード（要件の自由記述は content カード）。
+const publicCards = new Set<ProjectCardId>(["basic", "content", "working", "notes"]);
+// 🔴 取引先に出ない項目を持つカード（F-013 AC-2 の注記を常に添える）。
+const hostOnlyCards = new Set<ProjectCardId>(["commercial", "company", "notes"]);
 
 export function ProjectCardEditor({
   initial,
   options,
   canEdit,
+  publishedToCount = 0,
 }: {
   readonly initial: ProjectCardData;
   readonly options: ProjectCardOptions;
   readonly canEdit: boolean;
+  /** 🔴 公開先の社数（境界適用後）。1 社以上なら公開欄を含むカードの編集中に再検査の事前表示を出す（S-012 改訂 14 と同じ）。 */
+  readonly publishedToCount?: number;
 }) {
   const router = useRouter();
   const [refreshing, startRefresh] = useTransition();
@@ -130,7 +139,13 @@ export function ProjectCardEditor({
     const edit = (event: Event) => {
       const target = (event as CustomEvent<{ id: string; card: ProjectCardId }>)
         .detail;
-      if (target.id === initial.id && canEdit) request(target.card);
+      if (target.id === initial.id && canEdit) {
+        request(target.card);
+        // 「該当の欄を直す」: 開いたカードの最初の入力欄にフォーカスする。
+        requestAnimationFrame(() => {
+          document.querySelector<HTMLElement>(`#project-detail-card-${target.card} input, #project-detail-card-${target.card} textarea`)?.focus();
+        });
+      }
     };
     window.addEventListener("project-card-edit", edit);
     return () => window.removeEventListener("project-card-edit", edit);
@@ -172,6 +187,8 @@ export function ProjectCardEditor({
         body: JSON.stringify(patch),
       });
       if (!response.ok) throw new Error(String(response.status));
+      // 🔴 保存の成否と再検査を 1 つの表示に混ぜない。応答の `recheck.queued` で出し分ける（F-014 AC-6）。
+      const saved = (await response.json().catch(() => null)) as { recheck?: { queued?: boolean } } | null;
       setData((current) => ({
         ...current,
         values: {
@@ -184,7 +201,7 @@ export function ProjectCardEditor({
           card === "content" ? [...requirements] : current.requirements,
       }));
       setActive(null);
-      setNotice(t("projects.cards.saved"));
+      setNotice(saved?.recheck?.queued === true ? t("projects.saved.recheckQueued") : t("projects.cards.saved"));
       startRefresh(() => router.refresh());
     } catch {
       setError(t("projects.cards.failed"));
@@ -579,6 +596,14 @@ export function ProjectCardEditor({
             </div>
           </div>
           <div className="flex min-w-0 flex-col gap-3 p-4">
+            {/* 🔴 公開中の案件で公開欄を含むカードを編集しているあいだは常に出す（押した後ではない。S-012 改訂 14）。 */}
+            {editing && publishedToCount > 0 && publicCards.has(id) ? (
+              <section className="border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning" data-testid="project-card-recheck-notice">
+                <p className="m-0">{t("projects.recheckNotice.publishedToPrefix")}{publishedToCount}{t("projects.recheckNotice.publishedToSuffix")}</p>
+                <p className="m-0 mt-1">{t("projects.recheckNotice.willRun")}</p>
+                <p className="m-0 mt-1">{t("projects.recheckNotice.willNotRun")}</p>
+              </section>
+            ) : null}
             <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">{PROJECT_CARD_FIELDS[id].filter(key=>key!=="settlementMaxHours").map((key) =>
               <div key={key} className={pairedFields.has(key) ? "min-w-0" : "min-w-0 sm:col-span-2"}>{editing ? (
                 <Field key={key} as="div">
@@ -591,7 +616,7 @@ export function ProjectCardEditor({
                         </span>
                       ) : null}
                     </span>
-                    <div className={cn("min-w-0", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:col-span-2" : "sm:col-span-4")}>{key === "settlementMinHours" ? <div className="flex min-w-0 items-center gap-2">{control(key)}<span>{t('projects.cards.rangeSeparator')}</span>{control('settlementMaxHours')}<span className="shrink-0 text-xs">{t('projects.cards.hours')}</span></div> : control(key)}</div>
+                    <div className={cn("min-w-0", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:col-span-2" : "sm:col-span-4")}>{key === "settlementMinHours" ? <div className="flex min-w-0 items-center gap-2">{control(key)}<span>{t('projects.cards.rangeSeparator')}</span>{control('settlementMaxHours')}<span className="shrink-0 text-xs">{t('projects.cards.hours')}</span></div> : control(key)}{publicFields.has(key) ? <p className="m-0 mt-1 text-xs text-brand" data-testid={`project-card-public-field-${key}`}>{t("projects.publicField.notice")}</p> : null}{key === "unitPrice" ? <p className="m-0 mt-1 text-xs text-brand" data-testid="project-card-unit-price-shared">{t("projects.cards.unitPriceShared")}</p> : null}</div>
                   </div>
                 </Field>
               ) : (
@@ -617,13 +642,20 @@ export function ProjectCardEditor({
               <>
                 {requirementBlock("MUST", editing)}
                 {requirementBlock("NICE", editing)}
+                {editing ? <p className="m-0 text-xs text-brand" data-testid="project-card-public-field-requirements">{t("projects.cards.requirementPublicNotice")}</p> : null}
               </>
             ) : null}
-            {id === "commercial" ? (
+            {/* 🔴 F-013 AC-2: 取引先に出ない項目のブロックには常に注記を添える（凍結 testid の意味を保つ）。 */}
+            {hostOnlyCards.has(id) ? (
               <p
                 className="m-0 text-xs text-fg-muted"
-                data-testid="project-detail-commerce-notice"
+                data-testid={id === "commercial" ? "project-detail-commerce-notice" : `project-card-host-only-notice-${id}`}
               >
+                {t(id === "notes" ? "projects.cards.notesHostOnly" : "projects.commerce.notice")}
+              </p>
+            ) : null}
+            {id === "commercial" ? (
+              <p className="m-0 text-xs text-fg-muted" data-testid="project-card-money-hint">
                 {t("projects.cards.moneyHint")}
               </p>
             ) : null}
@@ -729,9 +761,12 @@ export function ProjectCardEditor({
 export function ProjectCardEditTrigger({
   id,
   label,
+  field,
 }: {
   readonly id: string;
   readonly label: string;
+  /** 自動解除の原因の欄の先頭（案件名 → 基本情報、それ以外 → 業務内容と要件）。 */
+  readonly field?: string;
 }) {
   return (
     <Button
@@ -740,7 +775,7 @@ export function ProjectCardEditTrigger({
       onClick={() =>
         window.dispatchEvent(
           new CustomEvent("project-card-edit", {
-            detail: { id, card: "content" },
+            detail: { id, card: field === "name" ? "basic" : "content" },
           }),
         )
       }

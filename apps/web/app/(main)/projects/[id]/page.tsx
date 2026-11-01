@@ -183,6 +183,7 @@ export default async function ProjectDetailPage({
                 initial={data}
                 options={options}
                 canEdit={isProjectEditorRole(outcome.ctx.role)}
+                publishedToCount={data.publishedToCount}
               />
             ) : undefined
           }

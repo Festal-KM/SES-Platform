@@ -13,6 +13,7 @@ const initial: ProjectCardData = {
   createdAt: "2026-10-30",
   updatedAt: "2026-10-30",
   origin: "—",
+  publishedToCount: 0,
 };
 describe("案件詳細カードの初期表示", () => {
   it("編集権限があっても最初は全カードを閲覧状態にする", () => {
@@ -39,5 +40,16 @@ describe("案件詳細カードの初期表示", () => {
     expect(html).not.toContain("project-card-edit-");
     expect(html).toContain("project-detail-card-management");
     expect(html).toContain("project-detail-card-related");
+  });
+  // 🔴 F-013 AC-2: 取引先に出ない項目のブロックには常に注記。凍結 testid の中身を金額の説明に入れ替えない。
+  it("商流・企業・メモのカードに『取引先には表示されない』注記を常に出す", () => {
+    const html = renderToStaticMarkup(
+      createElement(ProjectCardEditor, { initial, options: {}, canEdit: true }),
+    );
+    const notice = /data-testid="project-detail-commerce-notice"[^>]*>([^<]*)</.exec(html)?.[1] ?? "";
+    expect(notice).toContain("公開範囲の相手には表示されません");
+    expect(html).toContain('data-testid="project-card-host-only-notice-company"');
+    expect(html).toContain('data-testid="project-card-host-only-notice-notes"');
+    expect(html).toContain('data-testid="project-card-money-hint"');
   });
 });

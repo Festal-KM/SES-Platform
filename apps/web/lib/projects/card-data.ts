@@ -151,6 +151,10 @@ export async function readHostProjectCards(
       createdAt: formatDateTimeJst(row.createdAt.toISOString()),
       updatedAt: formatDateTimeJst(row.updatedAt.toISOString()),
       origin: row.originAssignmentId ?? t("projects.detail.valueNone"),
+      // 🔴 現在の公開先の社数（`revoked_at IS NULL`。service.ts の編集用 view と同じ定義）。ホスト専用の関数の中でだけ数える。
+      publishedToCount: await db.projectVisibility.count({
+        where: { projectId: row.id, revokedAt: null },
+      }),
     };
   });
   return { view, data };

@@ -292,6 +292,7 @@ function AutoRevokedBanner({
             <ProjectCardEditTrigger
               id={projectId}
               label={copy.autoRevokedFix}
+              field={cause.kind === "GATE_FINDINGS" ? cause.fields[0] : undefined}
             />
           ) : (
             <Link

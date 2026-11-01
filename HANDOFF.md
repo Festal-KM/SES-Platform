@@ -1,5 +1,9 @@
 # HANDOFF.md — 作業の引き継ぎ
 
+## 2026-11-01 ✅ 案件詳細のカード編集（PR #202）のレビュー対応
+
+code-reviewer の指摘（サーバ側の権限・取引先の締め出し・再検査は OK、画面側で S-012 の境界の表示が抜けていた・設計書が未更新）に対応した。凍結 testid `project-detail-commerce-notice` の中身を F-013 AC-2 の注記に戻し（金額の説明は `project-card-money-hint` に移した）、公開欄の印・再検査の事前表示と完了表示・商流/企業/メモの注記・卸単価の見分け・「該当の欄を直す」の行き先・手動サマリの注意を足した。公開先の社数はホスト専用の `readHostProjectCards` の中で数える。docs/04 改訂 48・docs/05 #26 に記録。使われていない `projectCopySummaryBodySchema` を消した。
+
 ## 2026-11-01 ⏳ 案件検索のカテゴリを 12 値・複数選択（OR）にする（ブランチ `feat/project-category-or`）
 
 人間の指示でカテゴリの選択肢を 12 値に置き換え、検索を複数選択・OR にした。値集合の出所は `packages/db/src/schema-value-sets.ts` の `PROJECT_CATEGORIES` の 1 本（並び = 画面の順）。🔴 **migration `20261101000000` は既存行を書き換える**ので HANDOFF §3.1 の手順（FORCE 解除 → 旧 CHECK を外す → 移送 → 残存 0 件の検査 → 新 CHECK → FORCE 復帰 → カタログ検査）で書いた。移送は INFRA → CLOUD / AI・DATA → DATA_AI（INFRA の行き先は既定でクラウド系。違う案件は編集で直す）。URL のキーは従来どおり `category`（繰り返し）で、古い 1 値の URL・保存条件・旧値はそのまま読める（`LEGACY_PROJECT_CATEGORY_MAP`。検索欄はクライアント部品で `@ses/db` を読めないので `_search/legacy-categories.ts` に写しを置き、テストで一致を固定した）。デモの seed の旧値も新しい値に直した（`PROJECT_TEXTS` の 3 行と、追加案件 114 件の雛形 `buildDemoProjectSamples` —— 雛形はレビューで漏れが見つかり、12 値すべてを含む形にした。`seed.test.ts` が全件を値集合で照合する）。🔴 **文言キー `projects.category.INFRA` / `AI` / `DATA` を削除し、検索欄の testid を `project-list-filter-category` → `project-list-filter-category-skills` にした**（いずれも 2026-09-30 の凍結ベースラインの外。値が廃止されたので語を残すと「選べない値の語」になり、欄はフェーズと同じ複数選択の部品に替えたため）。CHECK と値集合の照合を `schema-enum-drift.test.ts` に足した。🔴 **ローカルの `packages/*/dist` が main より古いと、`@ses/db` のビルドや render テストが無関係のエラーで落ちる**（今回 domain / ui を作り直して解消）。分離テスト（実 DB の `IN` と旧値の 400）と E2E は CI で確認する。
