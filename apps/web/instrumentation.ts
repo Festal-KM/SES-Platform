@@ -37,10 +37,11 @@ export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === 'edge') return;
 
   try {
-    initializeRuntimeConfig(process.env, (line) => {
+    const runtime = initializeRuntimeConfig(process.env, (line) => {
       process.stdout.write(`${line}\n`);
     });
-    if (process.env.NEXT_RUNTIME === 'nodejs') await import('./sentry.server.config');
+    // 🔴 監視の初期化には解決済みの設定を渡す（設定を読むのはここ 1 箇所。§11.1）。
+    if (process.env.NEXT_RUNTIME === 'nodejs') (await import('./sentry.server.config')).initServerMonitoring(runtime.env);
   } catch (error) {
     // 🔴 握りつぶさない / モックにフォールバックしない。ここでの catch は
     //    「例外を無かったことにする」ためではなく、**より強い失敗に変換する**ためである:
