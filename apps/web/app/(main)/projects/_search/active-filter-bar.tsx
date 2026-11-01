@@ -305,7 +305,8 @@ export function ActiveFilterBar({
           <IconButton type="button" variant="ghost" className="mr-auto" aria-label={messages.clear} icon={<Icon name="filter-x" />}
             data-testid={`${testIdPrefix}clear`} onClick={onClear} />
         </Tooltip>
-        {onCancel ? <Tooltip content={t('projects.search.cancelHint')}><IconButton type="button" variant="ghost" onClick={onCancel} aria-label={t('projects.search.cancelHint')} icon={<Icon name="undo-2" />} data-testid={`${testIdPrefix}cancel-search`} /></Tooltip> : null}
+        {/* ✅ 2026-11-01: 未反映の編集があるときだけ出す（押しても何も起きない状態を置かない）。 */}
+        {onCancel && pending ? <Tooltip content={t('projects.search.cancelHint')}><IconButton type="button" variant="ghost" onClick={onCancel} aria-label={t('projects.search.cancelHint')} icon={<Icon name="undo-2" />} data-testid={`${testIdPrefix}cancel-search`} /></Tooltip> : null}
         <Tooltip content={messages.submit}>
           <IconButton type="submit" variant="primary" aria-label={messages.submit} aria-busy={submitting} icon={<Icon name="search" />}
             data-testid={`${testIdPrefix}search`} />
