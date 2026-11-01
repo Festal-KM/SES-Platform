@@ -144,9 +144,41 @@ export type ChatConversationMessages = {
     readonly countUnit: string;
     readonly open: string;
     readonly quote: string;
+    /** ✅ 2026-10-29: チャットを離れずに開く案件の欄。 */
+    readonly panel: {
+      readonly loading: string;
+      readonly failed: string;
+      readonly openPage: string;
+      readonly close: string;
+      readonly status: string;
+      readonly headcount: string;
+      readonly headcountUnit: string;
+      readonly summary: string;
+    };
   };
   /** ✅ 2026-10-27（`docs/04` §S-031 改訂 44）: ファイル（社内だけの部屋から）。 */
   readonly attachment: ChatAttachmentLabels;
+  /** ✅ 2026-10-29（F-038 ⑮）: 送った発言をその場で出す吹き出しの語。 */
+  readonly outbox: {
+    readonly sending: string;
+    readonly uploading: string;
+    readonly failed: string;
+    readonly resend: string;
+    readonly discard: string;
+  };
+  /** ✅ 2026-10-29（F-038 ⑰）: この会話の中の検索。 */
+  readonly search: {
+    readonly open: string;
+    readonly close: string;
+    readonly label: string;
+    readonly placeholder: string;
+    readonly hint: string;
+    readonly loading: string;
+    readonly empty: string;
+    readonly failed: string;
+    readonly results: string;
+    readonly notLoaded: string;
+  };
 };
 
 /** ✅ 2026-10-27: ファイルの語（会話の島と右の欄の一覧が同じものを使う）。 */
@@ -355,6 +387,16 @@ export function chatConversationMessages(): ChatConversationMessages {
       countUnit: t('chat.projectCard.countUnit'),
       open: t('chat.projectCard.open'),
       quote: t('chat.projectCard.quote'),
+      panel: {
+        loading: t('chat.projectPanel.loading'),
+        failed: t('chat.projectPanel.failed'),
+        openPage: t('chat.projectPanel.openPage'),
+        close: t('chat.projectPanel.close'),
+        status: t('chat.projectPanel.status'),
+        headcount: t('chat.projectPanel.headcount'),
+        headcountUnit: t('chat.projectPanel.headcountUnit'),
+        summary: t('chat.projectPanel.summary'),
+      },
       statuses: resolvedLabels(PROJECT_STATUS_MESSAGE_KEYS),
       remoteModes: resolvedLabels(PROJECT_REMOTE_MODE_MESSAGE_KEYS),
       prefectures: resolvedLabels(PREFECTURE_MESSAGE_KEYS),
@@ -362,5 +404,24 @@ export function chatConversationMessages(): ChatConversationMessages {
       yearsOrMore: t('projects.list.requirements.yearsOrMore'),
     },
     attachment: chatAttachmentLabels(),
+    outbox: {
+      sending: t('chat.compose.outbox.sending'),
+      uploading: t('chat.compose.outbox.uploading'),
+      failed: t('chat.compose.outbox.failed'),
+      resend: t('chat.compose.outbox.resend'),
+      discard: t('chat.compose.outbox.discard'),
+    },
+    search: {
+      open: t('chat.search.open'),
+      close: t('chat.search.close'),
+      label: t('chat.search.label'),
+      placeholder: t('chat.search.placeholder'),
+      hint: t('chat.search.hint'),
+      loading: t('chat.search.loading'),
+      empty: t('chat.search.empty'),
+      failed: t('chat.search.failed'),
+      results: t('chat.search.results'),
+      notLoaded: t('chat.search.notLoaded'),
+    },
   };
 }

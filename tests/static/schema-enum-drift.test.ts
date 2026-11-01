@@ -50,6 +50,7 @@ import {
   MATCH_WEIGHT_FACTORS,
   ORDER_PAYMENT_STATES,
   PLATFORM_ROLES,
+  PROJECT_CATEGORIES,
   PROJECT_PUBLISH_REQUEST_KINDS,
   PROJECT_PUBLISH_RUN_TRIGGERS,
   PROJECT_STATUSES,
@@ -131,6 +132,8 @@ const REDEFINED_CHECK_CONSTRAINTS: Readonly<Record<string, { readonly definition
   //    20261016010000（2 値。SUCCESSOR_WANTED→OPEN / FILLED→CLOSED に移送してから張り替えた）
   chat_threads_kind_check: { definitions: 2, reason: '#128 で人単位の部屋（DM / GROUP）を足した' },
   projects_status_check: { definitions: 2, reason: 'Issue #98 の回答で案件の状態を 2 値（OPEN / CLOSED）にした' },
+  // ✅ 2026-11-01: 20261016030000（7 値）→ 20261101000000（12 値。INFRA→CLOUD / AI・DATA→DATA_AI に移送してから張り替えた）
+  projects_category_check: { definitions: 2, reason: '2026-11-01 人間の指示で案件のカテゴリを 12 値にした' },
 };
 
 /**
@@ -325,6 +328,11 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
     it('projects_status_check ⇔ packages/db PROJECT_STATUSES', () => {
       const values = extractCheckInValues(migrationSql, 'projects_status_check');
       expectSameValueSet(values, PROJECT_STATUSES);
+    });
+
+    it('projects_category_check ⇔ packages/db PROJECT_CATEGORIES', () => {
+      const values = extractCheckInValues(migrationSql, 'projects_category_check');
+      expectSameValueSet(values, PROJECT_CATEGORIES);
     });
 
     it('🔴 project_requirements_kind_check ⇔ packages/db REQUIREMENT_KINDS（F-013 AC-1 の完了判定）', () => {

@@ -63,6 +63,9 @@
 import { createElement } from 'react';
 import {
   Archive,
+  Undo2,
+  ArrowDown,
+  ArrowUp,
   AtSign,
   Bell,
   BellOff,
@@ -105,6 +108,7 @@ import {
   Quote,
   ScrollText,
   Search,
+  TextSearch,
   Save,
   SaveAll,
   FilterX,
@@ -199,6 +203,7 @@ export const ICONS = {
   // 🔴 **比喩ではない**（↓ = 下に開く）。`<summary>` に添え、開いている間は回転させる。
   // 🔴 **他の意味で使い回さない**（並び替え・減少・ダウンロードには使わない）。
   'chevron-down': ChevronDown,
+  'undo-2': Undo2,
   // ── ✅ 2026-10-26（紺野「チャットは拡張して」）: **チャット（S-031）専用**のアイコン。
   // 🔴 `docs/04` §7.5「ボタン・見出しにアイコンを付けない」の**例外はチャットの画面だけ**である
   //    （Slack・Teams・LINE と同じく、入力欄・会話の見出し・発言の操作を印で素早く押せるようにする）。
@@ -227,6 +232,9 @@ export const ICONS = {
   'chat-rail-open': PanelLeftOpen, // 左の絞り込みの列を開く
   'chat-attach': Paperclip, // ファイルを添える（社内だけの部屋。2026-10-27）
   'chat-quote': Quote, // 発言を引用して返信（2026-10-27）
+  'chat-search': TextSearch, // この会話の中を検索（2026-10-29。上部バーの全体検索〔`search`〕と見分ける）
+  'chat-move-up': ArrowUp, // 左の列の並び替え: 1 つ上へ（2026-10-29）
+  'chat-move-down': ArrowDown, // 左の列の並び替え: 1 つ下へ（2026-10-29）
 } as const;
 
 /** 🔴 写像に無い名前は**型エラー**になる（`docs/05` §17.7.1 (i)①）。 */

@@ -4,6 +4,8 @@
 // 🔴 `expect(text).not.toContain(x)` を並べると、落ちたときに「何が漏れたか」は分かるが
 //    「どの応答か」が分からない。分離の失敗は原因追跡が最重要なので、経路名を必ず添える。
 import { expect, type Page } from '@playwright/test';
+import { t } from '../../../packages/i18n/src/index';
+import { apiRequest, parseJson } from './api';
 
 export type Sighting = { readonly source: string; readonly marker: string };
 
@@ -34,6 +36,28 @@ const COUNT_HINT_PATTERNS: readonly RegExp[] = [
 export function expectNoHiddenCountHints(source: string, haystack: string): void {
   const hits = COUNT_HINT_PATTERNS.filter((pattern) => pattern.test(haystack)).map(String);
   expect(hits, `${source} に「見えない件数」を示唆する表現が現れました`).toEqual([]);
+}
+
+/** 案件一覧の正当な範囲だけを、同じ利用者のAPIで照合してから示唆の検査と区別する。 */
+export async function expectNoHiddenCountHintsOnPage(source:string,page:Page):Promise<void> {
+  let html=await page.content();
+  const url=new URL(page.url());
+  if(url.pathname==='/projects'){
+    const response=await apiRequest(page,`/api/projects${url.search}`);
+    expect(response.status).toBe(200);
+    const body=parseJson(response) as {total:number;items:readonly unknown[]};
+    expect(Number.isSafeInteger(body.total)&&body.total>=0).toBe(true);
+    const limit=Number(url.searchParams.get('limit')??50);
+    const current=Number(url.searchParams.get('page')??1);
+    const from=body.items.length ? (current-1)*limit+1 : 0;
+    const to=body.items.length ? Math.min(body.total,from+body.items.length-1) : 0;
+    const format=(value:number)=>value.toLocaleString('en-US');
+    const expected=t('projects.list.pagination.range').replace('{total}',format(body.total)).replace('{from}',format(from)).replace('{to}',format(to));
+    await expect(page.getByTestId('project-list-page-summary'),`${source} の範囲が境界適用済みのAPIと一致する`).toHaveText(expected);
+    // DOMと埋め込みデータの同じ表示だけを除く。他の「N件中」や全ての禁止パターンは残す。
+    html=html.split(expected).join('');
+  }
+  expectNoHiddenCountHints(source,html);
 }
 
 function escapeRegExp(value: string): string {

@@ -1,5 +1,32 @@
 # HANDOFF.md — 作業の引き継ぎ
 
+## 2026-11-01 ⏳ 案件検索のカテゴリを 12 値・複数選択（OR）にする（ブランチ `feat/project-category-or`）
+
+人間の指示でカテゴリの選択肢を 12 値に置き換え、検索を複数選択・OR にした。値集合の出所は `packages/db/src/schema-value-sets.ts` の `PROJECT_CATEGORIES` の 1 本（並び = 画面の順）。🔴 **migration `20261101000000` は既存行を書き換える**ので HANDOFF §3.1 の手順（FORCE 解除 → 旧 CHECK を外す → 移送 → 残存 0 件の検査 → 新 CHECK → FORCE 復帰 → カタログ検査）で書いた。移送は INFRA → CLOUD / AI・DATA → DATA_AI（INFRA の行き先は既定でクラウド系。違う案件は編集で直す）。URL のキーは従来どおり `category`（繰り返し）で、古い 1 値の URL・保存条件・旧値はそのまま読める（`LEGACY_PROJECT_CATEGORY_MAP`。検索欄はクライアント部品で `@ses/db` を読めないので `_search/legacy-categories.ts` に写しを置き、テストで一致を固定した）。デモの seed の旧値も新しい値に直した（`PROJECT_TEXTS` の 3 行と、追加案件 114 件の雛形 `buildDemoProjectSamples` —— 雛形はレビューで漏れが見つかり、12 値すべてを含む形にした。`seed.test.ts` が全件を値集合で照合する）。🔴 **文言キー `projects.category.INFRA` / `AI` / `DATA` を削除し、検索欄の testid を `project-list-filter-category` → `project-list-filter-category-skills` にした**（いずれも 2026-09-30 の凍結ベースラインの外。値が廃止されたので語を残すと「選べない値の語」になり、欄はフェーズと同じ複数選択の部品に替えたため）。CHECK と値集合の照合を `schema-enum-drift.test.ts` に足した。🔴 **ローカルの `packages/*/dist` が main より古いと、`@ses/db` のビルドや render テストが無関係のエラーで落ちる**（今回 domain / ui を作り直して解消）。分離テスト（実 DB の `IN` と旧値の 400）と E2E は CI で確認する。
+
+## 2026-10-30 アイコン操作の復帰と一覧ステータスの表示専用化
+
+人間の指示で検索の保存/クリア/取消/検索をIconButtonとTooltipへ統一。一覧のステータス切替は撤去し、サマリの既存切替は維持する。カード編集の入力追加や確認ダイアログの確定は、操作の意味を保つため文言を維持。最新の動作確認とCIはPR #201を参照。
+
+
+## 2026-10-30 番号式フッターとホームとの統一（PR #201追加）
+
+人間の最新指示で、案件一覧だけを番号・先頭/前後/末尾移動・25/50/100件の下部フッターへ変更。既定50件。page指定は既存where/RLSと同じ並びで分割し、旧cursorのAPIは維持する。旧画面URLの位置は認証済みの母集団で解決して番号URLへ引き継ぐ。応答キーや情報境界は増やさない。 E2Eの件数示唆検査は、同じ利用者のAPIから計算した範囲をDOMと照合した場合だけ、その表示文字列を除いて従来の全禁止パターンを検査する。他画面や任意の件数表示を許可せず、境界外増減時のAPI同一性と禁止値の検査は維持する。検索時はpageを引き継がず表示件数だけ維持。ホームと同じCard・背景・余白で検索/一覧/プレビューを分離し、検索の影とプレビュー外側の余分な余白を除去。従来のカーソルのみという画面規約は、この案件画面に限り人間の明示指示で更新。CLAUDE.mdは変更しない。検証結果はPRへ記録する。
+
+
+## 2026-10-30 案件リストのページ送り
+
+~~案件一覧の上下へカーソル方式のページ送りと実件数を配置。~~ → 同じ PR の後のエントリ（番号式フッター、2026-10-30）で置き換え済み。以下は当時の記録。案件一覧の上下へカーソル方式のページ送りと実件数を配置。続く人間の指示で一覧のステータス列にもサマリと同じ切替部品を再利用。編集ロールだけに表示し、行全体リンクより前面で押せるようにする。更新後は同じURLをrefreshし、成功通知は行の高さを変えない。公開済み案件を終了すると既存の公開停止処理も動くため、動作検証は未公開の架空案件で行う。既存の末尾リンクIDを維持し、上部は専用ID。API・DB・境界・検索URLの生成経路は変更しない。総件数はlistProjectsの境界適用後COUNT、表示件数は実行数。全ページ番号や推測の範囲は表示しない。PCでアプリ・Docker・重い検査を起動せずAWSとCIで確認する。PRと検証結果を参照。
+
+## 2026-11-01 ⏳ 運用監視（Sentry）・本番メール基盤・証明書発行の定義（ブランチ `feat/monitoring-email-cert`）
+
+10-28 に旧ブランチ `feat/aws-development-url` で未コミットのまま残っていた作業を、最新 main から切り直して移した。AWS の下書き 9 ファイル（application / build / tasks / Dockerfile.aws ほか）は #195 / #197 で main に発展版が入っていたので**捨てて main 側を採った**（退避は取ってある）。移したのは main に無いものだけ: ① Sentry（web は `sentry.server.config.ts` + `onRequestError`、worker は `SENTRY_DSN` があるときだけ init）。🔴 送るのは例外の型とコード位置だけで、本文・利用者・ヘッダ・パンくず・ローカル変数・例外メッセージは `@ses/config` の `redactMonitoringEvent` が消す（#84 の既定「`err.message` を出さない」に沿う。§3.2 / §3.5）② 本番の SES 送信ドメイン・配信イベントの CloudFormation 定義（`infra/aws/email.mjs` / `scripts/aws-provision-email.mjs`。**実行していない**。本番アクセス申請もしていない）③ ACM 証明書の発行と Cloudflare に入れる CNAME の出力（`scripts/aws-certificates.mjs`）。PC では監視のユニット 2 件と構文検査だけ確認し、ビルド・型検査は CI に任せる。
+
+## 2026-10-29 ⏳ チャット: 送った発言をその場で出す・左の列の並び替え・会話の中の検索（PR #199）
+
+紺野の決定（F-038 改訂 14 ⑮⑯⑰ / S-031 改訂 46 / docs/05 #51s）。DB は変えていない。⑮ 5 秒の取り消し待ちをやめ、送信箱（`apps/web/lib/chat/outbox.ts`。手元だけ）で「送信中」の吹き出しを先に出す。旧 `CHAT_UNDO_SEND_MS` と入力欄の「取り消す／今すぐ送る」は消した（文言キーは追加のみの約束で残す）。E2E `chat.compose.spec.ts` を書き直し、`chat.project-card.spec.ts` の「今すぐ送る」を外した。⑯ 並びは `localStorage` の `ses.chat.rail.order`（鍵の配列だけ）。⑰ 新 API `GET /api/threads/{id}/messages/search`（`lib/chat/search.ts`）。🔴 照合は `freeWordFilter` で絞り、引用の見出し・写しは `search-text.ts` で除く。分離テスト `tests/isolation/chat-search.test.ts`（ローカル緑）。E2E `chat.search.spec.ts` は手元で回していない（CI で確認）。
+同じブランチで続けて（紺野の追加依頼）: 左の列の印と一覧のアバターの色分けを #167 の前に戻した / 案件スレッドも自分の発言を右（`conversationLayoutFor` は常に `chat`）/ 案件カードの「案件詳細を開く」をチャットの中の `Drawer` で開く（既存の #27 を呼ぶだけ = 監査・公開範囲は従来どおり。分離テスト `chat-project-panel.test.ts`）。⚠️ `Drawer` の「閉じる」は共通部品の文字リンクでスマホ 44px を満たさない（宮田さんの判断待ち）。
+
 ## 2026-10-31 添付画像の情報密度を再調整
 
 人間から画像との照合を重ねて求められたため、ホスト詳細の上部を状態・カテゴリ・区分のバッジと主要値の横並びへ縮め、候補検索とサマリコピーをタイトル横へ配置。更新者のデータは無いため担当者を更新者と偽らず担当者と表記する。ラベル幅を縮め、業務概要と企業欄はラベルを上へ、精算上下限を一組にして支払いサイトと並べる。長いサマリは閲覧時にスクロール、管理情報のラベルは一文字ずつ折り返さない。グローバルヘッダー・サイドバー・他画面は変更しない。ヘッダーのコピーも保存した手動サマリを優先する。共通Textareaに明示的なcompactオプションを追加し、案件詳細だけが使用する。既定の80px最小高さは他画面で維持し、要件表やメモは入力欄と同じ最小高さから内容に合わせて伸びる。
@@ -743,4 +770,3 @@ railway up --service worker
 gh run list --limit 3 --json headSha,status,conclusion --jq '.[] | "\(.headSha[0:7]) \(.status) \(.conclusion // "-")"'
 gh run view <id> --log-failed
 ```
-

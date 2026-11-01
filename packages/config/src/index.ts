@@ -6,6 +6,7 @@
 // （package.json の `exports` で隔離。`./testing/fixtures.js` を指す）からのみ取得する。
 
 export { APP_ENV_KINDS, type AppEnvKind } from './app-env.js';
+export { MONITORING_DATA_COLLECTION, redactMonitoringEvent } from './monitoring.js';
 export { envSchema, type AppEnv } from './schema.js';
 // 🔴 合成データの投入・リセットの環境ガード（F-053 AC-6）。CLI（packages/db/seed）と
 //    管理平面 API（SP-10 の API-A16）が同じ判定を使うため、ここから export する。

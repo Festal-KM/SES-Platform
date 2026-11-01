@@ -32,7 +32,6 @@ test('🔴 ホストは公開済み案件を貼れて A1 が読めるが、未�
     await expect(page.getByTestId('chat-compose-attached-project')).toBeVisible();
     const sent = page.waitForResponse((response) => response.url().endsWith(`/api/threads/${own.threadId}/messages`) && response.request().method() === 'POST');
     await page.getByTestId('chat-compose-submit').click();
-    await page.getByTestId('chat-compose-send-now').click();
     const response = await sent;
     expect(response.status()).toBe(201);
     const payload = await response.json() as { id: string };
