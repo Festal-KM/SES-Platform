@@ -3116,7 +3116,6 @@ const ja = {
   'projects.search.modeOR': 'いずれかに一致（OR）',
   'projects.search.modeAND': 'すべてに一致（AND）',
   'projects.search.addKeywordHint': 'Enterで追加',
-  'projects.list.pageSummary': '全{total}件・このページは{displayed}件',
   'projects.list.pagination.range': '{total}件中 {from}–{to}件を表示',
   'projects.list.pagination.size': '1ページの表示件数',
   'projects.list.pagination.sizeValue': '{count}件',

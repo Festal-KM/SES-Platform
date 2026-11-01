@@ -345,7 +345,7 @@ describe('単価の表示範囲', () => {
 });
 
 describe('🔴 docs/05 §4.8: 順位・全体件数・スコアを描かない', () => {
-  it('ページ番号（「全 N ページ中 M ページ目」）を描かない', () => {
+  it('「全 N ページ中 M ページ目」の形の表現を描かない（件数は境界適用後の範囲表示だけ）', () => {
     const html = render({pagination:projectPagination({limit:50},120,50)});
 
     expect(html).not.toContain('ページ目');
