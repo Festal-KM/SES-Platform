@@ -5132,6 +5132,13 @@ const ja = {
   'chat.attachment.files.loading': '読み込み中…',
   'chat.attachment.files.failed': 'ファイルの一覧を読み込めませんでした',
   'chat.attachment.files.more': 'さらに表示',
+  // ✅ 2026-10-30（紺野の決定。F-038 改訂 16 ⑲⑳）: 連絡先と「新しいグループ」の人の選び方を 2 つのタブにした（LINE と同じ）。
+  'chat.people.tabs.label': '人の探し方',
+  'chat.people.tab.company': '会社から探す',
+  'chat.people.tab.name': '名前から探す',
+  'chat.people.noMatch': '当てはまる人がいません',
+  'chat.people.search.placeholder': '名前・会社名で探す',
+  'chat.people.search.label': '連絡先を探す',
   // ==========================================================================
   // ✅ 2026-10-14（人間の明示指示）: `カレンダー` と `パートナー連携` の 4 画面（いずれも準備中）
   // ==========================================================================

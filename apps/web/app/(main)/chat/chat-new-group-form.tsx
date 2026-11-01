@@ -8,6 +8,8 @@
 // 🔴 取引先は 1 社まで（サーバが 400 にする）。画面でも、取引先の人を 1 人選んだら**ほかの取引先の欄を出さず**、理由を 1 行で書く
 //    （押してから失敗させない）。
 // 🔴 送信中・未入力でもボタンを `disabled` にしない（render テスト ②の規律）。押したときに足りないものを言う。
+// ✅ 2026-10-30（紺野の決定。F-038 改訂 16 ⑳）: 候補の選び方を連絡先と同じ 2 つのタブ（会社から探す / 名前から探す）にした
+//    （`chat-people-picker.tsx`。同じ部品）。取引先 1 社までの決まりは両方のタブに効く。
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -15,19 +17,12 @@ import { Avatar, Button, Input, ROW_HOVER_CLASSES, cn } from '@ses/ui';
 import { displayInitials } from '../../../lib/format/initials';
 import { CHAT_CREATE_GROUP_API_PATH, chatHref } from '../../../lib/chat/screen-query';
 import { showChatToast } from '../../../lib/chat/toast';
+import { ChatPeoplePicker, type ChatPeoplePickerLabels, type ChatPickerCompany, type ChatPickerPerson } from './chat-people-picker';
 
-export type ChatNewGroupPerson = {
-  readonly userId: string;
-  readonly name: string;
-  readonly status?: string | null;
-};
+export type ChatNewGroupPerson = ChatPickerPerson;
 
 /** 会社ごとの候補（連絡先と同じ母集団。`lib/chat/people.ts` が RLS で決めたものだけ）。 */
-export type ChatNewGroupCompany = {
-  readonly companyName: string;
-  readonly isHost: boolean;
-  readonly people: readonly ChatNewGroupPerson[];
-};
+export type ChatNewGroupCompany = ChatPickerCompany;
 
 export type ChatNewGroupFormProps = {
   readonly companies: readonly ChatNewGroupCompany[];
@@ -52,6 +47,8 @@ export type ChatNewGroupFormProps = {
     readonly createdToast: string;
     readonly openGroup: string;
   };
+  /** ✅ 2026-10-30: 候補の選び方（タブ）の文言。 */
+  readonly pickerLabels: ChatPeoplePickerLabels;
 };
 
 /** グループの名前の上限（DB の CHECK と同じ）。 */
@@ -59,7 +56,7 @@ const GROUP_TITLE_MAX = 100;
 
 const LABEL_CLASSES = 'm-0 text-xs text-fg-muted';
 
-export function ChatNewGroupForm({ companies, labels }: ChatNewGroupFormProps) {
+export function ChatNewGroupForm({ companies, labels, pickerLabels }: ChatNewGroupFormProps) {
   const router = useRouter();
   const [title, setTitle] = useState('');
   const [query, setQuery] = useState('');
@@ -76,17 +73,6 @@ export function ChatNewGroupForm({ companies, labels }: ChatNewGroupFormProps) {
   // 選んだ人の中の取引先（0 か 1 社）。会社の名前で見分ける（取引先の ID は画面に持たない）。
   const chosenPartner = selected.map((id) => byId.get(id)?.company).find((company) => company !== undefined && !company.isHost) ?? null;
 
-  const needle = query.trim().toLowerCase();
-  const visible = companies
-    .filter((company) => company.isHost || chosenPartner === null || company === chosenPartner)
-    .map((company) => ({
-      company,
-      people:
-        needle === '' || company.companyName.toLowerCase().includes(needle)
-          ? company.people
-          : company.people.filter((person) => person.name.toLowerCase().includes(needle)),
-    }))
-    .filter((entry) => entry.people.length > 0);
   const hiddenPartners = chosenPartner !== null && companies.some((company) => !company.isHost && company !== chosenPartner);
 
   function toggle(userId: string): void {
@@ -212,53 +198,16 @@ export function ChatNewGroupForm({ companies, labels }: ChatNewGroupFormProps) {
             onChange={(event) => setQuery(event.target.value)}
             data-testid="chat-new-group-search"
           />
-          {visible.length === 0 ? <p className="m-0 py-2 text-cell text-fg-muted">{labels.noMatch}</p> : null}
-          {visible.map(({ company, people }) => (
-            <section key={company.companyName} className="flex flex-col">
-              <h4 className="m-0 flex items-center gap-2 pt-2 pb-1 text-xs font-normal text-fg-muted">
-                {company.companyName}
-                {company.isHost ? null : <span className="rounded-xs bg-info-bg px-1 text-info">{labels.external}</span>}
-              </h4>
-              <ul className="m-0 list-none p-0">
-                {people.map((person) => {
-                  const on = selected.includes(person.userId);
-                  return (
-                    <li key={person.userId}>
-                      <button
-                        type="button"
-                        role="checkbox"
-                        aria-checked={on}
-                        onClick={() => toggle(person.userId)}
-                        className={cn(
-                          'flex min-h-11 w-full items-center gap-3 rounded-md px-2 py-1 text-left',
-                          on ? 'bg-brand-bg' : ROW_HOVER_CLASSES,
-                        )}
-                        data-testid={`chat-new-group-member-${person.userId}`}
-                      >
-                        <Avatar initials={displayInitials(person.name)} title={person.name} />
-                        <span className="flex min-w-0 flex-1 flex-col">
-                          <span className="truncate text-cell text-fg">{person.name}</span>
-                          {person.status == null || person.status === '' ? null : (
-                            <span className="truncate text-xs text-fg-placeholder">{person.status}</span>
-                          )}
-                        </span>
-                        {/* 選んだかどうか（四角の中の ✓。チェックボックスと同じ形）。色だけに頼らず形でも分ける。 */}
-                        <span
-                          aria-hidden="true"
-                          className={cn(
-                            'flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border text-xs',
-                            on ? 'border-brand bg-brand text-brand-fg' : 'border-border-strong bg-bg text-bg',
-                          )}
-                        >
-                          ✓
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          ))}
+          <ChatPeoplePicker
+            mode="select"
+            companies={companies}
+            query={query}
+            selected={selected}
+            onToggle={toggle}
+            hideCompany={(company) => !company.isHost && chosenPartner !== null && company !== chosenPartner}
+            testIdPrefix="chat-new-group"
+            labels={pickerLabels}
+          />
           {hiddenPartners ? (
             <p className="m-0 rounded-md bg-bg px-3 py-2 text-xs text-fg-muted" data-testid="chat-new-group-partner-limit">
               {labels.partnerLimit}

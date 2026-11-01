@@ -2,22 +2,24 @@ import { expect, test } from '@playwright/test';
 import { partnerIds } from './support/population';
 import { hostOwner, openTenantSession } from './support/sessions';
 
-test('取引先の見出しと左の列の開閉を再読み込み後も覚える', async ({ browser }) => {
+test('左の列の見出し（連絡先）と左の列の開閉を再読み込み後も覚える', async ({ browser }) => {
   const session = await openTenantSession(browser, hostOwner(1));
   const { page } = session;
   try {
     await page.goto('/chat');
-    const section = page.getByTestId('chat-rail-section-toggle-companies');
-    const companies = page.getByTestId('chat-rail-companies');
-    await expect(companies).toBeVisible();
+    // ✅ 2026-10-30（F-038 改訂 16 ⑱）: seed の取引先には会社グループの部屋しか無く、左の列に「取引先」が出ないので、
+    //    同じ開閉の部品の「連絡先」で確かめる。
+    const section = page.getByTestId('chat-rail-section-toggle-contacts');
+    const contacts = page.getByTestId('chat-rail-contacts');
+    await expect(contacts).toBeVisible();
     await section.click();
     await expect(section).toHaveAttribute('aria-expanded', 'false');
-    await expect(companies).toBeHidden();
+    await expect(contacts).toBeHidden();
     await page.reload();
     await expect(section).toHaveAttribute('aria-expanded', 'false');
-    await expect(companies).toBeHidden();
+    await expect(contacts).toBeHidden();
     await section.click();
-    await expect(companies).toBeVisible();
+    await expect(contacts).toBeVisible();
     const toggle = page.getByTestId('chat-rail-desktop-toggle');
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -38,10 +40,8 @@ test('会話を二つ並べた境目を右矢印で広げられる', async ({ br
   const first = partnerIds(1, 1);
   const second = partnerIds(1, 2);
   try {
-    await page.goto(`/chat?thread=${first.threadId}`);
-    await page.getByTestId(`chat-thread-row-${second.threadId}`).hover();
-    await page.getByTestId(`chat-thread-open-beside-${second.threadId}`).click();
-    await expect(page).toHaveURL(new RegExp(`pane=${second.threadId}`));
+    // ✅ 2026-10-30（F-038 改訂 16 ⑱）: 会社グループの部屋は一覧に出ない（「右に並べる」の行が無い）ので、URL で並べる。
+    await page.goto(`/chat?thread=${first.threadId}&pane=${second.threadId}`);
     for (const thread of [first, second]) {
       await expect(page.locator(`[data-testid="chat-conversation"][data-thread-id="${thread.threadId}"]`)).toBeVisible();
     }

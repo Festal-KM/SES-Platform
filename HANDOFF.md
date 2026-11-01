@@ -1,5 +1,10 @@
 # HANDOFF.md — 作業の引き継ぎ
 
+## 2026-10-30 ⏳ チャット: 会社グループを一覧から外す・連絡先と新しいグループを 2 つのタブに（ブランチ `chat/contacts-tabs`。まだ PR にしていない）
+
+紺野の決定（F-038 改訂 16 ⑱⑲⑳ / S-031 改訂 47）。DB・API は変えていない。#199（`chat/search-reorder-fast`）の上に積んでいる。⑱ 会社グループ（`COMPANY`）の部屋を一覧・左の列・お気に入りに出さない。🔴 隠すのは画面だけ（`page.tsx` で `lib/chat/thread-tree.ts` の `hideCompanyRooms`）—— `read.ts` は変えていない（分離テストの fixtures は会社グループの部屋を主な会話にしており、読み出しを変えると `chat-threads` / `chat-mentions` の分離テストの前提が崩れる）。鍵（`companyKeysOf`）は会社グループの ID のまま。隠した部屋の未読・`@` は数から外した。左の列の「取引先」は、押して何か並ぶ会社だけ。⑲⑳ 共通の `chat-people-picker.tsx`（`Tabs` を使う。`packages/ui` の `Tabs` にタブごとの `testId` を足した → `testid-inventory` の素通しの一覧に `tabs.tsx` を追加）。⚠️ seed:isolation の取引先の会話は会社グループだけなので、E2E は一覧の行を押す代わりに `?thread=` / `&pane=` で開くよう直した（`chat.spec` ④⑥ / `chat.layout` / `chat.mobile` ① / `chat.header.mobile` / `chat.announcement`）。新しい `chat.contacts.spec.ts`。どれも手元では回していない（CI で確認）。
+⚠️ 判断待ち: 一覧の「本文で見つかった発言」は会社グループの部屋の発言も従来どおり出す（データへの道を残す）。外すなら `page.tsx` で `hiddenIds` を当てるだけ。
+
 ## 2026-10-29 ⏳ チャット: 送った発言をその場で出す・左の列の並び替え・会話の中の検索（PR #199）
 
 紺野の決定（F-038 改訂 14 ⑮⑯⑰ / S-031 改訂 46 / docs/05 #51s）。DB は変えていない。⑮ 5 秒の取り消し待ちをやめ、送信箱（`apps/web/lib/chat/outbox.ts`。手元だけ）で「送信中」の吹き出しを先に出す。旧 `CHAT_UNDO_SEND_MS` と入力欄の「取り消す／今すぐ送る」は消した（文言キーは追加のみの約束で残す）。E2E `chat.compose.spec.ts` を書き直し、`chat.project-card.spec.ts` の「今すぐ送る」を外した。⑯ 並びは `localStorage` の `ses.chat.rail.order`（鍵の配列だけ）。⑰ 新 API `GET /api/threads/{id}/messages/search`（`lib/chat/search.ts`）。🔴 照合は `freeWordFilter` で絞り、引用の見出し・写しは `search-text.ts` で除く。分離テスト `tests/isolation/chat-search.test.ts`（ローカル緑）。E2E `chat.search.spec.ts` は手元で回していない（CI で確認）。

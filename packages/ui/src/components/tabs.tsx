@@ -62,6 +62,8 @@ export type TabsItem = {
   readonly icon?: IconName;
   /** その面の中身。 */
   readonly content: ReactNode;
+  /** ✅ 2026-10-30: タブ（押す側）の `data-testid`。省略時は付けない（既存の画面の出力は変わらない）。 */
+  readonly testId?: string;
 };
 
 /**
@@ -133,7 +135,7 @@ export function Tabs({
       {headerRight === undefined ? (
         <TabsPrimitive.List className={TABS_LIST_CLASSES} aria-label={label}>
           {items.map((item) => (
-            <TabsPrimitive.Trigger key={item.value} value={item.value} className={TABS_TRIGGER_CLASSES}>
+            <TabsPrimitive.Trigger key={item.value} value={item.value} className={TABS_TRIGGER_CLASSES} data-testid={item.testId}>
               {item.icon === undefined ? null : <Icon name={item.icon} size="md" />}
               {item.label}
               {item.count === undefined ? null : <Badge variant="brand">{item.count}</Badge>}
@@ -144,7 +146,7 @@ export function Tabs({
         <div className={TABS_HEADER_ROW_CLASSES}>
           <TabsPrimitive.List className={cn(TABS_LIST_CLASSES, 'min-w-0 px-0')} aria-label={label}>
             {items.map((item) => (
-              <TabsPrimitive.Trigger key={item.value} value={item.value} className={TABS_TRIGGER_CLASSES}>
+              <TabsPrimitive.Trigger key={item.value} value={item.value} className={TABS_TRIGGER_CLASSES} data-testid={item.testId}>
                 {item.icon === undefined ? null : <Icon name={item.icon} size="md" />}
                 {item.label}
                 {item.count === undefined ? null : <Badge variant="brand">{item.count}</Badge>}
