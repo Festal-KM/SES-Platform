@@ -202,8 +202,22 @@ export async function readPeople(
           where: { threadId: { in: roomIds }, AND: [chatMessageVisibleWhere(ctx.userId)] },
           distinct: ['threadId'],
           orderBy: [{ threadId: 'asc' }, { sentAt: 'desc' }, { id: 'desc' }],
-          select: { threadId: true, body: true, attachedProjectId: true },
+          select: { threadId: true, body: true, attachedProjectId: true, sentAt: true },
         });
+  // ✅ 2026-11-01（レビュー）: 後から足されて読める範囲を持つ部屋では、一覧に出す「最後の発言の時刻」を、自分が読める最後の発言の
+  //    時刻にする（範囲より前の、読めない発言の時刻を出さない）。🔴 窓の行は本人の行だけ（RLS）。
+  //    ⚠️ 一覧の並び順は部屋の最終更新（`last_message_at`）のまま（受け入れる。出すのは時刻だけで、どの部屋が新しいかの順序だけが分かる）。
+  const windowedIds = new Set(
+    roomIds.length === 0
+      ? []
+      : (
+          await db.chatThreadMemberWindow.findMany({
+            where: { threadId: { in: roomIds }, historyFrom: { not: null } },
+            select: { threadId: true },
+          })
+        ).map((row) => row.threadId),
+  );
+  const lastVisibleAt = new Map(lastMessages.map((message) => [message.threadId, message.sentAt]));
   const unread = await countUnread(ctx, db, roomIds);
   const prefs = await readThreadPrefs(db, roomIds);
   return {
@@ -212,7 +226,7 @@ export async function readPeople(
       kind: row.kind === 'GROUP' ? 'GROUP' : 'DM',
       name: roomName(row, ctx.userId, users),
       memberCount: row.memberUserIds.length,
-      lastMessageAt: row.lastMessageAt?.toISOString() ?? null,
+      lastMessageAt: (windowedIds.has(row.id) ? lastVisibleAt.get(row.id) ?? null : row.lastMessageAt)?.toISOString() ?? null,
       memberUserIds: [...row.memberUserIds],
       external: row.partnerCompanyId !== null,
       companyKey: companyKeyOf(row.partnerCompanyId),

@@ -1232,6 +1232,9 @@ model Message {
   attachmentStorageCountedAt DateTime? @map("attachment_storage_counted_at") @db.Timestamptz(3)
   reviewGateId           String?   @map("review_gate_id") @db.Uuid // 添付があるときのみ
   sentAt                 DateTime  @default(now()) @map("sent_at") @db.Timestamptz(3)
+  /// ✅ 2026-11-01: 投稿時刻（DB の時計。トリガ messages_stamp_posted_at が決め、UPDATE では変えない）。アプリは書かない。
+  /// グループに後から足した人の読める範囲・未読の境目に使う（sent_at はアプリの時計で、検査の CLEAN で進むため）。NULL = この列より前の行
+  postedAt               DateTime? @map("posted_at") @db.Timestamptz(3)
   purgedAt               DateTime? @map("purged_at") @db.Timestamptz(3) // PURGED で本文を削除（F-064 AC-2）
   editedAt               DateTime? @map("edited_at") @db.Timestamptz(3) // ✅ 2026-10-16 チャットレーン: 送った本人が編集した日時
   deletedAt              DateTime? @map("deleted_at") @db.Timestamptz(3) // ✅ 2026-10-16 チャットレーン: 送った本人が削除した日時（本文は NULL になる）

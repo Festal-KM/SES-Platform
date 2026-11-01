@@ -11,8 +11,8 @@
 //      ほかの人に見える変更だから。🔴 **本文は載せず、部屋 ID（targetId）と発言 ID だけ**（`user-status.ts` の作法）。
 //   ⑤ 外すときは「どの発言のアナウンスを外すか」を受け取り、今のアナウンスがその発言のときだけ外す
 //      （開いている間に別の人が置き換えたアナウンスを、古い画面から消してしまわないため）。
-import { withTenant, writeAuditLog, type AuthenticatedTenantCtx } from '@ses/db';
-import { requireFound } from '../api/errors';
+import { isChatAnnouncementOutsideMyWindow, withTenant, writeAuditLog, type AuthenticatedTenantCtx } from '@ses/db';
+import { ConflictError, requireFound } from '../api/errors';
 import { readThreadAnnouncements } from './announcement-read';
 import { findChatThreadRow } from './read';
 import { CHAT_THREAD_AUDIT_TARGET_TYPE } from './service';
@@ -27,6 +27,25 @@ export type ChatAnnouncementDeps = {
   readonly now: () => Date;
   readonly meta: { readonly ipAddress: string | null };
 };
+
+/**
+ * ✅ 2026-11-01（グループに後から人を足す。レビュー NG-4）: 今のアナウンスが、自分の読める範囲より前（参加前）の発言を指している（409）。
+ * その行は自分から見えないので、設定・外すをそのまま進めると一意制約 / RLS の拒否で 500 になる。先に確かめて 409 にする。
+ */
+export class ChatAnnouncementOutsideWindowError extends ConflictError {
+  override readonly code = 'CHAT_ANNOUNCEMENT_OUTSIDE_WINDOW';
+  override readonly userMessageKey = 'chat.announcement.outsideWindow' as const;
+
+  constructor() {
+    super('この部屋のアナウンスは、参加前の発言なので変更できません。');
+    this.name = 'ChatAnnouncementOutsideWindowError';
+  }
+}
+
+/** 範囲の外の発言を指すアナウンスがあれば 409（部屋が見えるかの判定は呼び出し側の `findChatThreadRow`）。 */
+async function requireAnnouncementInWindow(ctx: AuthenticatedTenantCtx, threadId: string): Promise<void> {
+  if (await isChatAnnouncementOutsideMyWindow(ctx, threadId)) throw new ChatAnnouncementOutsideWindowError();
+}
 
 /** API の応答（アナウンスが無ければ `null`）。 */
 export type ChatAnnouncementResult = { readonly announcement: ChatAnnouncementView | null };
@@ -102,6 +121,7 @@ export async function setChatAnnouncement(
   messageId: string,
   deps: ChatAnnouncementDeps,
 ): Promise<ChatAnnouncementResult> {
+  await requireAnnouncementInWindow(ctx, threadId);
   try {
     return await writeAnnouncement(ctx, threadId, messageId, deps);
   } catch (error) {
@@ -122,6 +142,7 @@ export async function clearChatAnnouncement(
   messageId: string,
   deps: ChatAnnouncementDeps,
 ): Promise<ChatAnnouncementResult> {
+  await requireAnnouncementInWindow(ctx, threadId);
   return withTenant(ctx, async (db) => {
     requireFound(await findChatThreadRow(db, threadId));
     // `messageId` は「どのアナウンスを外すか」の指定であり、境界ではない（読めない部屋の行は DELETE ポリシーが消させない）。

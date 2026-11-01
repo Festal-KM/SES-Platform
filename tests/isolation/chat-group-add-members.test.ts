@@ -13,6 +13,8 @@
 //   ⑥ 同時に足しても両方残る。監査ログは ID だけ（名前・本文なし）。
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  applyFileScanResult,
+  systemTenantCtx,
   configureTenantDb,
   disconnectTenantDb,
   resolveTenantCtx,
@@ -48,6 +50,8 @@ const { searchChatMessages } = await import('../../apps/web/lib/chat/search');
 const { listChatAttachments } = await import('../../apps/web/lib/chat/attachments');
 const { readChatThreadForExport } = await import('../../apps/web/lib/chat/service');
 const { readThreadAnnouncements } = await import('../../apps/web/lib/chat/announcement-read');
+const { setChatAnnouncement, clearChatAnnouncement } = await import('../../apps/web/lib/chat/announcement');
+const { readPeople } = await import('../../apps/web/lib/chat/people');
 
 /** 本テストが足す利用者（ホスト 6 人・取引先 A1 の 2 人目・閲覧専用）。 */
 const H2 = '01930000-0000-7000-8000-000000000ad1';
@@ -58,6 +62,9 @@ const H6 = '01930000-0000-7000-8000-000000000ad5';
 const H7 = '01930000-0000-7000-8000-000000000ad6';
 const OUTSIDER = '01930000-0000-7000-8000-000000000ad7';
 const VIEWER = '01930000-0000-7000-8000-000000000ad8';
+const H8 = '01930000-0000-7000-8000-000000000ada';
+const H9 = '01930000-0000-7000-8000-000000000adb';
+const H10 = '01930000-0000-7000-8000-000000000adc';
 const A1B = '01930000-0000-7000-8000-000000000ad9';
 /** 上限の検査用のホスト（48 人）。 */
 const BULK = Array.from({ length: 48 }, (_, i) => `01930000-0000-7000-8000-000000000b${String(i).padStart(2, '0')}`);
@@ -150,7 +157,7 @@ beforeAll(async () => {
   admin = createUnextendedClient(database.superuserUrl);
   configureTenantDb({ datasourceUrl: database.tenantUrl });
 
-  const hosts = [H2, H3, H4, H5, H6, H7, OUTSIDER, VIEWER, ...BULK];
+  const hosts = [H2, H3, H4, H5, H6, H7, OUTSIDER, VIEWER, H8, H9, H10, ...BULK];
   await admin.user.createMany({
     data: [
       ...hosts.map((id, index) => ({ id, tenantId: TENANT_A, ownerPartnerCompanyId: null, email: `h${String(index)}@add-members.test`, displayName: `ホスト${String(index)}`, passwordHash: 'x' })),
@@ -158,7 +165,7 @@ beforeAll(async () => {
     ],
   });
   const base = { tenantId: TENANT_A, lifecycleState: 'ACTIVE' as const, partnerSuspendedAt: null, twoFactor: 'NOT_ENROLLED' as const };
-  for (const id of [USER_A_HOST, H2, H3, H4, H5, H6, H7, OUTSIDER]) {
+  for (const id of [USER_A_HOST, H2, H3, H4, H5, H6, H7, OUTSIDER, H8, H9, H10]) {
     ctxs.set(id, await resolveTenantCtx({ ...base, partnerCompanyId: null, userId: id, role: 'SALES' }, DEVICE));
   }
   ctxs.set(VIEWER, await resolveTenantCtx({ ...base, partnerCompanyId: null, userId: VIEWER, role: 'VIEWER' }, DEVICE));
@@ -337,12 +344,12 @@ describe('⑤ 範囲の行', () => {
     expect(row.historyFrom!.getTime()).toBe(row.joinedAt.getTime());
   });
 
-  it('入った時刻は DB の時刻（入力で過去にずらせない）', async () => {
-    const before = Date.now();
+  it('入った時刻は DB の時刻。「追加した時から」の範囲の始まりは入った時刻そのもの（アプリの時計を使わない）', async () => {
+    // 🔴 アプリの時計（Date.now()）とは比べない（時計がずれると揺れる）。DB の now() と比べる。
+    const [{ db_now: dbNow }] = await admin.$queryRawUnsafe<Array<{ db_now: Date }>>('SELECT now() AS db_now');
     const row = await admin.chatThreadMemberWindow.findFirstOrThrow({ where: { threadId: groupId, userId: H4 } });
-    expect(row.joinedAt.getTime()).toBeLessThanOrEqual(before);
-    expect(row.historyFrom).not.toBeNull();
-    expect(row.historyFrom!.getTime()).toBeLessThanOrEqual(row.joinedAt.getTime());
+    expect(row.joinedAt.getTime()).toBeLessThanOrEqual(dbNow!.getTime());
+    expect(row.historyFrom?.getTime()).toBe(row.joinedAt.getTime());
   });
 });
 
@@ -430,6 +437,12 @@ describe('⑥ 同時に足す・監査ログ', () => {
     const row = await admin.chatThread.findUniqueOrThrow({ where: { id: room }, select: { memberUserIds: true } });
     expect([...row.memberUserIds].sort()).toEqual([USER_A_HOST, H2, H6, H7, OUTSIDER].sort());
     expect(await admin.chatThreadMemberWindow.count({ where: { threadId: room } })).toBe(3);
+    // 🔴 監査には「その要求が実際に足した人」だけ（同時に同じ人〔H7〕を足しても、H7 が載るのは 1 行だけ）。
+    const audits = await admin.auditLog.findMany({ where: { action: CHAT_ROOM_AUDIT_ACTION_MEMBER_ADD, targetId: room } });
+    expect(audits).toHaveLength(2);
+    expect(audits.filter((row) => JSON.stringify(row.summary).includes(H7))).toHaveLength(1);
+    const addedTotal = audits.reduce((sum, row) => sum + Number((row.summary as { addedCount: number }).addedCount), 0);
+    expect(addedTotal).toBe(3);
   });
 
   it('監査ログは誰が誰を足したかの ID だけ（名前・本文なし）', async () => {
@@ -440,5 +453,143 @@ describe('⑥ 同時に足す・監査ログ', () => {
     expect(text).not.toContain(WORD);
     expect(text).not.toContain('ホスト');
     expect(text).not.toContain('窓の検査');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ✅ 2026-11-01（レビュー NG-1〜NG-4 と指摘）: 時計・検査の CLEAN・関数の答え・アナウンスの 409・一覧の時刻
+// ---------------------------------------------------------------------------
+describe('🔴 NG-1 時計のずれ: 範囲と未読は DB の時計の投稿時刻（posted_at）で決まる', () => {
+  it('アプリの時計が進んでいて sent_at が未来でも、入る前に投稿された発言は「追加した時から」の人に見えず、未読にもならない', async () => {
+    const room = await createGroup(ctxOf(USER_A_HOST), '時計の部屋', [H2]);
+    const ahead = new Date(Date.now() + 60 * 60 * 1000);
+    const early = await withTenant(ctxOf(USER_A_HOST), (db) =>
+      db.message.create({
+        data: { tenantId: TENANT_A, threadId: room, ownerPartnerCompanyId: null, senderUserId: USER_A_HOST, senderPartnerCompanyId: null, body: '時計が進んだ発言', sentAt: ahead },
+        select: { id: true },
+      }),
+    );
+    // 投稿時刻は DB が決める（アプリの sent_at ではない）。
+    const row = await admin.message.findUniqueOrThrow({ where: { id: early.id } });
+    expect(row.postedAt).not.toBeNull();
+    expect(row.postedAt!.getTime()).toBeLessThan(ahead.getTime());
+    expect((await addMembers(ctxOf(USER_A_HOST), room, { userIds: [H9], history: 'JOINED' })).status).toBe(200);
+    expect(await visibleMessageIds(ctxOf(H9), room)).toEqual([]);
+    const unread = await withTenant(ctxOf(H9), (db) => countUnread(ctxOf(H9), db, [room]));
+    expect(unread.get(room) ?? 0).toBe(0);
+    // 入った後の発言は（アプリの時計が遅れていて sent_at が過去でも）読め、未読に数える。
+    const behind = new Date(Date.now() - 60 * 60 * 1000);
+    await withTenant(ctxOf(USER_A_HOST), (db) =>
+      db.message.create({
+        data: { tenantId: TENANT_A, threadId: room, ownerPartnerCompanyId: null, senderUserId: USER_A_HOST, senderPartnerCompanyId: null, body: '時計が遅れた発言', sentAt: behind },
+      }),
+    );
+    expect((await visibleMessageIds(ctxOf(H9), room)).length).toBe(1);
+    const after = await withTenant(ctxOf(H9), (db) => countUnread(ctxOf(H9), db, [room]));
+    expect(after.get(room)).toBe(1);
+  });
+
+  it('🔴 投稿時刻は UPDATE で変えられない（生 SQL でも）', async () => {
+    const before = await admin.message.findUniqueOrThrow({ where: { id: OLD_MESSAGE } });
+    // superuser でも変えられない（トリガは誰の UPDATE にも効く）。
+    expect(await admin.$executeRawUnsafe(`UPDATE messages SET posted_at = now() WHERE id = '${OLD_MESSAGE}'`)).toBe(1);
+    const after = await admin.message.findUniqueOrThrow({ where: { id: OLD_MESSAGE } });
+    expect(after.postedAt?.getTime()).toBe((before.postedAt ?? before.sentAt).getTime());
+  });
+});
+
+describe('🔴 NG-2 検査の CLEAN で sent_at が進んでも、入る前の添付の発言は範囲の内側へ移らない', () => {
+  it('検査中に送られ、「追加した時から」で足した後に CLEAN になった発言は、足した人に見えない（一覧の時刻にも出ない）', async () => {
+    const room = await createGroup(ctxOf(USER_A_HOST), '検査の部屋', [H2]);
+    const messageId = '01930000-0000-7000-8000-000000000ae5';
+    const objectKey = `t/${TENANT_A}/chat/${room}/${messageId}/01930000-0000-7000-8000-000000000ae6.pdf`;
+    await admin.message.create({
+      data: {
+        id: messageId,
+        tenantId: TENANT_A,
+        threadId: room,
+        ownerPartnerCompanyId: null,
+        senderUserId: USER_A_HOST,
+        senderPartnerCompanyId: null,
+        body: `検査中の添付（${WORD}）`,
+        sentAt: new Date(Date.now() - 60 * 1000),
+        attachmentKey: objectKey,
+        attachmentScanStatus: 'SCANNING',
+        attachmentContentType: 'application/pdf',
+        attachmentByteSize: 10n,
+      },
+    });
+    expect((await addMembers(ctxOf(USER_A_HOST), room, { userIds: [H8], history: 'JOINED' })).status).toBe(200);
+    const applied = await applyFileScanResult(systemTenantCtx(TENANT_A, { queue: 'scan.apply-result', jobId: 'job-add-members' }), {
+      objectKey,
+      objectVersionId: 'v-clean',
+      status: 'CLEAN',
+      rawStatus: 'NO_THREATS_FOUND',
+      occurredAt: new Date(),
+      receivedAt: new Date(),
+    });
+    expect(applied.target).toBe('APPLIED');
+    const row = await admin.message.findUniqueOrThrow({ where: { id: messageId } });
+    const window = await admin.chatThreadMemberWindow.findFirstOrThrow({ where: { threadId: room, userId: H8 } });
+    // 前提: sent_at は入った時刻より後ろへ進んだが、posted_at は動かない。
+    expect(row.sentAt.getTime()).toBeGreaterThan(window.joinedAt.getTime());
+    expect(row.postedAt!.getTime()).toBeLessThan(window.joinedAt.getTime());
+    expect(await visibleMessageIds(ctxOf(H8), room)).toEqual([]);
+    expect((await listChatAttachments(ctxOf(H8), room, {})).items).toEqual([]);
+    expect(await searchChatMessages(ctxOf(H8), room, WORD)).toEqual([]);
+    // 対照: 最初からのメンバーには見える。
+    expect(await visibleMessageIds(ctxOf(H2), room)).toEqual([messageId]);
+    // 一覧に出す「最後の発言の時刻」は、読める発言が無いので出さない（部屋の最終更新は進んでいる）。
+    expect((await admin.chatThread.findUniqueOrThrow({ where: { id: room } })).lastMessageAt).not.toBeNull();
+    const people = await withTenant(ctxOf(H8), (db) => readPeople(ctxOf(H8), db));
+    expect(people.rooms.find((item) => item.id === room)?.lastMessageAt).toBeNull();
+    const own = await withTenant(ctxOf(H2), (db) => readPeople(ctxOf(H2), db));
+    expect(own.rooms.find((item) => item.id === room)?.lastMessageAt).not.toBeNull();
+  });
+});
+
+describe('🔴 NG-3 SECURITY DEFINER の関数は、そのグループのメンバーにだけ、まだいない人についてだけ答える', () => {
+  const ask = (who: { partnerCompanyId: string | null; userId: string }, sql: string) =>
+    rawAs(who, async (tx) => (await tx.$queryRawUnsafe<Array<{ v: boolean }>>(`SELECT (${sql}) AS v`))[0]?.v);
+
+  it('メンバーでない人には、メンバーかどうか・窓の行があるかを答えない（false）', async () => {
+    expect(await ask(AS_OUTSIDER, `app_thread_has_member('${groupId}', '${H2}')`)).toBe(false);
+    expect(await ask(AS_OUTSIDER, `app_thread_windows_ready('${groupId}', ARRAY['${H4}'::uuid])`)).toBe(false);
+    expect(await ask(AS_OUTSIDER, `app_thread_announcement_outside_window('${groupId}')`)).toBe(false);
+    // 対照: メンバーには答える。
+    expect(await ask(AS_HOST, `app_thread_has_member('${groupId}', '${H2}')`)).toBe(true);
+  });
+
+  it('既にいるメンバーを問うても、後から足された人かどうかは分からない（どちらも同じ答え）', async () => {
+    const asH2 = { partnerCompanyId: null, userId: H2 } as const;
+    const later = await ask(asH2, `app_thread_windows_ready('${groupId}', ARRAY['${H4}'::uuid])`);
+    const original = await ask(asH2, `app_thread_windows_ready('${groupId}', ARRAY['${USER_A_HOST}'::uuid])`);
+    expect(later).toBe(original);
+    // 対照: まだいない人で、窓の行が無ければ false（関数が空振りしていない）。
+    expect(await ask(asH2, `app_thread_windows_ready('${groupId}', ARRAY['${H10}'::uuid])`)).toBe(false);
+  });
+
+  it('DM・会社グループでは答えない（false）', async () => {
+    const dm = await post(dmRoute, ctxOf(USER_A_HOST), '/api/threads/dm', { userId: H3 });
+    const dmId = ((await dm.json()) as { id: string }).id;
+    expect(await ask(AS_HOST, `app_thread_has_member('${dmId}', '${H3}')`)).toBe(false);
+  });
+});
+
+describe('🔴 NG-4 参加前の発言を指すアナウンスは、足された人から変えられない（500 ではなく 409）', () => {
+  it('「追加した時から」の人が設定・外すと 409。範囲の内側の発言に置き換わった後は変えられる', async () => {
+    const h4 = ctxOf(H4);
+    const deps = { now: () => new Date(), meta: { ipAddress: null } };
+    const [visible] = await visibleMessageIds(h4, groupId);
+    expect(visible).toBeDefined();
+    await expect(setChatAnnouncement(h4, groupId, visible!, deps)).rejects.toMatchObject({ httpStatus: 409, code: 'CHAT_ANNOUNCEMENT_OUTSIDE_WINDOW' });
+    await expect(clearChatAnnouncement(h4, groupId, OLD_MESSAGE, deps)).rejects.toMatchObject({ httpStatus: 409 });
+    // アナウンスは変わっていない。
+    expect((await admin.chatThreadAnnouncement.findFirstOrThrow({ where: { threadId: groupId } })).messageId).toBe(OLD_MESSAGE);
+    // 対照: 最初からのメンバーは置き換えられ、置き換わった後は足された人も変えられる。
+    await setChatAnnouncement(ctxOf(USER_A_HOST), groupId, visible!, deps);
+    expect(await withTenant(h4, (db) => readThreadAnnouncements(db, [groupId]))).toHaveProperty('size', 1);
+    const cleared = await clearChatAnnouncement(h4, groupId, visible!, deps);
+    expect(cleared.announcement).toBeNull();
   });
 });

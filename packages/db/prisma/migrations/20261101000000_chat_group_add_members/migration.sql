@@ -25,13 +25,23 @@
 --    所属の検査（chat_threads_members_party）はそのまま効く（UPDATE OF member_user_ids で発火する）:
 --      社内だけの部屋（partner_company_id IS NULL）にはホストの人だけ、取引先との部屋にはホストの人かその取引先の人だけ。
 -- 🔴 判断事項 4: 同時に足しても片方が消えない
---    アプリは `member_user_ids = array_cat(member_user_ids, $足す人)`（Prisma の push）で 1 文で更新する。
+--    ✅ 2026-11-01（レビュー）: アプリは最初に部屋の行を `push []`（変化の無い UPDATE）で掴み（行ロック）、掴んだ後に
+--    メンバーを読み直してから足す人を決める → 同じ部屋への追加は 1 件ずつ進み、監査には「この要求が実際に足した人」だけが載る。
+--    そのうえで `member_user_ids = array_cat(member_user_ids, $足す人)`（Prisma の push）で 1 文で更新する。
 --    同じ行の同時更新は PostgreSQL が後の側を待たせ、確定後の行で式を計算し直す（READ COMMITTED の EvalPlanQual）ので、
 --    先に確定した追加は消えない。同じ人を同時に足したときの重複は、凍結トリガが並びを保ったまま取り除く
 --    （トリガは名前順に動く: chat_threads_freeze_room → chat_threads_members_party の順。重複の検査より先に整える）。
---    窓の行は `ON CONFLICT DO NOTHING`（createMany の skipDuplicates）で、先に入った側の行が残る。
+--    （アプリは先に行を掴むので、アプリの経路では同じ人が 2 回足されることは無い。重複の除去は生 SQL への備え。）
 -- 🔴 判断事項 5: 読める範囲は messages の RESTRICTIVE ポリシー（SELECT）で止める
---    `app_thread_history_ok(thread_id, sent_at)` = 自分の窓の行があり、history_from が NULL でなく、発言がそれより前なら false。
+--    `app_thread_history_ok(thread_id, COALESCE(posted_at, sent_at))` = 自分の窓の行があり、history_from が NULL でなく、
+--    発言の投稿時刻がそれより前なら false。
+--    ✅ 2026-11-01（レビュー NG-1 / NG-2）: 🔴 **比べるのは `sent_at` ではなく `posted_at`（DB の時計で、後から動かない投稿時刻）**。
+--      ・`sent_at` はアプリの時計で入る（`service.ts`）—— DB の時計（joined_at / history_from）と比べると、時計のずれの分だけ
+--        入る前の発言が読める・未読の数がずれる。
+--      ・`sent_at` は検査が CLEAN になると適用した時刻まで進む（`app_apply_scan_status`。20261027030000）—— 入る前に送られた
+--        添付の発言が、入った後に CLEAN になると範囲の内側へ移ってしまう。
+--      `posted_at` は下の ⓪ のトリガが決める（利用者の経路〔app_tenant〕の INSERT は DB の now()。UPDATE では変えない）。
+--      この migration より前の行は NULL のまま（データの UPDATE をしない）で、`sent_at` に戻して比べる（下の ⓪ の 🔴）。
 --    既存の C6 + 人の段（PERMISSIVE）と AND で合成される（既存の式は書き換えない）。
 --    関数は app_thread_probe の SECURITY DEFINER（app_thread_member_ok と同じ型。ポリシーの再帰を作らない）。
 --    messages を読む表は、親の発言が読めるときだけ見える作りなので、同じ境界が効く:
@@ -46,8 +56,51 @@
 --    凍結トリガ・制約トリガが要る問いは、app_thread_probe の SECURITY DEFINER 関数が真偽だけで答える。
 -- 🔴 判断事項 7: 解約（PURGED）では残す（ID と時刻だけ。個人情報・本文を含まない。PURGE_SPEC.retain）。
 -- 🔴 判断事項 8: 運営者（app_platform）に GRANT しない（CLAUDE.md §10.5。運営に要るのは件数・状態・エラーだけ）。
+-- 🔴 判断事項 9（レビュー NG-3）: SECURITY DEFINER の関数は、呼び出し元がそのグループのメンバーのときだけ答える
+--    （それ以外は false）。`app_thread_windows_ready` は「まだメンバーでない人」についてだけ答える —— 既にいるメンバーの ID を
+--    渡しても、その人が後から足された人かどうかは分からない。
+-- 🔴 判断事項 10（レビュー NG-4）: 今のアナウンスが自分の範囲より前の発言を指していると、その行は自分から見えない。
+--    そのまま設定・外すと一意制約 / RLS の拒否で 500 になるので、`app_thread_announcement_outside_window(thread)` が
+--    「そうであるか」だけを真偽で答え、アプリが 409（「参加前の発言なので変更できません」）にする。
+--    🔴 足された本人にだけ「範囲の外の発言を指すアナウンスがある」ことが分かる（中身・発言 ID・設定者は分からない）。
 -- 🔴 既存の migration は書き換えない（関数は CREATE OR REPLACE、ポリシーは足すだけ）。
 -- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- ⓪ messages.posted_at（DB の時計で、後から動かない投稿時刻。判断事項 5）
+-- ----------------------------------------------------------------------------
+-- 🔴 列は NULL を許す・既定値を持たない: 既存の行を書き換えない（FORCE を外さない。`messages` には継承トリガ等があり、
+--    データの UPDATE は危うい）。既存の行は NULL のままで、比べるときは `COALESCE(posted_at, sent_at)`。
+--    既存の行は窓の行（この migration で初めてできる）より必ず前に送られている。検査中のまま残っていた行は、
+--    CLEAN になる UPDATE のときに下のトリガが **動かす前の** sent_at を posted_at に固める（入った後に範囲の内側へ移らない）。
+--    ⚠️ この migration より前に CLEAN になって sent_at が進んだ行は、進んだ後の時刻で比べる（「日付を指定」の境目の日だけの誤差。受け入れる）。
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS posted_at timestamptz(3);
+
+COMMENT ON COLUMN messages.posted_at IS
+  '2026-11-01: 投稿時刻（DB の時計。UPDATE では変えない）。グループに後から足した人の読める範囲・未読の境目を決める。NULL = この列より前の行（sent_at で比べる）';
+
+-- 🔴 利用者の経路（app_tenant）の INSERT は必ず DB の now()（アプリの時計・入力を使わない）。
+--    それ以外（合成データの投入・テスト）は、渡された posted_at か sent_at を、いまより後ろにならないよう丸めて使う
+--    （過去の会話の合成データを作れる。未来にはできない = 範囲の内側へ後ろ倒しできない）。
+-- 🔴 UPDATE では変えない（検査の CLEAN で sent_at が進んでも posted_at は動かない）。NULL の行は動かす前の sent_at に固める。
+CREATE FUNCTION messages_stamp_posted_at() RETURNS trigger
+LANGUAGE plpgsql AS $BODY$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF current_user = 'app_tenant' THEN
+      NEW.posted_at := now();
+    ELSE
+      NEW.posted_at := LEAST(COALESCE(NEW.posted_at, NEW.sent_at, now()), now());
+    END IF;
+  ELSE
+    NEW.posted_at := COALESCE(OLD.posted_at, OLD.sent_at);
+  END IF;
+  RETURN NEW;
+END;
+$BODY$;
+
+CREATE TRIGGER messages_stamp_posted_at BEFORE INSERT OR UPDATE ON messages
+  FOR EACH ROW EXECUTE FUNCTION messages_stamp_posted_at();
 
 -- ----------------------------------------------------------------------------
 -- ① 表
@@ -99,7 +152,8 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $BODY$
 $BODY$;
 ALTER FUNCTION app_thread_can_add_member(uuid, uuid) OWNER TO app_thread_probe;
 
--- 「この人は、いまこの部屋のメンバーか」（窓の行の確定時の検査）。
+-- 「この人は、いまこのグループのメンバーか」（窓の行の確定時の検査）。
+-- 🔴 部屋が GROUP で、呼び出し元がそのメンバーのときだけ答える（それ以外は false。判断事項 9）。
 CREATE FUNCTION app_thread_has_member(th uuid, member uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $BODY$
   SELECT COALESCE((
@@ -107,28 +161,44 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $BODY$
       FROM chat_threads t
      WHERE t.tenant_id = app_tenant_id()
        AND t.id = th
+       AND t."kind" = 'GROUP'
+       AND app_actor_user_id() IS NOT NULL
+       AND app_actor_user_id() = ANY (t.member_user_ids)
   ), false)
 $BODY$;
 ALTER FUNCTION app_thread_has_member(uuid, uuid) OWNER TO app_thread_probe;
 
--- 「足した人全員に窓の行があるか」（凍結トリガの検査）。空の配列なら true。
+-- 「足した人全員に窓の行があるか」（凍結トリガの検査）。
+-- 🔴 部屋が GROUP で、呼び出し元がそのメンバーのときだけ答える（それ以外は false）。
+-- 🔴 問うのは「いまの配列に居ない人」だけ（既にいるメンバーの ID は数に入れない = 後から足された人かどうかを答えない。判断事項 9）。
+--    凍結トリガの中では、関数の問い合わせは文の開始時点の行（変更前の配列）を見るので、足した人はまだ配列に居ない。
 CREATE FUNCTION app_thread_windows_ready(th uuid, members uuid[]) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $BODY$
-  SELECT NOT EXISTS (
-    SELECT 1
-      FROM unnest(members) AS m(id)
-     WHERE NOT EXISTS (
-       SELECT 1 FROM chat_thread_member_windows w
-        WHERE w.tenant_id = app_tenant_id()
-          AND w.thread_id = th
-          AND w.user_id = m.id
-     )
-  )
+  SELECT COALESCE((
+    SELECT NOT EXISTS (
+      SELECT 1
+        FROM unnest(members) AS m(id)
+       WHERE NOT (m.id = ANY (t.member_user_ids))
+         AND NOT EXISTS (
+           SELECT 1 FROM chat_thread_member_windows w
+            WHERE w.tenant_id = app_tenant_id()
+              AND w.thread_id = th
+              AND w.user_id = m.id
+         )
+    )
+      FROM chat_threads t
+     WHERE t.tenant_id = app_tenant_id()
+       AND t.id = th
+       AND t."kind" = 'GROUP'
+       AND app_actor_user_id() IS NOT NULL
+       AND app_actor_user_id() = ANY (t.member_user_ids)
+  ), false)
 $BODY$;
 ALTER FUNCTION app_thread_windows_ready(uuid, uuid[]) OWNER TO app_thread_probe;
 
 -- 🔴 読める範囲: 呼び出し元の窓の行があり、範囲の始まりより前の発言なら false。行が無い（最初からのメンバー・
 --    会社グループ・案件スレッド・利用者の無い文脈）なら true（ほかのポリシーが決める）。
+--    第 2 引数は発言の投稿時刻（ポリシーが `COALESCE(posted_at, sent_at)` を渡す。判断事項 5）。
 CREATE FUNCTION app_thread_history_ok(th uuid, sent timestamptz) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $BODY$
   SELECT COALESCE((
@@ -141,6 +211,37 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $BODY$
   ), true)
 $BODY$;
 ALTER FUNCTION app_thread_history_ok(uuid, timestamptz) OWNER TO app_thread_probe;
+
+-- 🔴 判断事項 10: 今のアナウンスが、呼び出し元の範囲より前の発言を指しているか（呼び出し元がそのグループのメンバーで、
+--    範囲を持つときだけ。それ以外は false）。返すのは真偽だけ（発言 ID・設定者・中身は返さない）。
+GRANT SELECT (tenant_id, thread_id, message_id) ON chat_thread_announcements TO app_thread_probe;
+DROP POLICY IF EXISTS chat_thread_announcements_thread_probe_select ON chat_thread_announcements;
+CREATE POLICY chat_thread_announcements_thread_probe_select ON chat_thread_announcements FOR SELECT TO app_thread_probe
+  USING (tenant_id = app_tenant_id());
+GRANT SELECT (tenant_id, id, sent_at, posted_at) ON messages TO app_thread_probe;
+DROP POLICY IF EXISTS messages_thread_probe_select ON messages;
+CREATE POLICY messages_thread_probe_select ON messages FOR SELECT TO app_thread_probe
+  USING (tenant_id = app_tenant_id());
+CREATE FUNCTION app_thread_announcement_outside_window(th uuid) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $BODY$
+  SELECT COALESCE((
+    SELECT COALESCE(m.posted_at, m.sent_at) < w.history_from
+      FROM chat_threads t
+      JOIN chat_thread_member_windows w
+        ON w.tenant_id = t.tenant_id AND w.thread_id = t.id AND w.user_id = app_actor_user_id()
+      JOIN chat_thread_announcements a
+        ON a.tenant_id = t.tenant_id AND a.thread_id = t.id
+      JOIN messages m
+        ON m.tenant_id = a.tenant_id AND m.id = a.message_id
+     WHERE t.tenant_id = app_tenant_id()
+       AND t.id = th
+       AND t."kind" = 'GROUP'
+       AND app_actor_user_id() IS NOT NULL
+       AND app_actor_user_id() = ANY (t.member_user_ids)
+       AND w.history_from IS NOT NULL
+  ), false)
+$BODY$;
+ALTER FUNCTION app_thread_announcement_outside_window(uuid) OWNER TO app_thread_probe;
 REVOKE CREATE ON SCHEMA public FROM app_thread_probe;
 
 -- 🔴 運営者（app_platform / app_platform_write）には与えない。
@@ -148,10 +249,12 @@ REVOKE ALL ON FUNCTION app_thread_can_add_member(uuid, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION app_thread_has_member(uuid, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION app_thread_windows_ready(uuid, uuid[]) FROM PUBLIC;
 REVOKE ALL ON FUNCTION app_thread_history_ok(uuid, timestamptz) FROM PUBLIC;
+REVOKE ALL ON FUNCTION app_thread_announcement_outside_window(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_thread_can_add_member(uuid, uuid) TO app_tenant;
 GRANT EXECUTE ON FUNCTION app_thread_has_member(uuid, uuid) TO app_tenant;
 GRANT EXECUTE ON FUNCTION app_thread_windows_ready(uuid, uuid[]) TO app_tenant;
 GRANT EXECUTE ON FUNCTION app_thread_history_ok(uuid, timestamptz) TO app_tenant;
+GRANT EXECUTE ON FUNCTION app_thread_announcement_outside_window(uuid) TO app_tenant;
 
 COMMENT ON FUNCTION app_thread_history_ok(uuid, timestamptz) IS
   '2026-11-01: グループに後から足した人の読める範囲。呼び出し元の窓の行の history_from より前の発言なら false。呼び出し元は messages の RESTRICTIVE ポリシー messages_member_history_window のみ。';
@@ -183,6 +286,7 @@ CREATE FUNCTION chat_thread_member_windows_stamp() RETURNS trigger
 LANGUAGE plpgsql AS $BODY$
 BEGIN
   NEW.joined_at := now();
+  -- 🔴 「追加した時から」はアプリが遠い未来の値を送り、ここで入った時刻（DB の now()）に揃える（アプリの時計を使わない）。
   IF NEW.history_from IS NOT NULL AND NEW.history_from > NEW.joined_at THEN
     NEW.history_from := NEW.joined_at;
   END IF;
@@ -256,7 +360,7 @@ $BODY$;
 -- ----------------------------------------------------------------------------
 DROP POLICY IF EXISTS messages_member_history_window ON messages;
 CREATE POLICY messages_member_history_window ON messages AS RESTRICTIVE FOR SELECT TO app_tenant
-  USING (tenant_id = app_tenant_id() AND (app_thread_history_ok(thread_id, sent_at) OR (app_is_host() AND app_purge_scope_on())));
+  USING (tenant_id = app_tenant_id() AND (app_thread_history_ok(thread_id, COALESCE(posted_at, sent_at)) OR (app_is_host() AND app_purge_scope_on())));
 
 -- アナウンスは「指した発言が読める」ときだけ（範囲の外の発言を指すアナウンスを、足した人に見せない）。
 -- 🔴 サブクエリは呼び出し側のロールで評価される = messages の RLS（C6・人の段・添付・上の範囲）がすべて効く。

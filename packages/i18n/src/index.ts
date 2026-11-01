@@ -5007,6 +5007,7 @@ const ja = {
   'chat.groupAdd.noMatch': '当てはまる人がいません',
   'chat.groupAdd.truncated': '人が多いため、一部だけを表示しています。名前で絞り込んでください',
   'chat.toast.membersAdded': 'メンバーを追加しました',
+  'chat.announcement.outsideWindow': 'この部屋のアナウンスは、参加前の発言なので変更できません',
   'chat.people.self': '自分',
   'chat.panel.members': 'メンバー',
   'chat.panel.roomNote': 'この部屋はメンバーだけが読めます',

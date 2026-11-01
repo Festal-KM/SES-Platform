@@ -317,7 +317,9 @@ return (
       {announcementFailed ? (
         <div className="shrink-0 px-3 py-2 md:px-5">
           <Alert variant="danger" data-testid={`chat-announcement-failed-${threadId}`}>
-            {messages.announcementFailed}
+            {announcementFailed === 'outsideWindow' && messages.announcementOutsideWindow !== undefined
+              ? messages.announcementOutsideWindow
+              : messages.announcementFailed}
           </Alert>
         </div>
       ) : null}

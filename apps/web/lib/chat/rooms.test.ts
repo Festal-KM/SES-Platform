@@ -2,15 +2,15 @@
 // 境界（RLS・トリガ）は tests/isolation/chat-group-add-members.test.ts が実 DB で固定する。
 import { describe, expect, it } from 'vitest';
 import { ValidationError } from '../api/errors';
-import { historyFromOf, jstStartOfDay, roomPartnerOf } from './rooms';
+import { CHAT_HISTORY_FROM_JOIN, historyFromOf, jstStartOfDay, roomPartnerOf } from './rooms';
 import { chatGroupMembersBodySchema } from './schemas';
 
 const NOW = new Date('2026-11-01T03:00:00Z');
 
 describe('historyFromOf', () => {
-  it('すべて → null / 追加した時から → いま', () => {
+  it('すべて → null / 追加した時から → DB が入った時刻に揃える印（アプリの時計を使わない）', () => {
     expect(historyFromOf({ history: 'ALL' }, NOW)).toBeNull();
-    expect(historyFromOf({ history: 'JOINED' }, NOW)).toEqual(NOW);
+    expect(historyFromOf({ history: 'JOINED' }, NOW)).toEqual(CHAT_HISTORY_FROM_JOIN);
   });
 
   it('日付を指定 → 日本時間のその日の 0 時（前日 15:00 UTC）', () => {

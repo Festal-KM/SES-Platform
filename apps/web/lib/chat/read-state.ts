@@ -136,6 +136,8 @@ export async function readPositions(
  * ✅ 2026-11-01（紺野の決定）: グループに後から足された部屋の「入った時刻」（`chat_thread_member_windows`）。
  * 🔴 RLS（C7 SELF）が本人の行だけを返す（`where` に利用者 ID を書き足さない）。最初からのメンバーには行が無い。
  * 未読は max(自分の既読位置, 入った時刻) から数える —— 足した人の要求で本人の既読位置を書かない（CLAUDE.md §4.1）。
+ * 🔴 入った時刻と比べるのは発言の `postedAt`（DB の時計で、後から動かない投稿時刻）であり、`sentAt`（アプリの時計。検査の CLEAN で
+ *    進む）ではない。`postedAt` が NULL の行（列ができる前の行）は必ず入る前なので、`gt` の条件から外れる（数えない）。
  */
 export async function readJoinTimes(
   db: Pick<TenantDb, 'chatThreadMemberWindow'>,
@@ -158,7 +160,7 @@ function afterReadPositionBranches(
   return threadIds.map((threadId) => {
     const position = positions.get(threadId) ?? null;
     const joinedAt = joinTimes.get(threadId);
-    const joined = joinedAt === undefined ? {} : { AND: [{ sentAt: { gt: joinedAt } }] };
+    const joined = joinedAt === undefined ? {} : { AND: [{ postedAt: { gt: joinedAt } }] };
     return position === null
       ? { threadId, ...joined }
       : {
@@ -170,8 +172,8 @@ function afterReadPositionBranches(
 }
 
 /**
- * ✅ 2026-11-01: 「ここから未読」の線を引く位置（開いている部屋だけ）。自分の既読位置が入った時刻より前（または無い）なら、
- * 入った時刻までの最後の読める発言を既読とみなす。🔴 画面の表示だけ（既読位置の行は書かない）。
+ * ✅ 2026-11-01: 「ここから未読」の線を引く位置（開いている部屋だけ）。自分の既読位置と「入った時刻までに投稿された最後の読める発言」の
+ * 並びで後ろのほうを既読とみなす。🔴 画面の表示だけ（既読位置の行は書かない）。
  */
 export async function effectiveLastReadMessageIds(
   db: Pick<TenantDb, 'message' | 'chatReadState' | 'chatThreadMemberWindow'>,
@@ -184,15 +186,23 @@ export async function effectiveLastReadMessageIds(
   for (const threadId of threadIds) {
     const position = positions.get(threadId) ?? null;
     const joinedAt = joinTimes.get(threadId);
-    if (joinedAt !== undefined && (position === null || position.sentAt.getTime() < joinedAt.getTime())) {
-      const before = await db.message.findFirst({
-        where: { threadId, sentAt: { lte: joinedAt }, AND: [chatMessageVisibleWhere(viewerUserId)] },
-        orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
-        select: { id: true },
-      });
-      result[threadId] = before?.id ?? position?.id ?? null;
-    } else {
+    if (joinedAt === undefined) {
       result[threadId] = position?.id ?? null;
+      continue;
+    }
+    // 🔴 入った時刻（DB の時計）とは投稿時刻（`postedAt`）で比べ、既読位置とは会話の並び（sentAt, id）で比べる（時計を混ぜない）。
+    const before = await db.message.findFirst({
+      // 入った時刻までに投稿された発言（`postedAt` が NULL = 列ができる前の行も入る前）のうち、並びで最後のもの。
+      where: { threadId, OR: [{ postedAt: { lte: joinedAt } }, { postedAt: null }], AND: [chatMessageVisibleWhere(viewerUserId)] },
+      orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
+      select: { id: true, sentAt: true },
+    });
+    if (before === null) result[threadId] = position?.id ?? null;
+    else if (position === null) result[threadId] = before.id;
+    else {
+      const positionIsLater =
+        position.sentAt.getTime() > before.sentAt.getTime() || (position.sentAt.getTime() === before.sentAt.getTime() && position.id > before.id);
+      result[threadId] = positionIsLater ? position.id : before.id;
     }
   }
   return result;

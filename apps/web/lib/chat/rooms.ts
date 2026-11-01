@@ -193,6 +193,12 @@ export function jstStartOfDay(date: string): Date {
 }
 
 /**
+ * 「追加した時から」の印。🔴 アプリの時計を使わない —— DB のトリガ（`chat_thread_member_windows_stamp`）が、入った時刻
+ * （DB の now()）より後ろの値を入った時刻に揃える。発言の投稿時刻（`messages.posted_at`）も DB の時計なので、同じ時計で比べられる。
+ */
+export const CHAT_HISTORY_FROM_JOIN = new Date('9999-12-31T00:00:00.000Z');
+
+/**
  * 足した人が読める範囲の始まり（純粋関数）。`null` = これまでの発言をすべて。
  * 🔴 未来の日付は 400（入った後もしばらく何も読めない部屋を作らない）。存在しない日付（2 月 30 日など）も 400。
  */
@@ -201,7 +207,7 @@ export function historyFromOf(
   now: Date,
 ): Date | null {
   if (input.history === 'ALL') return null;
-  if (input.history === 'JOINED') return now;
+  if (input.history === 'JOINED') return CHAT_HISTORY_FROM_JOIN;
   const date = input.historyDate ?? '';
   const from = jstStartOfDay(date);
   if (Number.isNaN(from.getTime())) throw new ValidationError(['historyDate']);
@@ -219,7 +225,8 @@ export type ChatGroupAddResult = { readonly addedCount: number; readonly memberC
  * - 足す人が見えない → 404（①）。部屋の取引先と所属が合わない → 400（②。作るときと同じ）。上限を超える → 400。
  * - 既にメンバーの人は無視する（全員が既にメンバーなら何もせず、監査も書かない）。
  * 🔴 窓の行（入った時刻・読める範囲）とメンバーの配列は同じトランザクションで書く（DB が両方そろっていることを要求する）。
- * 🔴 配列は `push`（1 文の `array_cat`）で足す —— 同時に足しても、先に確定した追加を上書きしない（migration の判断事項 4）。
+ * 🔴 先に部屋の行を掴み（行ロック）、掴んだ後に読み直したメンバーから足す人を決める。配列は `push`（1 文の `array_cat`）で足す
+ *    —— 同時に足しても、先に確定した追加を上書きせず、監査には実際に足した人だけが載る（migration の判断事項 4）。
  */
 export async function addChatGroupMembers(
   ctx: AuthenticatedTenantCtx,
@@ -227,16 +234,22 @@ export async function addChatGroupMembers(
   input: { readonly userIds: readonly string[]; readonly history: ChatGroupHistoryMode; readonly historyDate?: string | undefined },
   deps: ChatRoomDeps,
 ): Promise<ChatGroupAddResult> {
-  const now = deps.now();
-  const historyFrom = historyFromOf(input, now);
+  // 日付の検査（今日より後ろでないか）だけにアプリの時計を使う。境目そのものは DB の時計（上の CHAT_HISTORY_FROM_JOIN）。
+  const historyFrom = historyFromOf(input, deps.now());
   return withTenant(ctx, async (db) => {
+    const visible = requireFound(
+      (await db.chatThread.findFirst({ where: { id: threadId }, select: { kind: true } })) as { kind: string } | null,
+    );
+    if (visible.kind !== 'GROUP') throw new ValidationError(['threadId']);
+    // 🔴 部屋の行を先に掴む（変化の無い UPDATE = 行ロック）。同じ部屋への追加はここで 1 件ずつになり、掴んだ後に読み直した
+    //    メンバーから「この要求が実際に足す人」を決める（同時に同じ人を足しても、監査に載るのは実際に足した側だけ）。
+    await db.chatThread.update({ where: { id: threadId }, data: { memberUserIds: { push: [] } }, select: { id: true } });
     const room = requireFound(
       (await db.chatThread.findFirst({
         where: { id: threadId },
-        select: { kind: true, memberUserIds: true, partnerCompanyId: true },
-      })) as { kind: string; memberUserIds: string[]; partnerCompanyId: string | null } | null,
+        select: { memberUserIds: true, partnerCompanyId: true },
+      })) as { memberUserIds: string[]; partnerCompanyId: string | null } | null,
     );
-    if (room.kind !== 'GROUP') throw new ValidationError(['threadId']);
     const current = new Set(room.memberUserIds);
     const added = [...new Set(input.userIds)].filter((id) => !current.has(id));
     if (added.length === 0) return { addedCount: 0, memberCount: room.memberUserIds.length };
@@ -254,7 +267,6 @@ export async function addChatGroupMembers(
         historyFrom,
         addedByUserId: ctx.userId,
       })),
-      skipDuplicates: true,
     });
     const updated = (await db.chatThread.update({
       where: { id: threadId },

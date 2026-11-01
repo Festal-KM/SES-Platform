@@ -114,6 +114,8 @@ export type ChatConversationMessages = {
   readonly announcementSetBySuffix: string;
   readonly announcementNotLoadedSuffix: string;
   readonly announcementFailed: string;
+  /** ✅ 2026-11-01: 参加前の発言を指すアナウンスは変えられない（409）。省略時は `announcementFailed` を出す。 */
+  readonly announcementOutsideWindow?: string;
   /** ✅ 2026-10-27（F-038 ⑬ ⑭）: 引用して返信と、自分宛ての発言の印。省略時は描かない（古い呼び出し・テストの互換）。 */
   readonly quote?: {
     readonly action: string;
@@ -355,6 +357,7 @@ export function chatConversationMessages(): ChatConversationMessages {
     announcementSetBySuffix: t('chat.announcement.setBySuffix'),
     announcementNotLoadedSuffix: t('chat.announcement.notLoadedSuffix'),
     announcementFailed: t('chat.announcement.failed'),
+    announcementOutsideWindow: t('chat.announcement.outsideWindow'),
     quote: {
       action: t('chat.quote.action'),
       chipPrefix: t('chat.quote.chipPrefix'),
