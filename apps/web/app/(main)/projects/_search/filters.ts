@@ -1,4 +1,5 @@
 import { parseProjectKeywordGroups } from '@ses/domain';
+import { LEGACY_PROJECT_CATEGORY_MAP } from './legacy-categories';
 // 2026-10-29: 人間の最新指示で基本検索10項目と詳細検索へ拡張。以下の8項目の説明は旧仕様の履歴。
 // apps/web/app/(main)/projects/_search/filters.ts
 // `S-010` 自社案件管理の検索エリアの**条件そのもの**（純粋関数だけ。React に依存しない）。
@@ -44,7 +45,8 @@ export type ProjectSearchDraft = {
   readonly keywordGroups?: string;
   readonly q: string;
   readonly status: string;
-  readonly category: string;
+  /** ✅ 2026-11-01（人間の明示指示「複数検索（OR検索）」）: 単一 → 複数・OR。`skills` と同じく配列。 */
+  readonly categories: readonly string[];
   readonly skills: readonly string[];
   readonly remoteMode: string;
   readonly priceMin: string;
@@ -57,7 +59,7 @@ export type ProjectSearchDraft = {
 export const EMPTY_PROJECT_SEARCH_DRAFT: ProjectSearchDraft = {
   q: '',
   status: '',
-  category: '',
+  categories: [],
   skills: [],
   remoteMode: '',
   priceMin: '',
@@ -72,7 +74,8 @@ export const PROJECT_SEARCH_FIELD_NAMES = {
   utilizationBand: 'utilizationBand', utilizationMin: 'utilizationMin', utilizationMax: 'utilizationMax', keywordGroups: 'keywordGroups',
   q: 'q',
   status: 'status',
-  category: 'category',
+  /** 🔴 URL のキーは従来どおり `category`（複数なら繰り返す）。古いリンクもそのまま読める。 */
+  categories: 'category',
   skills: 'skills',
   remoteMode: 'remoteMode',
   priceMin: 'priceMin',
@@ -163,9 +166,12 @@ export function projectSearchChips(
   // 🔴 ステータス（`募集中` / `終了`）と稼働形態（`フルリモート可` 等）は語だけで意味が通る。
   const status = labelOf(labels.statusOptions, draft.status);
   if (status !== null) chips.push({ key: 'status', label: status });
-  const category = labelOf(labels.categoryOptions, draft.category);
-  if (category !== null) {
-    chips.push({ key: 'category', label: prefixed(labels.fieldLabels.category, category) });
+  // ✅ 2026-11-01: カテゴリは 1 値につき 1 バッジ（スキル・フェーズと同じ）。
+  for (const value of draft.categories) {
+    const category = labelOf(labels.categoryOptions, value);
+    if (category !== null) {
+      chips.push({ key: `category:${value}`, label: prefixed(labels.fieldLabels.category, category) });
+    }
   }
   for (const skillId of draft.skills) {
     const skill = labelOf(labels.skillOptions, skillId);
@@ -205,6 +211,7 @@ export function removeProjectSearchChip(
   draft: ProjectSearchDraft,
   key: string,
 ): ProjectSearchDraft {
+  if (key.startsWith('category:')) return { ...draft, categories: draft.categories.filter(value => value !== key.slice('category:'.length)) };
   if (key.startsWith('phase:')) return { ...draft, developmentPhases: (draft.developmentPhases ?? []).filter(phase => phase !== key.slice(6)) };
   if (['developmentMethod', 'utilizationBand', 'utilizationMin', 'utilizationMax', 'keywordGroups'].includes(key)) return { ...draft, [key]: '' };
   if (key.startsWith('skill:')) {
@@ -216,8 +223,6 @@ export function removeProjectSearchChip(
       return { ...draft, q: '' };
     case 'status':
       return { ...draft, status: '' };
-    case 'category':
-      return { ...draft, category: '' };
     case 'remoteMode':
       return { ...draft, remoteMode: '' };
     // 🔴 金額は 1 バッジなので**上下限をまとめて**戻す（§4「上下限をまとめて 1 バッジ」の対）。
@@ -242,7 +247,7 @@ export function isSameProjectSearchDraft(a: ProjectSearchDraft, b: ProjectSearch
     (a.utilizationMax ?? '') === (b.utilizationMax ?? '') &&
     JSON.stringify(projectDraftKeywordGroups(a).map(group => ({ ...group, terms: [...group.terms].sort() }))) === JSON.stringify(projectDraftKeywordGroups(b).map(group => ({ ...group, terms: [...group.terms].sort() }))) &&
     a.status === b.status &&
-    a.category === b.category &&
+    [...a.categories].sort().join(',') === [...b.categories].sort().join(',') &&
     a.remoteMode === b.remoteMode &&
     a.priceMin === b.priceMin &&
     a.priceMax === b.priceMax &&
@@ -304,7 +309,7 @@ export function parseSavedProjectSearchDraft(value: unknown): ProjectSearchDraft
     ...(validKeywordGroups(text('keywordGroups')) ? { keywordGroups: text('keywordGroups') } : {}),
     q: text('q'),
     status: text('status'),
-    category: text('category'),
+    categories: savedCategories(raw),
     skills,
     remoteMode: text('remoteMode'),
     priceMin: text('priceMin'),
@@ -312,6 +317,17 @@ export function parseSavedProjectSearchDraft(value: unknown): ProjectSearchDraft
     prefecture: text('prefecture'),
     startWithin: text('startWithin'),
   };
+}
+
+/**
+ * 🔴 保存条件のカテゴリ。新形式（`categories: string[]`）と旧形式（`category: string`）の両方を読み、
+ *    廃止した旧値（INFRA / AI / DATA）は移送先に読み替える（migration `20261101000000` と同じ写像）。
+ */
+function savedCategories(raw: Record<string, unknown>): string[] {
+  const values = Array.isArray(raw.categories)
+    ? raw.categories.filter((value): value is string => typeof value === 'string')
+    : typeof raw.category === 'string' && raw.category !== '' ? [raw.category] : [];
+  return [...new Set(values.map(value => LEGACY_PROJECT_CATEGORY_MAP[value] ?? value))];
 }
 
 function validKeywordGroups(value: string): boolean { try { return value.length <= 4000 && parseProjectKeywordGroups(JSON.parse(value)) !== null; } catch { return false; } }
