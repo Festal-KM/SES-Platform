@@ -16,6 +16,15 @@ export type MockMalwareScannerOptions = {
    *    `setResult()` でキーごとに上書きする（テスト専用の別モックを作らない。docs/05 §17.5）。
    */
   readonly defaultResult?: ScanStatus;
+  /**
+   * ✅ 2026-10-27（デモでチャットの添付が「検査中」のまま進まない）: `enqueue` を受けていないキーの `getResult` に返す判定。
+   * 🔴 モックは**プロセスごと**に結果を覚える。worker（`scan.poll`）のモックは誰からも `enqueue` を受けない
+   *    （web はスキャナを組み立てない）ので、尋ねても知らない → `null` → 永久に `SCANNING` になる。起動時の組み立て（`createMalwareScanner` の mock）は
+   *    `defaultResult` と同じ値をここに渡し、「モックは既定で CLEAN」を別プロセスでも成り立たせる。
+   *    未指定（テストの既定）なら従来どおり `null`（「まだ結果が無い」と「CLEAN」を混同しない）。
+   * 🔴 `production` ではモックが選ばれない（起動時に失敗する。`CLAUDE.md` §11.1）ので、本物の検査には影響しない。
+   */
+  readonly resolveUnknownAs?: ScanStatus;
 };
 
 export class MockMalwareScanner implements MalwareScanner {
@@ -35,7 +44,12 @@ export class MockMalwareScanner implements MalwareScanner {
       (versionId === null ? undefined : this.results.get(this.compositeKey(key, versionId))) ??
       this.results.get(key);
     // 🔴 「まだ判定が無い」は `null`（`SCANNING` を確定結果として返さない。`MalwareScanner` の契約）。
-    if (status === undefined || status === 'SCANNING') return null;
+    if (status === undefined) {
+      const fallback = this.options.resolveUnknownAs;
+      if (fallback === undefined || fallback === 'SCANNING') return null;
+      return { status: fallback, rawStatus: `mock:${fallback}`, objectVersionId: versionId ?? MOCK_VERSION_ID };
+    }
+    if (status === 'SCANNING') return null;
     return { status, rawStatus: `mock:${status}`, objectVersionId: versionId ?? MOCK_VERSION_ID };
   }
 
