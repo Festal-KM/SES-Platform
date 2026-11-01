@@ -1360,7 +1360,7 @@ model ChatThreadAnnouncement {
 /// ✅ 2026-11-01 チャットレーン: グループに後から足した人の「入った時刻」と「読める範囲の始まり」（1 人 1 行）。
 /// 最初からのメンバーには行が無い（すべて読める）。history_from が NULL = これまでの発言をすべて読める。
 /// RLS: SELECT は本人の行だけ（C7 SELF）/ INSERT はそのグループのメンバーが「まだいない人」についてだけ / UPDATE・DELETE は無い。
-/// 🔴 joined_at はトリガが DB の now() で上書きする。読める範囲は messages の RESTRICTIVE ポリシーが止める。migration 20261101000000
+/// 🔴 joined_at はトリガが DB の now() で上書きする。読める範囲は messages の RESTRICTIVE ポリシーが止める。migration 20261101100000
 model ChatThreadMemberWindow {
   id            String    @id @default(uuid(7)) @db.Uuid
   tenantId      String    @map("tenant_id") @db.Uuid

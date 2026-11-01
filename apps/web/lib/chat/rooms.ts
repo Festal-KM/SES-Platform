@@ -16,7 +16,7 @@
 //   ⑤ ✅ 2026-11-01（紺野の決定）: **グループに後から人を足す**（`addChatGroupMembers`）。足せるのはそのグループの
 //      メンバーだけ・足すだけ（外す・抜けるは別の段）。部屋の取引先は変わらない（社内だけのグループにはホストの人だけ、
 //      取引先とのグループにはホストの人かその取引先の人だけ）。足した人が読める過去の範囲を選べる（読み取りの境界は
-//      DB の RLS。migration 20261101000000）。🔴 足した人の既読位置は書かない（本人だけが書く。CLAUDE.md §4.1）。
+//      DB の RLS。migration 20261101100000）。🔴 足した人の既読位置は書かない（本人だけが書く。CLAUDE.md §4.1）。
 import { withTenant, writeAuditLog, type AuthenticatedTenantCtx } from '@ses/db';
 import { requireFound, ValidationError } from '../api/errors';
 import { CHAT_GROUP_MAX_MEMBERS } from './policy';

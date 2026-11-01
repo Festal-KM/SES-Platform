@@ -1,5 +1,5 @@
 // packages/db/src/chat-announcement-window.ts
-// ✅ 2026-11-01（グループに後から人を足す。レビュー NG-4）: `app_thread_announcement_outside_window`（migration 20261101000000）を
+// ✅ 2026-11-01（グループに後から人を足す。レビュー NG-4）: `app_thread_announcement_outside_window`（migration 20261101100000）を
 // 呼ぶ**唯一のファイル**。
 //
 // 🔴 今のアナウンスが、呼び出し元の読める範囲より前の発言を指していると、その行は呼び出し元から見えない（RESTRICTIVE）。

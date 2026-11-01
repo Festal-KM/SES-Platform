@@ -1,6 +1,6 @@
 // tests/isolation/chat-group-add-members.test.ts
 // ✅ 2026-11-01（紺野の決定）: グループに後から人を足す（`docs/02` F-038 改訂 17 / `docs/05` §3.7.1・#51h /
-// migration 20261101000000_chat_group_add_members）。
+// migration 20261101100000_chat_group_add_members）。
 //
 // 🔴 ここで固定すること:
 //   ① グループのメンバーが足した人は、選んだ範囲の過去の発言を読める（すべて / 追加した時から / 指定した日から）。
