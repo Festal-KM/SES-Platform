@@ -1,7 +1,7 @@
 // apps/web/lib/chat/thread-tree.test.ts
 // `S-031` のスレッド一覧を会社ごとの木にする（`lib/chat/thread-tree.ts`）。
 import { describe, expect, it } from 'vitest';
-import { buildThreadTree, companyKeysOf, hideCompanyRooms, lastMessageSnippet, type ChatThreadTreeInput } from './thread-tree';
+import { buildThreadTree, companyKeysOf, hideCompanyRooms, lastMessageSnippet, roomsMatching, type ChatThreadTreeInput } from './thread-tree';
 import type { ChatThreadListItem } from './views';
 
 function item(
@@ -162,5 +162,15 @@ describe('✅ 2026-10-30（F-038 改訂 16 ⑱）hideCompanyRooms: 会社グル�
     const none = hideCompanyRooms(buildThreadTree([{ groupKey: 'C', item: C_ONLY_THREAD }], { sort: 'recent', q: null }));
     expect(none.hiddenIds.size).toBe(0);
     expect(none.groups[0]?.threads.map((thread) => thread.id)).toEqual(['c1']);
+  });
+});
+
+describe('roomsMatching（✅ 2026-11-01: 検索中は DM・グループも名前で絞る）', () => {
+  const rooms = [{ name: '11月の要員調整' }, { name: '佐藤 健一' }, { name: null }];
+  it('空の語なら全部、語があれば名前に含むものだけ（名前が読めない部屋は出さない）', () => {
+    expect(roomsMatching(rooms, null)).toHaveLength(3);
+    expect(roomsMatching(rooms, '  ')).toHaveLength(3);
+    expect(roomsMatching(rooms, '要員').map((room) => room.name)).toEqual(['11月の要員調整']);
+    expect(roomsMatching(rooms, '株式会社ほかの取引先')).toEqual([]);
   });
 });

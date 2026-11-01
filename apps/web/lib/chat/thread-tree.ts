@@ -202,3 +202,13 @@ export function messageSnippet(body: string, q: string, radius = 40): string {
   const end = Math.min(flat.length, (index < 0 ? 0 : index + q.trim().length) + radius);
   return `${start > 0 ? '…' : ''}${flat.slice(start, end)}${end < flat.length ? '…' : ''}`;
 }
+
+/**
+ * ✅ 2026-11-01: 検索語で DM・グループの行を絞る（名前に含むものだけ）。空の語なら全部。
+ * 🔴 それまで会社・案件の行だけを絞り、DM・グループは検索中も全部出ていた（検索と関係ない部屋が残る）。
+ */
+export function roomsMatching<T extends { readonly name: string | null }>(rooms: readonly T[], q: string | null): readonly T[] {
+  const needle = q === null ? '' : q.trim().toLocaleLowerCase('ja');
+  if (needle === '') return rooms;
+  return rooms.filter((room) => room.name !== null && room.name.toLocaleLowerCase('ja').includes(needle));
+}
