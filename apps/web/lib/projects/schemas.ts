@@ -141,9 +141,7 @@ const projectFields = {
    *    案件サマリに描くために足した 9 項目。**
    *
    * 🔴 **すべて `nullable`**（既存の案件には値が無い。既定値を入れない）。
-   * 🔴 **`copySummary` はここに無い**（下の 🔴 を参照）。人が書き換えて保存する経路は
-   *    `#26` の本体とは別の操作であり、同じ body に混ぜると「案件を直したら
-   *    サマリの手直しが消えた」が起きる。
+   * `copySummary` は新規登録の自動生成とは分け、更新時の明示された差分だけを受け取る。
    * 🔴 **項目をまたぐ検証（終了日 < 開始日、精算幅の逆転）は `service.ts` が行う**
    *    —— `PATCH` は既存値と合成しないと判定できない（本ファイル冒頭の 🔴）。
    */
@@ -220,6 +218,8 @@ assertNoIsolationKeys(Object.keys(createProjectBodySchema.shape), 'createProject
  *    載せる列を「指定された項目だけ」に絞るため、両者を混同させない。
  */
 export const updateProjectBodySchema = z.object({
+  // カード単位編集では明示された手動サマリだけを更新する。未指定なら既存本文を保つ。
+  copySummary: z.string().trim().min(1).max(COPY_SUMMARY_MAX_LENGTH).nullable().optional(),
   locationDetail: projectFields.locationDetail.optional(),
   publicMemo: projectFields.publicMemo.optional(),
   remarks: projectFields.remarks.optional(),
@@ -260,29 +260,9 @@ export type UpdateProjectBodyIsolationGuard = AssertNoIsolationKeys<UpdateProjec
 
 assertNoIsolationKeys(Object.keys(updateProjectBodySchema.shape), 'updateProjectBodySchema');
 
-/**
- * ✅✅ **コピペ用サマリの本文の保存**（2026-10-16。人間の明示指示「人が書き換えて保存も可能」）。
- *
- * 🔴 **`#26` の body に混ぜない。** 混ぜると「案件を直したらサマリの手直しが消えた」/
- *    「サマリを直したら案件の編集フォームの古い値で上書きされた」が起きる ——
- *    どちらも**別の画面から別のタイミングで**行う操作である（案件の編集は `S-012`、
- *    サマリの手直しは `S-010` の副カラム）。
- * 🔴 **`null` を許す = 「人の手直しを取り消して、案件の値から組み直す」**である。
- *    空文字との区別がここでの意味そのものなので、`.min(1)` と `nullable()` を併せる。
- * 🔴 分離キーを持たない（`AssertNoIsolationKeys`）。`tenant_id` は ctx からしか決まらない。
- */
-export const projectCopySummaryBodySchema = z.object({
-  copySummary: z.string().trim().min(1).max(COPY_SUMMARY_MAX_LENGTH).nullable(),
-});
-
-export type ProjectCopySummaryBody = z.infer<typeof projectCopySummaryBodySchema>;
-
-export type ProjectCopySummaryBodyIsolationGuard = AssertNoIsolationKeys<ProjectCopySummaryBody>;
-
-assertNoIsolationKeys(
-  Object.keys(projectCopySummaryBodySchema.shape),
-  'projectCopySummaryBodySchema',
-);
+// ✅ 2026-11-01: 旧 `projectCopySummaryBodySchema`（「#26 の body に混ぜない」）は廃止した。
+//    コピー用サマリは案件詳細のカード編集（S-011）で明示的に変えたときだけ #26 の `copySummary` で更新する
+//    （他カードの保存は送らないので上書きしない。docs/05 §6.4 #26）。
 
 /**
  * 🔴 `#26` の応答の `recheck`（T-12-10。docs/05 §6.4 #26 / §11.11「T-12-10 の実装の決着」③。
