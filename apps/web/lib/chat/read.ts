@@ -46,7 +46,7 @@ import {
   type ChatThreadSort,
 } from './thread-tree';
 import { FAST_REPLY_WINDOW_DAYS, fastReplyGroupKeys } from './reply-speed';
-import { countUnread, readMentionUnreadThreadIds, readPositions, readThreadPrefs, readViewerDisplayName, type ChatThreadPrefs } from './read-state';
+import { countUnread, effectiveLastReadMessageIds, readMentionUnreadThreadIds, readThreadPrefs, readViewerDisplayName, type ChatThreadPrefs } from './read-state';
 import { readPeople, readRoomDetail, type ChatPeopleData } from './people';
 import { readChatUserStatuses } from './user-status';
 import { readThreadAnnouncements } from './announcement-read';
@@ -270,7 +270,7 @@ export type ChatThreadTreeData = {
  */
 async function readThreadTree(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'chatThread' | 'partnerCompany' | 'tenant' | 'project' | 'message' | 'chatReadState'>,
+  db: Pick<TenantDb, 'chatThread' | 'partnerCompany' | 'tenant' | 'project' | 'message' | 'chatReadState' | 'chatThreadMemberWindow'>,
   options: { readonly sort: ChatThreadSort; readonly q: string | null; readonly unreadOnly?: boolean },
 ): Promise<{ readonly tree: ChatThreadTreeData; readonly companyKeyOf: (partnerCompanyId: string | null) => string | null }> {
   const rows = (await db.chatThread.findMany({
@@ -787,8 +787,8 @@ async function readChatScreenInTenant(
       });
     }
     const openIds = [thread.id, ...panes.filter((pane) => pane.thread !== null).map((pane) => pane.requestedThreadId)];
-    const positions = await readPositions(db, openIds);
-    const lastReadMessageIds = Object.fromEntries(openIds.map((id) => [id, positions.get(id)?.id ?? null]));
+    // ✅ 2026-11-01: グループに後から足された部屋では、入った時刻までを既読とみなす（本人の既読位置は書かない）。
+    const lastReadMessageIds = await effectiveLastReadMessageIds(db, ctx.userId, openIds);
     const prefs = await readThreadPrefs(db, openIds);
     const threadPrefs = Object.fromEntries(openIds.map((id) => [id, prefs.get(id) ?? { pinned: false, muted: false }]));
     // ✅ 2026-10-26: アナウンス。🔴 同じトランザクション（同じ RLS 文脈）で読む。

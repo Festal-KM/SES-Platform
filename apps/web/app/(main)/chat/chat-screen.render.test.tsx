@@ -974,3 +974,12 @@ describe('✅ 2026-10-30（F-038 改訂 16 ⑱）: 会社グループの部屋�
     expect(html).toContain('data-testid="chat-thread-row-project-room"');
   });
 });
+
+describe('✅ 2026-11-01（F-038 改訂 17）: 会話の見出しの「メンバーを追加」', () => {
+  it('行き先を渡したときだけ出す（グループで投稿できる人。拒否の本体は API）', () => {
+    const withLink = renderConversation({ threadKind: 'GROUP', addMembersHref: `/chat?thread=${THREAD_PROJECT}&add=1` });
+    expect(withLink).toContain(`data-testid="chat-add-members-open-${THREAD_PROJECT}"`);
+    expect(withLink).toContain('メンバーを追加');
+    expect(renderConversation({ threadKind: 'GROUP' })).not.toContain('chat-add-members-open-');
+  });
+});

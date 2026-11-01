@@ -9,6 +9,7 @@ import type { ChatFormat } from '../../../lib/chat/markdown';
 import type { ChatProjectCardLabels } from '../../../lib/chat/project-card-text';
 import type { ChatReactionKind } from '../../../lib/chat/views';
 import type { ChatAttachmentLabels } from './chat-attachment';
+import type { ChatAddMembersFormProps } from './chat-add-members-form';
 import { PREFECTURE_MESSAGE_KEYS } from '../../../lib/format/prefectures';
 import { PROJECT_REMOTE_MODE_MESSAGE_KEYS, PROJECT_STATUS_MESSAGE_KEYS } from '../../../lib/projects/labels';
 
@@ -35,6 +36,8 @@ export type ChatConversationMessages = {
   readonly composeToolbar: string;
   /** ✅ 2026-10-22: スマホの会話の見出しの「…」（その他の操作）。 */
   readonly headerMenu: string;
+  /** ✅ 2026-11-01: グループにメンバーを追加（見出しの操作）。省略時は描かない。 */
+  readonly addMembers?: string;
   readonly composeFormats: Readonly<Record<ChatFormat, string>>;
   readonly composeMention: string;
   readonly composeMentionEmpty: string;
@@ -256,6 +259,7 @@ export function chatConversationMessages(): ChatConversationMessages {
     composeMemberHint: t('chat.compose.memberHint'),
     composeToolbar: t('chat.compose.toolbar'),
     headerMenu: t('chat.header.menu'),
+    addMembers: t('chat.groupAdd.open'),
     composeFormats: {
       bold: t('chat.compose.format.bold'),
       italic: t('chat.compose.format.italic'),
@@ -423,5 +427,34 @@ export function chatConversationMessages(): ChatConversationMessages {
       results: t('chat.search.results'),
       notLoaded: t('chat.search.notLoaded'),
     },
+  };
+}
+
+/** ✅ 2026-11-01（F-038 改訂 17）: 「メンバーを追加」の画面の語。 */
+export function chatAddMembersLabels(): ChatAddMembersFormProps['labels'] {
+  return {
+    title: t('chat.groupAdd.title'),
+    back: t('chat.groupAdd.back'),
+    search: t('chat.groupAdd.search'),
+    selected: t('chat.groupAdd.selected'),
+    selectedNone: t('chat.groupAdd.selectedNone'),
+    remove: t('chat.group.remove'),
+    history: t('chat.groupAdd.history'),
+    historyAll: t('chat.groupAdd.historyAll'),
+    historyJoined: t('chat.groupAdd.historyJoined'),
+    historyDate: t('chat.groupAdd.historyDate'),
+    historyDateLabel: t('chat.groupAdd.historyDateLabel'),
+    historyNote: t('chat.groupAdd.historyNote'),
+    quoteNote: t('chat.groupAdd.quoteNote'),
+    submit: t('chat.groupAdd.submit'),
+    needMembers: t('chat.groupAdd.needMembers'),
+    needDate: t('chat.groupAdd.needDate'),
+    futureDate: t('chat.groupAdd.futureDate'),
+    limit: t('chat.groupAdd.limit'),
+    failed: t('chat.groupAdd.failed'),
+    rejected: t('chat.groupAdd.rejected'),
+    truncated: t('chat.groupAdd.truncated'),
+    addedToast: t('chat.toast.membersAdded'),
+    openGroup: t('chat.toast.openGroup'),
   };
 }

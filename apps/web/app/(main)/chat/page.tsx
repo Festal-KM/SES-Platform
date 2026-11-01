@@ -56,7 +56,10 @@ import { PageHeading } from '../_shell/page-heading';
 import { ChatStatusSection } from './chat-status-section';
 import { ChatConversation } from './chat-conversation';
 import { ChatPaneDropZone } from './chat-pane-drop-zone';
-import { chatAttachmentLabels, chatConversationMessages, chatPaneDropMessages } from './chat-props';
+import { chatAddMembersLabels, chatAttachmentLabels, chatConversationMessages, chatPaneDropMessages } from './chat-props';
+import { ChatAddMembersForm } from './chat-add-members-form';
+import { chatPeoplePickerLabels } from './chat-people-section';
+import { readChatGroupAddCandidates } from '../../../lib/chat/people';
 import { ChatThreadList } from './chat-thread-list';
 import { ChatThreadPanel } from './chat-thread-panel';
 
@@ -115,6 +118,10 @@ export default async function ChatPage({
     selected !== null && !tiled && infoOpen && attachableIds.has(selected.id) ? await listChatAttachments(ctx, selected.id, {}) : null;
   // ✅ 2026-10-19（#128 §7.1 ①）: 自分のひとこと状態（入口の初期値）。閲覧専用には入口を描かないので読まない。
   const myStatus = canPost ? await readMyChatUserStatus(ctx) : '';
+  // ✅ 2026-11-01（F-038 改訂 17）: グループにメンバーを追加する画面（`add=1`）。グループ・投稿できる人・並べていないときだけ。
+  //    🔴 候補はサーバが部屋の取引先の決まりで絞る（`readGroupAddCandidates`）。見えなければ会話に戻す。
+  const canAddMembers = selected !== null && selected.kind === 'GROUP' && canPost && !tiled;
+  const addCandidates = canAddMembers && query.add === '1' ? await readChatGroupAddCandidates(ctx, selected.id) : null;
   // ✅ 2026-10-14: 会話を開く・閉じる URL に一覧の検索語と並べ方を引き継ぐ（開くたびに検索が消えない）。
   // ✅ 2026-10-19（v2）: 左の列の絞り込み（`f=`）。旧「未読のみ」（`unread=1`）は「未読」の絞り込みとして読む。
   const filter = query.f === undefined && query.unread === '1' ? parseChatFilter('unread') : parseChatFilter(query.f);
@@ -295,6 +302,27 @@ export default async function ChatPage({
               <p className="m-0 p-5 text-body text-fg-muted" data-testid="chat-select-prompt">
                 {t('chat.select.prompt')}
               </p>
+            ) : addCandidates !== null ? (
+              <ChatAddMembersForm
+                key={`add-${selected.id}`}
+                threadId={selected.id}
+                companies={addCandidates.companies.map((company) => ({
+                  companyName: company.companyName ?? t('chat.thread.unknownName'),
+                  isHost: company.isHost,
+                  people: company.people.map((person) => ({
+                    userId: person.userId,
+                    name: person.name ?? t('chat.thread.unknownName'),
+                    status: person.status ?? null,
+                  })),
+                }))}
+                memberUserIds={addCandidates.memberUserIds}
+                backHref={chatHref({ ...paneState, ...listQuery, info: infoOpen })}
+                todayJst={new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)}
+                ruleNote={addCandidates.external ? t('chat.groupAdd.partnerOnly') : t('chat.groupAdd.internalOnly')}
+                truncated={addCandidates.truncated}
+                labels={chatAddMembersLabels()}
+                pickerLabels={{ ...chatPeoplePickerLabels(), noMatch: t('chat.groupAdd.noMatch'), alreadyIn: t('chat.groupAdd.alreadyIn') }}
+              />
             ) : (
               <ChatConversation
                 // ✅ 2026-10-26（Codex のレビュー）: 🔴 部屋ごとに作り直す。同じ部品を使い回すと、前の部屋のアナウンス・発言・
@@ -316,6 +344,7 @@ export default async function ChatPage({
                 selfName={data.viewerName}
                 // ✅ 2026-10-29（F-038 ⑰）: 一覧の「本文で見つかった発言」から開いたら、その発言へ移る（この部屋の中だけ）。
                 jumpToMessageId={query.msg ?? null}
+                {...(canAddMembers ? { addMembersHref: chatHref({ ...paneState, ...listQuery, info: infoOpen, addMembers: true }) } : {})}
                 canPost={canPost}
                 canAttach={canPost && attachableIds.has(selected.id)}
                 messages={conversationMessages}

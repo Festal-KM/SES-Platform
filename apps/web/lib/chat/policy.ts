@@ -40,3 +40,9 @@ export function chatRoomAcceptsAttachments(thread: { readonly partnerCompanyId: 
   void thread;
   return true;
 }
+
+/**
+ * グループの人数の上限（作成者を含む）。🔴 migration 20261101000000 の凍結トリガ（50 人）と同じ値。
+ * ✅ 2026-11-01: `rooms.ts` から移した（「メンバーを追加」の画面が押したときに確かめるため。クライアントでも読める場所）。
+ */
+export const CHAT_GROUP_MAX_MEMBERS = 50;
