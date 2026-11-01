@@ -1,5 +1,5 @@
 // apps/web/lib/chat/live.ts
-// ✅ 2026-10-14（チャットレーン）: `S-031` の新着の自動表示と送信の取り消し（純粋関数と定数）。
+// ✅ 2026-10-14（チャットレーン）: `S-031` の新着の自動表示（純粋関数と定数）。
 //
 // 🔴 新着は**既存の API（`GET /api/threads/{id}/messages`。#50）を一定間隔で呼ぶだけ**である。境界は
 //    その API の RLS（C6）が決め、ここは「手元の一覧にまだ無い行を足す」だけを行う。
@@ -11,8 +11,7 @@ import type { ChatMessageView } from './views';
 /** 新着を取りに行く間隔（画面が見えているときだけ）。 */
 export const CHAT_POLL_INTERVAL_MS = 15_000;
 
-/** 送信を取り消せる時間（押してからこの時間だけ待って送る）。 */
-export const CHAT_UNDO_SEND_MS = 5_000;
+// ✅ 2026-10-29（F-038 ⑮）: 送信の取り消し待ち（旧 `CHAT_UNDO_SEND_MS` = 5 秒）はやめた。送った発言はその場で出す（`outbox.ts`）。
 
 /** 並び（`sentAt` → `id`。`read.ts` が返す古い順と同じ）。 */
 function compareOldest(a: ChatMessageView, b: ChatMessageView): number {

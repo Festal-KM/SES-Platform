@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CHAT_PATH,
   chatHref,
+  chatMessageSearchApiPath,
   chatMessagesApiPath,
   chatSaveApiPath,
   chatScreenQuerySchema,
@@ -56,7 +57,7 @@ describe('chatScreenQuerySchema', () => {
   });
 
   it('🔴 分離キーをスキーマが持たない（`tenantId` / `partnerCompanyId` の口が無い）', () => {
-    expect(Object.keys(chatScreenQuerySchema.shape).sort()).toEqual(['f', 'info', 'pane', 'q', 'sort', 'thread', 'threads', 'unread']);
+    expect(Object.keys(chatScreenQuerySchema.shape).sort()).toEqual(['f', 'info', 'msg', 'pane', 'q', 'sort', 'thread', 'threads', 'unread']);
   });
 });
 
@@ -151,5 +152,25 @@ describe('左の列の絞り込み（`f=`。2026-10-22）', () => {
       `/api/threads/${THREAD}/messages/01930000-0000-7000-8000-000000000123/save`,
     );
     expect(chatTemplateApiPath('01930000-0000-7000-8000-000000000124')).toBe('/api/chat/templates/01930000-0000-7000-8000-000000000124');
+  });
+});
+
+describe('✅ 2026-10-29（F-038 ⑰）: 発言へ移る `msg` と、この会話の中の検索', () => {
+  const MESSAGE = '01930000-0000-7000-8000-000000000123';
+
+  it('`msg` は部屋（`thread`）があるときだけ載る', () => {
+    expect(chatHref({ thread: THREAD, message: MESSAGE })).toBe(`/chat?thread=${THREAD}&msg=${MESSAGE}`);
+    expect(chatHref({ thread: null, message: MESSAGE })).toBe(CHAT_PATH);
+  });
+
+  it('`msg` は UUID だけを受ける（壊れた値は素の `/chat` へ戻す）', () => {
+    expect(chatScreenQuerySchema.safeParse({ thread: THREAD, msg: MESSAGE }).success).toBe(true);
+    expect(chatScreenQuerySchema.safeParse({ thread: THREAD, msg: 'x' }).success).toBe(false);
+  });
+
+  it('検索の API の URL は部屋 1 つと検索語だけ（語はエンコードする）', () => {
+    expect(chatMessageSearchApiPath(THREAD, ' 面談 &日程 ')).toBe(
+      `/api/threads/${THREAD}/messages/search?q=${encodeURIComponent('面談 &日程')}`,
+    );
   });
 });

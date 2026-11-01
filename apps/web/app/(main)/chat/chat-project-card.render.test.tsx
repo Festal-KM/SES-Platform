@@ -75,8 +75,14 @@ describe('① ② 読めた案件のカード', () => {
     expect(html).toContain(`${t('prefecture.13')}・${t('projects.remoteMode.PARTIAL_REMOTE')}`);
     expect(html).toContain(`TypeScript 3 ${t('projects.list.requirements.yearsOrMore')}`);
     expect(html).toContain(`${t('chat.projectCard.nice')} 2 ${t('chat.projectCard.countUnit')}`);
-    expect(html).toContain(`href="/projects/${PROJECT}"`);
     expect(html).toContain(t('chat.projectCard.open'));
+  });
+
+  it('✅ 2026-10-29:「案件詳細を開く」は案件のページへ移るリンクではなく、チャットの中で欄を開く操作（ボタン）', () => {
+    expect(html).not.toContain(`href="/projects/${PROJECT}"`);
+    expect(html).toMatch(new RegExp(`<button[^>]*aria-haspopup="dialog"[^>]*data-testid="chat-message-project-open-${MESSAGE_CARD}"`));
+    // 閲覧専用でも開ける（読むだけ。監査は案件詳細の API が書く）。
+    expect(render(false)).toContain(`data-testid="chat-message-project-open-${MESSAGE_CARD}"`);
   });
 
   it('🔴 尚可の中身はカードに並べない（件数に畳む）', () => {
