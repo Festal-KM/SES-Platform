@@ -121,3 +121,14 @@ export const SELECTED_ROW_CLASSES =
  */
 export const DISCLOSURE_SUMMARY_CLASSES =
   'flex cursor-pointer list-none items-center gap-2 py-3 text-row text-fg-muted marker:content-none';
+
+/**
+ * ✅ **幅を変える境目の線**（2026-11-01。「境目は普段は細く、ホバーしたときだけ太くして」）。
+ *
+ * つかめる器（`group`。幅 8px・透明）の中に置く 1 本の線。普段は 1px、境目をホバー・
+ * フォーカス・ドラッグしている間だけ 4px に太らせ、少し濃い罫線色にする。
+ * 🔴 **画面側に `group-hover:` を書かせないための定数である**（`tests/static/ui-state-in-primitives.test.ts` の (j)）。
+ * 🔴 **幅は遷移させない**（`TRANSITION_CLASSES` は色だけ。呼び出し側で併用する）。
+ */
+export const RESIZE_HANDLE_LINE_CLASSES =
+  'pointer-events-none absolute inset-y-0 right-0 w-px bg-border group-hover:w-1 group-hover:bg-border-strong group-focus-visible:w-1 group-focus-visible:bg-border-strong group-active:w-1 group-active:bg-border-strong';

@@ -4884,6 +4884,8 @@ const ja = {
   // ✅ 2026-10-19（v2）: 左の絞り込みの列と、種類の札。
   'chat.rail.collapseToggle': '絞り込みの列を開閉',
   'chat.pane.resize': '会話の幅を調節',
+  // ✅ 2026-11-01: スレッド一覧の右端の境目。
+  'chat.list.resize': '一覧の幅を調節',
   'chat.rail.label': '会話の絞り込み',
   'chat.rail.menu': '絞り込み',
   'chat.rail.menuClose': '絞り込みを閉じる',

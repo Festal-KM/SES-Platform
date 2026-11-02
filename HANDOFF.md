@@ -1,5 +1,11 @@
 # HANDOFF.md — 作業の引き継ぎ
 
+## 2026-11-01 ⏳ チャット: スレッド一覧と会話の幅を境目で変える（紺野の許可）
+
+`docs/04` S-031 改訂 47。DB・API は変えていない。既存の `ChatResizablePane`（並べた会話の幅）に `minExtent` / `maxExtent` を足し、一覧にも使った（240〜640px、`storageKey="list"`）。一覧のスクロールは内側の器に移した（外側でスクロールすると境目が流れる）。境目は普段 1px・ホバー／フォーカス／ドラッグ中だけ 4px。🔴 線のクラスは画面に書けない（`tests/static/ui-state-in-primitives.test.ts` の (j)）ので `@ses/ui` の `RESIZE_HANDLE_LINE_CLASSES` に置いた。一覧の `border-r`・並べた会話の `border-l` は線が兼ねるので外した。文言キー `chat.list.resize` を追加。E2E `chat.layout.spec.ts` に 1 本足したがローカルでは回していない（CI で確認）。
+⚠️ **Mac（Apple Silicon）でローカルを立ち上げるときの罠 2 つ**: ① `docker/postgres/initdb/000-roles.sh` に実行権限が無く（`-rw-r--r--`）、初期化で `bad interpreter: Permission denied` になり DB ロールが作られない → `docker exec` で中から `bash` で流すと通る ② `clamav/clamav:1.5.4` に arm64 のイメージが無い → `docker pull --platform linux/amd64` してから `DOCKER_DEFAULT_PLATFORM=linux/amd64 docker compose up -d clamav`。また seed は `APP_ENV=development` を付けないと拒否される。
+
+
 ## 2026-11-01 ⏳ チャット: グループに後から人を足す（ブランチ `chat/group-add-members`。まだ PR にしていない）
 
 紺野の決定（F-038 改訂 17 ㉑ / AC-22 / S-031 改訂 48 / docs/05 #51h・§3.7.1）。#203（`chat/contacts-tabs`）の上に積んでいる。🔴 **DB を変えた = 宮田さんの確認が要る**（migration `20261101100000_chat_group_add_members`。番号は push 直前に最新へ付け直す可能性あり）。グループのメンバーなら誰でも「メンバーを追加」（見出し。スマホは「…」）→ 会話の列が `add=1` の画面に切り替わる（`chat-add-members-form.tsx`。`chat-people-picker.tsx` の select に `fixed` = 「参加中」を足した）。読める過去の範囲を選ぶ（すべて〔既定〕/ 追加した時から / 日付〔日本時間 0 時〕）。🔴 範囲は **RLS の境界**: 新しい表 `chat_thread_member_windows`（後から足した人 1 人 1 行。本人だけが読む・UPDATE/DELETE なし）+ `messages` の RESTRICTIVE `messages_member_history_window`（`app_thread_history_ok`。`app_thread_probe` 所有）+ アナウンスの RESTRICTIVE（指した発言が読めるときだけ）。凍結トリガは「GROUP・足すだけ・足す人がメンバー・50 人まで・足した人全員に窓の行」のときだけ `member_user_ids` を通す（CREATE OR REPLACE）。未読は `joined_at` から数える（🔴 足した人の既読位置は書かない。`CLAUDE.md` §4.1）。⚠️ 受け入れた例外: 古い発言を誰かが引用して返信すると、足した人にも引用部分が見える。⚠️ `CLAUDE.md` §4.1 の表に新しい概念の行が要るかもしれない（人間の判断。オーケストレーターが扱う）。登録: `rls-enforced` の表の数 63 → 64 / `PURGE_SPEC.retain` / `scope-injection`・`tenant-relation` のリレーション一覧。分離テスト `tests/isolation/chat-group-add-members.test.ts`（20 件）と既存のチャット・RLS・解約の分離テストはローカル緑。E2E `chat.group-members.spec.ts` / `chat.group-members.mobile.spec.ts` は手元で回していない（CI で確認）。外す・抜けるは範囲外。

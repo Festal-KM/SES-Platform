@@ -260,13 +260,17 @@ export default async function ChatPage({
               ✅ 2026-10-22（紺野「周りの色を軽く（白）でもいいかも」）: 一覧も白にし、左の列は薄い灰色に。一覧と会話は白どうしなので
               細い線 1 本で区切る（開いている会話の青がはっきり見える）。 */}
           {/* 左: スレッド一覧（320）。🔴 `md` 未満で会話を開いているときは畳む（2 画面遷移） */}
-          <div
+          {/* ✅ 2026-11-01: 右端の境目で一覧の幅を変える（240〜640px。会話は残りの幅を使う）。
+              🔴 スクロールは内側の器に置く —— 外側をスクロールさせると境目が一覧と一緒に流れる。
+              区切りの罫線は境目の線が兼ねる（`border-r` を重ねると 2 本になる）。 */}
+          <ChatResizablePane enabled storageKey="list" resizeLabel={t('chat.list.resize')} minExtent={240} maxExtent={640}
             className={
               selected === null
-                ? 'min-h-0 w-full flex-1 overflow-y-auto bg-bg md:w-96 md:flex-none md:shrink-0 overscroll-contain md:border-r md:border-border'
-                : 'hidden bg-bg md:block md:w-96 md:shrink-0 md:overflow-y-auto overscroll-contain md:border-r md:border-border'
+                ? 'flex min-h-0 w-full flex-1 flex-col bg-bg md:w-96 md:flex-none md:shrink-0'
+                : 'hidden min-h-0 bg-bg md:flex md:w-96 md:shrink-0 md:flex-col'
             }
           >
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <ChatThreadList
               groups={listed.groups}
               truncated={tree.truncated}
@@ -289,7 +293,8 @@ export default async function ChatPage({
               paneThreadIds={paneState.panes}
               openBesideLabel={t('chat.pane.openBeside')}
             />
-          </div>
+            </div>
+          </ChatResizablePane>
           {/* 中央: 会話（698）。🔴 選択が無いときは `md` 以上でだけ案内を出す（モバイルは一覧が全幅） */}
           <ChatResizablePane enabled={tiled} storageKey="primary" resizeLabel={t('chat.pane.resize')}
             className={cn(
@@ -364,7 +369,8 @@ export default async function ChatPage({
           {data.panes.map((pane) => (
             <ChatResizablePane enabled storageKey={`pane-${data.panes.indexOf(pane)}`} resizeLabel={t('chat.pane.resize')}
               key={pane.requestedThreadId}
-              className={'hidden min-h-0 min-w-0 flex-1 flex-col overscroll-contain border-l border-border md:flex'}
+              // ✅ 2026-11-01: 左隣の会話の境目の線が区切りを兼ねるので `border-l` は外した。
+              className={'hidden min-h-0 min-w-0 flex-1 flex-col overscroll-contain md:flex'}
               data-testid={`chat-pane-${pane.requestedThreadId}`}
             >
               {pane.thread === null ? (

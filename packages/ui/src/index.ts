@@ -357,6 +357,8 @@ export {
   // ✅ 2026-10-16: 開閉できるブロックの見出し（`<summary>`）。
   DISCLOSURE_SUMMARY_CLASSES,
   FOCUS_RING_CLASSES,
+  // ✅ 2026-11-01: 幅を変える境目の線（チャットの一覧・会話）。
+  RESIZE_HANDLE_LINE_CLASSES,
   SELECTED_CLASSES,
   SELECTED_ROW_CLASSES,
   TRANSITION_CLASSES,

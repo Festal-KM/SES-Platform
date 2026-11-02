@@ -34,6 +34,26 @@ test('左の列の見出し（連絡先）と左の列の開閉を再読み込�
   }
 });
 
+test('スレッド一覧の境目を矢印で動かすと、一覧が広がり会話が狭まる', async ({ browser }) => {
+  const session = await openTenantSession(browser, hostOwner(1));
+  const { page } = session;
+  const first = partnerIds(1, 1);
+  try {
+    await page.goto(`/chat?thread=${first.threadId}`);
+    const conversation = page.locator(`[data-testid="chat-conversation"][data-thread-id="${first.threadId}"]`);
+    await expect(conversation).toBeVisible();
+    const separator = page.getByTestId('chat-pane-resize-list');
+    await separator.focus();
+    const listBefore = Number(await separator.getAttribute('aria-valuenow'));
+    const conversationBefore = (await conversation.boundingBox())?.width ?? 0;
+    await separator.press('ArrowRight');
+    await expect.poll(async () => Number(await separator.getAttribute('aria-valuenow'))).toBeGreaterThan(listBefore);
+    await expect.poll(async () => (await conversation.boundingBox())?.width ?? 0).toBeLessThan(conversationBefore);
+  } finally {
+    try { session.outbound.assertNone(); } finally { await session.close(); }
+  }
+});
+
 test('会話を二つ並べた境目を右矢印で広げられる', async ({ browser }) => {
   const session = await openTenantSession(browser, hostOwner(1));
   const { page } = session;
