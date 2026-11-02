@@ -602,6 +602,7 @@ export async function updateProject(
     //    ここに現れない（現れないことをレビューで数えられる形にしておく）。
     const data = {
       ...(patch.name === undefined ? {} : { name: patch.name }),
+      ...(patch.copySummary === undefined ? {} : { copySummary: patch.copySummary }),
       ...(patch.status === undefined ? {} : { status: patch.status }),
       ...(patch.headcount === undefined ? {} : { headcount: patch.headcount }),
       ...(patch.startDate === undefined ? {} : { startDate: toDateOnly(patch.startDate) }),
@@ -614,9 +615,7 @@ export async function updateProject(
       ...(patch.sourceKind === undefined ? {} : { sourceKind: patch.sourceKind }),
       ...(patch.parallelOk === undefined ? {} : { parallelOk: patch.parallelOk }),
       // ✅✅ 2026-10-16: 案件サマリの「基本情報」の 9 項目。
-      // 🔴 **`copySummary` はここに無い**（`#26` の body に混ぜない。
-      //    混ぜると「案件を直したらサマリの手直しが消えた」が起きる。
-      //    保存は `updateProjectCopySummary` が行う）。
+      // カード編集では明示された差分だけ更新し、他カードの手動サマリを維持する。
       ...(patch.upperCompanyName === undefined
         ? {}
         : { upperCompanyName: patch.upperCompanyName }),

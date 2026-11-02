@@ -27,7 +27,7 @@
 // 人間の明示指示: 「プルダウンの UI が要素によって異なるから、スキルのプルダウンと同じ
 // UI にして」。ステータス / カテゴリ / 稼働形態 / 勤務地 / 開始時期が OS 既定の
 // ドロップダウンで、**スキルだけが独自のポップオーバー**という混在を解消したものである
-// （`./filter-select.tsx` が `./skill-multi-select.tsx` の単一選択版）。
+// （`./filter-select.tsx` が `app/_components/multi-select.tsx` の単一選択版）。
 //
 // 🔴 **選択肢・値・並び順・「すべて」= 空文字の扱いは 1 つも変えていない。** 変えたのは
 //    開き方と見た目だけであり、`options` は今までどおり props で受け取るだけである。
@@ -52,7 +52,7 @@ import {
 } from '@ses/ui';
 import { FilterSelect, type FilterSelectMessages } from './filter-select';
 import { PROJECT_SEARCH_FIELD_NAMES, type ProjectSearchDraft, type ProjectSearchOption } from './filters';
-import { SkillMultiSelect, type SkillMultiSelectMessages } from './skill-multi-select';
+import { MultiSelect, type MultiSelectMessages } from '../../../_components/multi-select';
 
 /** 指示書 §2 の 3 段。🔴 **これ以外の段を作らない。** */
 export type FilterColumnCount = 1 | 2 | 3 | 4;
@@ -84,7 +84,7 @@ export type SearchFilterFormMessages = {
   readonly priceInverted: string;
   readonly prefecture: string;
   readonly startWithin: string;
-  readonly skillMessages: SkillMultiSelectMessages;
+  readonly skillMessages: MultiSelectMessages;
   /**
    * 🔴 **単一選択の 5 欄で共通の語**（絞り込み欄のラベル / プレースホルダ / 該当なし）。
    *    欄ごとに別の語を持たせない —— 同じ造りの欄で語だけ違うと、同じ操作に見えなくなる。
@@ -154,23 +154,24 @@ export function SearchFilterForm({
         />
       </Field>
 
-      <Field as="div" labelClassName="text-xs text-fg-muted" label={messages.category}>
-        <FilterSelect
-          options={options.categoryOptions}
-          value={draft.category}
-          label={messages.category}
-          messages={messages.selectMessages}
-          testId={`${testIdPrefix}category`}
-          onChange={(category) => {
-            // 🔴 **カテゴリを変えてもスキルを消さない**（指示書 §3「カテゴリ変更でも、
-            //    既存の明示的な制約がない限りスキルを勝手に消さないでください」）。
-            onChange({ category });
+      {/* ✅ 2026-11-01（人間の明示指示「複数検索（OR検索）できるようにしてください」）:
+          単一選択 → フェーズと同じチェック付きの複数選択（OR）。
+          🔴 **カテゴリを変えてもスキルを消さない**（指示書 §3）。
+          🔴 選択肢から先頭の「すべて」（空文字）を外す —— 複数選択では「何も選ばない」がすべてである。 */}
+      <Field as="div" labelClassName="text-xs text-fg-muted" label={<span className="flex items-center gap-2">{messages.category}<span className="text-micro font-normal text-fg-muted">{t('projects.search.multiOR')}</span></span>}>
+        <MultiSelect
+          options={options.categoryOptions.filter(option => option.value !== '')}
+          values={draft.categories}
+          onChange={(categories) => {
+            onChange({ categories });
           }}
+          messages={{ ...messages.skillMessages, placeholder: t('projects.search.categoryPlaceholder'), triggerLabel: messages.category, searchLabel: messages.category, searchPlaceholder: t('projects.search.categoryPlaceholder') }}
+          testIdPrefix={`${testIdPrefix}category-`}
         />
       </Field>
 
       <Field as="div" labelClassName="text-xs text-fg-muted" label={<span className="flex items-center gap-2" title={t('projects.search.skillTarget')}>{messages.skill}<span className="text-micro font-normal text-fg-muted">{t('projects.search.multiOR')}</span></span>}>
-        <SkillMultiSelect
+        <MultiSelect
           options={options.skillOptions}
           values={draft.skills}
           onChange={(skills) => {
@@ -182,10 +183,10 @@ export function SearchFilterForm({
       </Field>
 
       <Field as="div" labelClassName="text-xs text-fg-muted" label={<span className="flex items-center gap-2">{t('projects.search.phase')}<span className="text-micro font-normal text-fg-muted">{t('projects.search.multiOR')}</span></span>}>
-        <SkillMultiSelect options={PROJECT_DEVELOPMENT_PHASES.map(value => ({ value, label: t(`projects.search.phase.${value}`), shortLabel: t(`projects.search.phaseShort.${value}`) }))}
+        <MultiSelect options={PROJECT_DEVELOPMENT_PHASES.map(value => ({ value, label: t(`projects.search.phase.${value}`), shortLabel: t(`projects.search.phaseShort.${value}`) }))}
           values={draft.developmentPhases ?? []} onChange={developmentPhases => onChange({ developmentPhases })}
           messages={{ ...messages.skillMessages, placeholder: t('projects.search.phasePlaceholder'), triggerLabel: t('projects.search.phase'), searchLabel: t('projects.search.phase'), searchPlaceholder: t('projects.search.phasePlaceholder') }}
-          testIdPrefix={`${testIdPrefix}phases-`} checklist topHint={t('projects.search.multiOR')} />
+          testIdPrefix={`${testIdPrefix}phases-`} />
       </Field>
       <Field as="div" labelClassName="text-xs text-fg-muted" label={t('projects.search.method')}>
         <SegmentedControl compact={columns === 1} options={[{ value: '', label: t('projects.search.all') }, ...PROJECT_DEVELOPMENT_METHODS.map(value => ({ value, label: t(`projects.search.method.${value}`) }))]}

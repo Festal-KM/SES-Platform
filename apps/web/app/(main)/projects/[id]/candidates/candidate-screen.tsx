@@ -120,6 +120,7 @@ import {
 import { FILTER_ACTIONS_CLASSES, FILTER_FORM_CLASSES } from '../../../_shared/filter-form-classes';
 import type { CandidateRowView } from '../../../../../lib/candidates/list-rows';
 import { SkillBadges } from '../../../_shared/skill-badges';
+import { FormMultiSelect } from '../../../../_components/multi-select';
 import type { EngineerActiveFilterView } from '../../../../../lib/engineers/list-rows';
 import type { EngineerFilterOption, EngineerListFilterValues } from '../../../engineers/engineer-ledger-screen';
 import type { ProjectDetailRow, ProjectRequirementRow } from '../../../../../lib/projects/detail';
@@ -750,14 +751,16 @@ export function CandidateScreen({
                 <Field label={messages.searchQ}>
                   <Input type="search" name="q" defaultValue={filters.q} data-testid="candidate-list-filter-q" />
                 </Field>
-                <Field label={messages.searchSkills}>
-                  <Select name="skills" multiple size={5} defaultValue={[...filters.skills]} data-testid="candidate-list-filter-skills">
-                    {skillOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Select>
+                <Field as="div" label={messages.searchSkills}>
+                  {/* ✅ 2026-11-01: 複数選択は共通部品に統一（`<select multiple>` をやめた。送信の形は同じ）。 */}
+                  <FormMultiSelect
+                    name="skills"
+                    options={skillOptions}
+                    defaultValues={filters.skills}
+                    label={messages.searchSkills}
+                    testIdPrefix="candidate-list-filter-"
+                    testId="candidate-list-filter-skills"
+                  />
                   <span className="text-xs text-fg-muted">{messages.searchSkillsHint}</span>
                 </Field>
                 <Field label={messages.searchSkillMode}>

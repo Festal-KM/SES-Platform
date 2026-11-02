@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { InvalidStateTransitionError, proposalMachine } from '@ses/domain';
 import { SeedNotAllowedError } from '@ses/config';
+import { PROJECT_CATEGORIES } from '../src/schema-value-sets.js';
 import { SeedArgsError, parseSeedArgs, resolveSeedDatabaseUrl } from './args.js';
 import { runSeed, runSeedReset } from './index.js';
 import { getSeedPreset } from './presets/index.js';
@@ -45,7 +46,9 @@ it('一覧用の追加デモ案件は再現可能で、元の案件と衝突せ�
     expect(project.unitPriceMin).toBeGreaterThan(project.internalUnitPrice);
     expect(project.unitPriceMax).toBe(project.unitPriceMin);
   }
-  expect(new Set(samples.projects.map(p => p.category)).size).toBe(7);
+  // ✅ 2026-11-01: 種類の数ではなく「全件が現行の値集合に入る」ことを見る（旧値の取りこぼしを捕まえる）。
+  for (const project of samples.projects) expect(PROJECT_CATEGORIES).toContain(project.category);
+  expect(new Set(samples.projects.map(p => p.category))).toEqual(new Set(PROJECT_CATEGORIES));
 });
 
 it('ダミー案件は想定仕入単価より高い固定の卸単価を持つ', () => {

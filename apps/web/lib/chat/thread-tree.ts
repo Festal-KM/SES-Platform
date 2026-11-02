@@ -153,6 +153,26 @@ export function companyKeysOf(input: readonly ChatThreadTreeInput[]): ReadonlyMa
   return new Map([...oldest.entries()].map(([groupKey, id]) => [groupKey, chats.get(groupKey) ?? id]));
 }
 
+/**
+ * ✅ 2026-10-30（紺野の決定。F-038 改訂 16 ⑱）: 会社グループ（`COMPANY`）の部屋を一覧・左の列に出さない（ホストも取引先も）。
+ * 🔴 データは消さない・鍵（`ChatThreadGroup.key`。`companyKeysOf` が会社グループの ID から決めたもの）は変えない ——
+ *    お気に入り・ミュート・返信の早さ・DM の「どの会社の会話か」がこの鍵に結び付いているため。
+ *    `?thread=<ID>` で直接開くことは従来どおりできる（読み出し `read.ts` は変えない）。
+ * 隠した部屋の ID を返すので、画面は未読・`@` の印から同じ ID を外す（押せる行の無い数を出さない）。
+ */
+export function hideCompanyRooms(groups: readonly ChatThreadGroup[]): {
+  readonly groups: readonly ChatThreadGroup[];
+  readonly hiddenIds: ReadonlySet<string>;
+} {
+  const hiddenIds = new Set<string>();
+  const visible = groups.map((group) => {
+    if (group.chat === null) return group;
+    hiddenIds.add(group.chat.id);
+    return { ...group, chat: null };
+  });
+  return { groups: visible, hiddenIds };
+}
+
 /** ✅ 2026-10-14: 本文の検索を始める最短の語の長さ（短すぎる語で全文を走査しない）。 */
 export const MESSAGE_SEARCH_MIN_LENGTH = 2;
 /** 本文の検索で返す最大件数。 */
@@ -181,4 +201,14 @@ export function messageSnippet(body: string, q: string, radius = 40): string {
   const start = Math.max(0, (index < 0 ? 0 : index) - radius);
   const end = Math.min(flat.length, (index < 0 ? 0 : index + q.trim().length) + radius);
   return `${start > 0 ? '…' : ''}${flat.slice(start, end)}${end < flat.length ? '…' : ''}`;
+}
+
+/**
+ * ✅ 2026-11-01: 検索語で DM・グループの行を絞る（名前に含むものだけ）。空の語なら全部。
+ * 🔴 それまで会社・案件の行だけを絞り、DM・グループは検索中も全部出ていた（検索と関係ない部屋が残る）。
+ */
+export function roomsMatching<T extends { readonly name: string | null }>(rooms: readonly T[], q: string | null): readonly T[] {
+  const needle = q === null ? '' : q.trim().toLocaleLowerCase('ja');
+  if (needle === '') return rooms;
+  return rooms.filter((room) => room.name !== null && room.name.toLocaleLowerCase('ja').includes(needle));
 }

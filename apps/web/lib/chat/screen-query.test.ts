@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHAT_PATH,
+  chatGroupMembersApiPath,
   chatHref,
   chatMessageSearchApiPath,
   chatMessagesApiPath,
@@ -57,7 +58,7 @@ describe('chatScreenQuerySchema', () => {
   });
 
   it('🔴 分離キーをスキーマが持たない（`tenantId` / `partnerCompanyId` の口が無い）', () => {
-    expect(Object.keys(chatScreenQuerySchema.shape).sort()).toEqual(['f', 'info', 'msg', 'pane', 'q', 'sort', 'thread', 'threads', 'unread']);
+    expect(Object.keys(chatScreenQuerySchema.shape).sort()).toEqual(['add', 'f', 'info', 'msg', 'pane', 'q', 'sort', 'thread', 'threads', 'unread']);
   });
 });
 
@@ -172,5 +173,20 @@ describe('✅ 2026-10-29（F-038 ⑰）: 発言へ移る `msg` と、この会�
     expect(chatMessageSearchApiPath(THREAD, ' 面談 &日程 ')).toBe(
       `/api/threads/${THREAD}/messages/search?q=${encodeURIComponent('面談 &日程')}`,
     );
+  });
+});
+
+describe('✅ 2026-11-01（F-038 改訂 17）: メンバーを追加する画面（`add=1`）', () => {
+  const id = '01930000-0000-7000-8000-000000000001';
+  it('部屋があるときだけ `add=1` を載せる', () => {
+    expect(chatHref({ thread: id, addMembers: true })).toBe(`/chat?thread=${id}&add=1`);
+    expect(chatHref({ addMembers: true })).toBe('/chat');
+  });
+  it('`add` は 1 だけを受ける', () => {
+    expect(chatScreenQuerySchema.safeParse({ thread: id, add: '1' }).success).toBe(true);
+    expect(chatScreenQuerySchema.safeParse({ thread: id, add: 'yes' }).success).toBe(false);
+  });
+  it('API の道', () => {
+    expect(chatGroupMembersApiPath(id)).toBe(`/api/threads/${id}/members`);
   });
 });

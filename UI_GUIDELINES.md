@@ -202,6 +202,10 @@ import { Dialog, Tabs, Tooltip } from '@ses/ui/client';           // 状態を�
 | **ホーム** | `PageGreeting` `KpiCard` `KpiCardRow` `SectionHeader` `RailCard` `Timeline` `RankedList` | 🔴 **`KpiCard` はホーム 2 画面のみ**（一覧画面に置くと CI が落ちる） |
 | **その他** | `Icon` `Avatar` `GlobalSearchBox` `EnvironmentBanner` | |
 
+### 6.2.0 複数選択リスト（2026-11-01・人間の指示）
+
+複数選択のリストは **`apps/web/app/_components/multi-select.tsx` の共通部品だけ**を使う（スキル欄と同じ UI: 高さ 36px の引き金 + バッジ + ＋N、ポップオーバーに検索欄・「すべて / 選択中 N」・右にチェックマーク・下に「N 件選択中 / 選択をクリア」）。React の状態で持つ画面は `MultiSelect`、素の `<form method="get">` は `FormMultiSelect`（hidden input で `name` を送る）。🔴 **`<select multiple>` と、チェックボックス付きなど見た目の違う複数選択を新しく作らない。**「複数選択・OR検索」などの説明は欄のラベルに書く。凍結 testid がある画面は `testId` を文字列リテラルで渡す。
+
 ### 6.2.1 補助操作のアイコンとツールチップ（2026-10-23・人間の指示）
 
 補助操作は `IconButton` と `Tooltip` を基本にし、ホバーとキーボードフォーカスで操作名を表示する。アイコンだけの場合も `aria-label` に同じ操作名を必ず渡す。保存・上書き・開閉・検索・条件クリアは共通 `Icon` の写像から選ぶ。実行確定や破棄の確認ダイアログは、対象・結果を読めるテキストを維持する。保存条件一覧の適用は独立したボタンを置かず、行クリックと条件名のキーボード操作で行う。三点メニューからは行の適用を発火させない。

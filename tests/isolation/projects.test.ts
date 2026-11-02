@@ -70,6 +70,7 @@ const { NotFoundError, ProjectNotSharedError } = await import('../../apps/web/li
 const { PROJECT_DETAIL_SELECT_KEYS, readProjectDetail, readProjectForEdit } = await import(
   '../../apps/web/lib/projects/service'
 );
+const { readHostProjectCards } = await import('../../apps/web/lib/projects/card-data');
 const projectsRoute = await import('../../apps/web/app/api/(main)/projects/route');
 const projectRoute = await import('../../apps/web/app/api/(main)/projects/[id]/route');
 // 🔴 T-12-10: `#26`（PATCH）は公開中の案件で公開欄 3 欄が変わったとき `gate.run` を積む。
@@ -331,6 +332,27 @@ describe('🔴 F-013 AC-1: 必須要件と尚可要件が別区分として保�
     const row = await projectRow(id);
     expect(row.status).toBe('OPEN');
     expect(row.headcount).toBe(1);
+  });
+
+  it('カード用のホスト情報も監査を通し、取引先と他テナントを拒否する', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const id = await createdIdOf(await postProject(ctx,{name:`${MARKER}カード境界`,internalUnitPrice:840000}));
+    const result = await readHostProjectCards(ctx,id,{...META,now:NOW});
+    expect(result.data.values.internalUnitPrice).toBe('840000');
+    await expect(readHostProjectCards(await ctxOf(PARTNER_USER_1,'PARTNER_SALES'),id,{...META,now:NOW})).rejects.toBeInstanceOf(HostOnlyContextError);
+    await expect(readHostProjectCards(await ctxOf(HOST_2,'SALES'),id,{...META,now:NOW})).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('カード編集の手動サマリは他項目の更新で消えず明示クリアできる', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const id = await createdIdOf(await postProject(ctx, {name:`${MARKER}カード編集`}));
+    expect((await patchProject(ctx,id,{copySummary:'手動で調整したサマリ'})).status).toBe(200);
+    expect((await patchProject(ctx,id,{utilizationRate:80})).status).toBe(200);
+    const row = await projectRow(id);
+    expect(row.copySummary).toBe('手動で調整したサマリ');
+    expect(row.utilizationRate).toBe(80);
+    expect((await patchProject(ctx,id,{copySummary:null})).status).toBe(200);
+    expect((await projectRow(id)).copySummary).toBeNull();
   });
 
   it('PATCH は要件集合を置き換える（画面から消した行が残らない）', async () => {
@@ -1315,12 +1337,31 @@ describe('検索条件（docs/05 §6.4 #25 / `F-015` の入力）', () => {
     const target = await createdIdOf(
       await postProject(ctx, { name: `${MARKER}カテゴリ`, category: 'BACKEND' }),
     );
-    await postProject(ctx, { name: `${MARKER}カテゴリ別`, category: 'INFRA' });
+    await postProject(ctx, { name: `${MARKER}カテゴリ別`, category: 'NETWORK' });
 
     const body = await listBodyOf(await getProjects(ctx, '?category=BACKEND'));
 
     expect(idsOf(body)).toEqual([target]);
     expect(body.total).toBe(1);
+  });
+
+  // ✅✅ 2026-11-01（人間の明示指示「複数検索（OR検索）」）: 実 DB で `IN` が効くこと。
+  it('🔴 カテゴリを複数選ぶと、どれか 1 つに一致する案件が出る（OR）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const backend = await createdIdOf(await postProject(ctx, { name: `${MARKER}OR-BE`, category: 'BACKEND' }));
+    const cloud = await createdIdOf(await postProject(ctx, { name: `${MARKER}OR-CL`, category: 'CLOUD' }));
+    await postProject(ctx, { name: `${MARKER}OR-SEC`, category: 'SECURITY' });
+
+    const body = await listBodyOf(await getProjects(ctx, '?category=BACKEND&category=CLOUD'));
+
+    // 🔴 母集団 0 件で通らないよう、出る側と出ない側の両方を見る（HANDOFF §6-16）。
+    expect([...idsOf(body)].sort()).toEqual([backend, cloud].sort());
+    expect(body.total).toBe(2);
+  });
+
+  it('🔴 廃止した旧値（INFRA）は登録できない', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    expect((await postProject(ctx, { name: `${MARKER}旧値`, category: 'INFRA' })).status).toBe(400);
   });
 
   it('🔴 値集合に無いカテゴリは 400（CHECK より手前で落ちる）', async () => {
@@ -1749,6 +1790,35 @@ describe('詳細検索の条件結合と内部備考の境界', () => {
     } finally {
       await admin.projectRequirement.delete({ where: { id: req.id } });
       await admin.project.update({ where: { id }, data: original });
+    }
+  });
+});
+
+describe('番号指定のページでも情報の境界を保つ', () => {
+  it('各ロールの全件を分割しても同じ順・件数で、外部行が混ざらない',async()=>{
+    for(const [identity,role] of [[HOST_1,'SALES'],[PARTNER_USER_1,'PARTNER_ADMIN'],[HOST_2,'SALES']] as const){
+      const ctx=await ctxOf(identity,role);
+      const all=await listBodyOf(await getProjects(ctx,'?limit=200'));
+      const paged:string[]=[];
+      for(let page=1;page<=Math.max(1,all.total);page++){
+        const part=await listBodyOf(await getProjects(ctx,`?limit=1&page=${page}`));
+        expect(part.total).toBe(all.total);paged.push(...idsOf(part));
+      }
+      expect(paged).toEqual(idsOf(all));
+      expect(new Set(paged).size).toBe(paged.length);
+      if(all.items[0]){
+        const legacy=await listBodyOf(await getProjects(ctx,`?limit=1&cursor=${all.items[0].id}`));
+        const numbered=await listBodyOf(await getProjects(ctx,'?limit=1&page=2'));
+        expect(idsOf(legacy)).toEqual(idsOf(numbered));
+        const {projectPageFromCursor}=await import('../../apps/web/lib/projects/list');
+        expect(await projectPageFromCursor(ctx,{limit:1,cursor:all.items[0].id})).toBe(2);
+        const foreign=ctx.tenantId===TENANT_1.tenantId ? TENANT_2.publishedProjectId : TENANT_1.publishedProjectId;
+        expect(await projectPageFromCursor(ctx,{limit:1,cursor:foreign})).toBe(1);
+        const mixed=await listBodyOf(await getProjects(ctx,`?limit=1&page=2&cursor=${foreign}`));
+        expect(idsOf(mixed)).toEqual(idsOf(numbered));
+      }
+      const end=await listBodyOf(await getProjects(ctx,`?limit=1&page=${all.total+1}`));
+      expect(end.items).toEqual([]);
     }
   });
 });

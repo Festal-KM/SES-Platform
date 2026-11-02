@@ -108,21 +108,45 @@ export const PROJECT_STATUSES = ['OPEN', 'CLOSED'] as const;
  * 🔴 **[Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)「設計から改訂して」が
  *    列を足す承認である**（モックの 4 つのうち、カテゴリ / 案件区分 / 並行可否は DB 列が無く、
  *    「設計から改訂して」との回答を得ていた）。
- * 🔴 **値はモックの 7 つそのものである**（バックエンド / フロントエンド / インフラ / AI開発 /
- *    データ / PM・PMO / ヘルプデスク）。**勝手に増やさない**（増やすと一覧の Badge の色も増える）。
+ * ~~🔴 **値はモックの 7 つそのものである**~~ → ✅ 2026-11-01 に人間の指示で 12 値にした（下）。
+ *    🔴 **勝手に増やさない**（値は人間の指示で決める）。
  * 🔴 **`null` を許す**（未分類の案件が既に在る）。画面は「未設定」と出し、空文字で埋めない。
  */
 export const PROJECT_CATEGORIES = [
+  // ✅✅ 2026-11-01（人間の明示指示「カテゴリのリスト値を下記に変更」）: 7 値 → 12 値。
+  //    🔴 **並びは画面の選択肢の順そのもの**（指示の順）。意味が変わらない 4 値はコードを据え置き、
+  //    旧 INFRA → CLOUD / AI・DATA → DATA_AI に移送した（migration `20261101000000`）。
+  'PM_PMO',
   'BACKEND',
   'FRONTEND',
-  'INFRA',
-  'AI',
-  'DATA',
-  'PM_PMO',
+  'CLOUD',
+  'NETWORK',
+  'ON_PREMISES',
+  'DATA_AI',
+  'SECURITY',
+  'OPERATIONS',
   'HELPDESK',
+  'SALES',
+  'OTHER',
 ] as const;
 
 export type ProjectCategory = (typeof PROJECT_CATEGORIES)[number];
+
+/**
+ * 🔴 **廃止した旧カテゴリ → 移送先**（2026-11-01。migration `20261101000000` と同じ写像）。
+ *    古い URL・保存した検索条件に旧値が残っていても、検索を 400 にせず移送先として読むためだけに使う。
+ *    🔴 書き込み（登録・編集）では受け取らない（新しい行に旧値を作らない）。
+ */
+export const LEGACY_PROJECT_CATEGORY_MAP: Readonly<Record<string, ProjectCategory>> = {
+  INFRA: 'CLOUD',
+  AI: 'DATA_AI',
+  DATA: 'DATA_AI',
+};
+
+/** 旧値を移送先に読み替える。未知の値はそのまま返す（判定は呼び手の検証に任せる）。 */
+export function normalizeLegacyProjectCategory(value: string): string {
+  return LEGACY_PROJECT_CATEGORY_MAP[value] ?? value;
+}
 
 /**
  * ✅✅ **案件区分**（2026-10-16。受領モックの絞り込み「案件区分: 自社案件 / パートナー案件」）。

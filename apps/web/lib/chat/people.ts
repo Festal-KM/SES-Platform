@@ -112,7 +112,7 @@ function roomName(row: RoomRow, viewerId: string, users: ReadonlyMap<string, Use
 /** DM・グループと連絡先を読む（画面の一覧の欄）。🔴 呼び出し側の `withTenant` の中で呼ぶ。 */
 export async function readPeople(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'chatThread' | 'user' | 'partnerCompany' | 'tenant' | 'message' | 'chatReadState' | 'chatUserStatus'>,
+  db: Pick<TenantDb, 'chatThread' | 'user' | 'partnerCompany' | 'tenant' | 'message' | 'chatReadState' | 'chatUserStatus' | 'chatThreadMemberWindow'>,
   /** ✅ 2026-10-19（v2）: 取引先 → 会社のまとまりの鍵（`read.ts`）。省略時は会社から辿れない。 */
   companyKeyOf: (partnerCompanyId: string | null) => string | null = () => null,
 ): Promise<ChatPeopleData> {
@@ -202,8 +202,22 @@ export async function readPeople(
           where: { threadId: { in: roomIds }, AND: [chatMessageVisibleWhere(ctx.userId)] },
           distinct: ['threadId'],
           orderBy: [{ threadId: 'asc' }, { sentAt: 'desc' }, { id: 'desc' }],
-          select: { threadId: true, body: true, attachedProjectId: true },
+          select: { threadId: true, body: true, attachedProjectId: true, sentAt: true },
         });
+  // ✅ 2026-11-01（レビュー）: 後から足されて読める範囲を持つ部屋では、一覧に出す「最後の発言の時刻」を、自分が読める最後の発言の
+  //    時刻にする（範囲より前の、読めない発言の時刻を出さない）。🔴 窓の行は本人の行だけ（RLS）。
+  //    ⚠️ 一覧の並び順は部屋の最終更新（`last_message_at`）のまま（受け入れる。出すのは時刻だけで、どの部屋が新しいかの順序だけが分かる）。
+  const windowedIds = new Set(
+    roomIds.length === 0
+      ? []
+      : (
+          await db.chatThreadMemberWindow.findMany({
+            where: { threadId: { in: roomIds }, historyFrom: { not: null } },
+            select: { threadId: true },
+          })
+        ).map((row) => row.threadId),
+  );
+  const lastVisibleAt = new Map(lastMessages.map((message) => [message.threadId, message.sentAt]));
   const unread = await countUnread(ctx, db, roomIds);
   const prefs = await readThreadPrefs(db, roomIds);
   return {
@@ -212,7 +226,7 @@ export async function readPeople(
       kind: row.kind === 'GROUP' ? 'GROUP' : 'DM',
       name: roomName(row, ctx.userId, users),
       memberCount: row.memberUserIds.length,
-      lastMessageAt: row.lastMessageAt?.toISOString() ?? null,
+      lastMessageAt: (windowedIds.has(row.id) ? lastVisibleAt.get(row.id) ?? null : row.lastMessageAt)?.toISOString() ?? null,
       memberUserIds: [...row.memberUserIds],
       external: row.partnerCompanyId !== null,
       companyKey: companyKeyOf(row.partnerCompanyId),
@@ -266,4 +280,79 @@ export async function readRoomDetail(
     participants: [],
     members,
   };
+}
+
+/** ✅ 2026-11-01: グループに人を足す画面の候補。 */
+export type ChatGroupAddCandidates = {
+  /** 会社ごとの人（自社が先、取引先は社名順）。🔴 部屋の取引先の決まりに合う人だけ（社内だけの部屋はホストだけ）。 */
+  readonly companies: ChatContacts['companies'];
+  /** いまのメンバー（候補の中で「参加中」として出し、選べなくする）。 */
+  readonly memberUserIds: readonly string[];
+  /** 取引先との部屋か（画面の説明の出し分け。取引先の ID は載せない）。 */
+  readonly external: boolean;
+  readonly truncated: boolean;
+};
+
+/**
+ * ✅ 2026-11-01（紺野の決定）: グループに足せる人の候補（自分がメンバーのグループだけ。見えなければ `null`）。
+ * 🔴 母集団は C8 DIRECTORY（取引先からは自社〔ホスト〕と自社の人だけ）。そこから部屋の取引先の決まりで絞る:
+ *    社内だけのグループ → ホストの人だけ / 取引先とのグループ → ホストの人とその取引先の人だけ。
+ *    取引先とのグループでは、取引先の人も同じ会社の同僚を足せる（ホストの人が既にいるので、取引先どうしの部屋にはならない）。
+ * 🔴 部屋の取引先 ID は読み出しの中でだけ使う（画面には会社名だけ）。拒否の本体は API と DB のトリガ（`rooms.ts` ⑤）。
+ */
+export async function readGroupAddCandidates(
+  db: Pick<TenantDb, 'chatThread' | 'user' | 'partnerCompany' | 'tenant' | 'chatUserStatus'>,
+  threadId: string,
+): Promise<ChatGroupAddCandidates | null> {
+  const room = (await db.chatThread.findFirst({
+    where: { id: threadId, kind: 'GROUP' },
+    select: { memberUserIds: true, partnerCompanyId: true },
+  })) as { memberUserIds: string[]; partnerCompanyId: string | null } | null;
+  if (room === null) return null;
+  const fetched = (await db.user.findMany({
+    where: {
+      disabledAt: null,
+      ...(room.partnerCompanyId === null
+        ? { ownerPartnerCompanyId: null }
+        : { OR: [{ ownerPartnerCompanyId: null }, { ownerPartnerCompanyId: room.partnerCompanyId }] }),
+    },
+    select: { id: true, displayName: true, ownerPartnerCompanyId: true },
+    orderBy: [{ displayName: 'asc' }, { id: 'asc' }],
+    take: CHAT_CONTACTS_MAX + 1,
+  })) as readonly UserRow[];
+  const people = fetched.slice(0, CHAT_CONTACTS_MAX);
+  const nameOfCompany = await companyNamesOf(db, people.map((person) => person.ownerPartnerCompanyId));
+  const statuses = await readChatUserStatuses(db, people.map((person) => person.id));
+  const byCompany = new Map<string, UserRow[]>();
+  for (const person of people) {
+    const key = person.ownerPartnerCompanyId ?? '';
+    byCompany.set(key, [...(byCompany.get(key) ?? []), person]);
+  }
+  const companies = [...byCompany.entries()]
+    .map(([key, members]) => ({
+      companyName: nameOfCompany(key === '' ? null : key),
+      isHost: key === '',
+      people: members.map((person) => ({
+        userId: person.id,
+        name: person.displayName,
+        companyName: nameOfCompany(person.ownerPartnerCompanyId),
+        isHost: person.ownerPartnerCompanyId === null,
+        status: statuses.get(person.id) ?? null,
+      })),
+    }))
+    .sort((a, b) => (a.isHost === b.isHost ? (a.companyName ?? '').localeCompare(b.companyName ?? '', 'ja') : a.isHost ? -1 : 1));
+  return {
+    companies,
+    memberUserIds: [...room.memberUserIds],
+    external: room.partnerCompanyId !== null,
+    truncated: fetched.length > CHAT_CONTACTS_MAX,
+  };
+}
+
+/** 画面（`page.tsx`）から読む入口。🔴 `withTenant` の中で読む（RLS 越し）。 */
+export async function readChatGroupAddCandidates(
+  ctx: AuthenticatedTenantCtx,
+  threadId: string,
+): Promise<ChatGroupAddCandidates | null> {
+  return withTenant(ctx, (db) => readGroupAddCandidates(db, threadId));
 }

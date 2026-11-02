@@ -300,8 +300,11 @@ export {
   pageBodySplitGeometry,
 } from './components/page-body.js';
 export type { PageBodyAsideFrom, PageBodyProps, PageWidthClass } from './components/page-body.js';
-// 🔴 T-22-04: カーソル方式のページ送り。🔴 オフセット・総件数・無限スクロールの prop を持たない。
+// 🔴 T-22-04: `Pagination` はカーソル方式のページ送り。オフセット・総件数・無限スクロールの prop を持たない。
 export { Pagination } from './components/pagination.js';
+// ✅ 2026-10-30（人間の指示）: `NumberedPagination` は S-010（自社案件管理）だけの例外。番号式・総件数あり
+//    （総件数は境界適用後の COUNT。docs/04 改訂 47 / docs/05 §6.4 #25）。ほかの一覧に広げない。
+export { NumberedPagination } from './components/pagination.js';
 export type { PaginationLinkProps, PaginationProps } from './components/pagination.js';
 export { Radio } from './components/radio.js';
 export type { RadioProps } from './components/radio.js';

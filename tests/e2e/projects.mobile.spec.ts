@@ -32,6 +32,7 @@ import { t } from '../../packages/i18n/src/index';
 import {
   expectNoBrokenLabels,
   expectNoHiddenCountHints,
+  expectNoHiddenCountHintsOnPage,
   expectNoHorizontalOverflow,
 } from './support/assertions';
 import { apiRequest, parseJson } from './support/api';
@@ -69,7 +70,7 @@ test.describe('モバイルビューポートのスモーク（S-010 / S-011 は
       await expectNoBrokenLabels('S-010 案件一覧', session.page);
       // 🔴 モバイルでも「見えない件数」の示唆を出さない（§4.8。列を間引いた分を
       //    「他 N 件」で補うような実装に倒れていないこと）。
-      expectNoHiddenCountHints('S-010 案件一覧（モバイル）', await session.page.content());
+      await expectNoHiddenCountHintsOnPage('S-010 案件一覧（モバイル）', session.page);
       // ④ 外向き発信が 0 件。
       session.outbound.assertNone();
     } finally {
@@ -99,6 +100,9 @@ test.describe('モバイルビューポートのスモーク（S-010 / S-011 は
       // ③ 判断材料が可視: 見出し（状態・単価・開始日など）と必須要件のブロック。
       //    🔴 Tier 2 でも**要件は落とさない**（提案の可否を判断する材料そのもの）。
       await expect(session.page.getByTestId('project-detail-headline')).toBeVisible();
+      // ✅ 2026-11-02: ホストの要件は「要件・技術」タブにある（主要条件はタブの上の共通サマリー）。
+      await expect(session.page.getByTestId('project-detail-summary-strip')).toBeVisible();
+      await session.page.getByTestId('project-detail-tab-requirements').click();
       await expect(session.page.getByTestId('project-detail-requirements-MUST')).toBeVisible();
 
       await expectNoHorizontalOverflow('S-011 案件詳細', session.page);

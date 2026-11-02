@@ -42,20 +42,21 @@ import {
   chatHref,
   type ChatListFilter,
 } from '../../../lib/chat/screen-query';
-import { CHAT_THREAD_SORT_DEFAULT, type ChatThreadGroup, type ChatThreadSort } from '../../../lib/chat/thread-tree';
+import { CHAT_THREAD_SORT_DEFAULT, roomsMatching, type ChatThreadGroup, type ChatThreadSort } from '../../../lib/chat/thread-tree';
 import type { ChatRoomListItem, ChatThreadListItem, ChatThreadKind } from '../../../lib/chat/views';
 import type { ChatPeopleData } from '../../../lib/chat/people';
 import type { ChatMessageHit } from '../../../lib/chat/read';
 import type { ChatSavedList } from '../../../lib/chat/saved';
 import { CHAT_TEMPLATE_BODY_MAX_LENGTH, CHAT_TEMPLATE_LABEL_MAX_LENGTH, CHAT_TEMPLATE_MAX_PER_USER } from '../../../lib/chat/schemas';
 import { formatListTime } from '../../../lib/chat/day-separators';
-import { ChatContactsView, ChatFavorites, type ChatFavorite } from './chat-people-section';
+import { ChatContactsView, ChatFavorites, chatPeoplePickerLabels, type ChatFavorite } from './chat-people-section';
 import { ChatDraftMark } from './chat-draft-mark';
 import { ChatNewGroupForm } from './chat-new-group-form';
 import { UNREAD_DOT_CLASSES, UNREAD_DOT_MAX } from './chat-unread-dot';
 import { ChatOpenDmButton } from './chat-open-dm-button';
 import { ChatRowShell } from './chat-row-shell';
 import { ChatTemplateManager, type ChatTemplateItem } from './chat-template-manager';
+import { AVATAR_KIND_CLASSES } from './chat-avatar-kind';
 
 const KIND_MESSAGE_KEYS = {
   PROJECT: 'chat.thread.kind.PROJECT',
@@ -64,18 +65,7 @@ const KIND_MESSAGE_KEYS = {
   GROUP: 'chat.thread.kind.GROUP',
 } as const satisfies Readonly<Record<ChatThreadKind, `chat.thread.kind.${ChatThreadKind}`>>;
 
-/**
- * 🔴 種類ごとのアバターの形と色。お気に入り・左の列も同じ。
- * ✅ 2026-10-20（紺野「色もなんか一緒」）: 塗りつぶしにした。人 = 青の丸 / グループ = 緑の丸 / 取引先の会社 = 墨色の角丸 /
- *    案件 = 橙の角丸に「#」。使う色は既存のトークンだけ。
- * ✅ 2026-10-29（紺野「色分けしてあったほうがよかった」）: #167（5b9c539）で無彩色にしたのを元に戻した。
- */
-export const AVATAR_KIND_CLASSES: Readonly<Record<ChatThreadKind, string>> = {
-  DM: 'bg-brand text-brand-fg',
-  GROUP: 'bg-success text-bg',
-  COMPANY: 'rounded-md bg-fg text-bg',
-  PROJECT: 'rounded-md bg-warning text-bg',
-};
+export { AVATAR_KIND_CLASSES };
 
 const TAG_CLASSES = 'shrink-0 rounded-xs px-1 text-xs';
 
@@ -477,7 +467,7 @@ export function ChatThreadList({
 }: ChatThreadListProps) {
   const filter: ChatListFilter = filterProp ?? (unreadOnly ? { kind: 'unread' } : { kind: 'all' });
   const paneState: ChatPaneState = { thread: selectedThreadId, panes: paneThreadIds };
-  const rooms = people?.rooms ?? [];
+  const rooms = roomsMatching(people?.rooms ?? [], q);
   const allUnread = { ...unreadCounts, ...(people?.unreadCounts ?? {}) };
   const allMuted = new Set([...mutedIds, ...(people?.mutedIds ?? [])]);
   const context: RowContext = {
@@ -513,6 +503,8 @@ export function ChatThreadList({
     );
   }
   const filterValue = chatFilterValue(filter);
+  // ✅ 2026-10-30（F-038 改訂 16 ⑲）: 連絡先では、上の検索欄が人の名前・会社名の絞り込みになる。
+  const contactsSearch = filter.kind === 'contacts' && people !== null;
   return (
     <div className="flex min-h-0 flex-col" data-testid="chat-threads">
       {/* 🔴 `method="get"` —— 条件が URL になり、再読込・戻るで同じ一覧に戻る。開いている会話と絞り込みは引き継ぐ。 */}
@@ -523,14 +515,14 @@ export function ChatThreadList({
           : paneState.panes.map((pane) => <input key={pane} type="hidden" name={CHAT_PANE_PARAM} value={pane} />)}
         {filterValue === null ? null : <input type="hidden" name={CHAT_FILTER_PARAM} value={filterValue} />}
         <label className="sr-only" htmlFor="chat-threads-q">
-          {t('chat.threads.search.label')}
+          {contactsSearch ? t('chat.people.search.label') : t('chat.threads.search.label')}
         </label>
         <Input
           id="chat-threads-q"
           type="search"
           name={CHAT_Q_PARAM}
           defaultValue={q ?? ''}
-          placeholder={t('chat.threads.search.placeholder')}
+          placeholder={contactsSearch ? t('chat.people.search.placeholder') : t('chat.threads.search.placeholder')}
           data-testid="chat-threads-q"
           className="min-w-0 flex-1"
         />
@@ -619,10 +611,11 @@ export function ChatThreadList({
             createdToast: t('chat.toast.groupCreated'),
             openGroup: t('chat.toast.openGroup'),
           }}
+          pickerLabels={chatPeoplePickerLabels()}
         />
       ) : (filter.kind === 'contacts' || filter.kind === 'newgroup') && people !== null ? (
         <div className="flex min-h-0 flex-col overflow-y-auto">
-          <ChatContactsView people={people}>
+          <ChatContactsView people={people} query={q ?? ''}>
             {/* ✅ 2026-10-22: グループを作る入口は 1 行の導線（押すと「新しいグループ」画面へ）。🔴 閲覧専用には出さない。 */}
             {canPost && people.contacts.companies.length > 0 ? (
               <Link

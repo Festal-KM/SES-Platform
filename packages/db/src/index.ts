@@ -151,6 +151,8 @@ export {
   // 🔴 T-12-10: 公開後の再検査と自動解除の値集合（docs/05 §3.5 / §3.6。宣言は `packages/domain`）。
   // ✅ 2026-10-16（Issue #113 の「設計から改訂して」+ 受領モック）: カテゴリ / 案件区分。
   PROJECT_CATEGORIES,
+  LEGACY_PROJECT_CATEGORY_MAP,
+  normalizeLegacyProjectCategory,
   PROJECT_PUBLISH_REQUEST_KINDS,
   PROJECT_PUBLISH_RUN_TRIGGERS,
   PROJECT_SOURCE_KINDS,
@@ -686,6 +688,7 @@ export {
   PROJECT_START_WINDOWS,
   resolveStartWindow,
   PROJECT_LIST_ORDER_BY,
+  projectCursorPrefixWhere,
   PROJECT_STATUS_LIST_PRIORITY,
   projectSearchWhere,
 } from './search/index.js';
@@ -818,3 +821,4 @@ export type { AuditLogExportMeta, AuditLogExportOutcome } from './audit-log-expo
 // ✅ 2026-10-19（#128）: DM の既読表示。相手の既読位置を SECURITY DEFINER 関数 `app_dm_peer_read` で 1 値だけ読む
 //    （`chat_read_states` の C7 SELF は変えない）。
 export { readDmPeerReadMessageIds } from './chat-dm-peer-read.js';
+export { isChatAnnouncementOutsideMyWindow } from './chat-announcement-window.js';

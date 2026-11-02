@@ -42,6 +42,8 @@ export const CHAT_UNREAD_PARAM = 'unread';
 export const CHAT_FILTER_PARAM = 'f';
 /** ✅ 2026-10-19（v2）: 右の情報欄を開く（`info=1`）。既定は閉じる（会話の幅を確保する）。 */
 export const CHAT_INFO_PARAM = 'info';
+/** ✅ 2026-11-01: グループに人を足す画面を開く（`add=1`。`thread` のグループだけ。会話の列がこの画面に切り替わる）。 */
+export const CHAT_ADD_MEMBERS_PARAM = 'add';
 /**
  * ✅ 2026-10-29（F-038 ⑰）: 開いたときに移る発言（`msg=<発言の ID>`。一覧の「本文で見つかった発言」から）。
  * 🔴 移る先は `thread` の部屋の中だけ（会話の島が、その部屋の過去を読んで探す）。見つからなければ移らずに一言出す。
@@ -111,6 +113,7 @@ export const chatScreenQuerySchema = z
     [CHAT_UNREAD_PARAM]: z.literal('1').optional(),
     [CHAT_FILTER_PARAM]: z.string().regex(CHAT_FILTER_PATTERN).optional(),
     [CHAT_INFO_PARAM]: z.literal('1').optional(),
+    [CHAT_ADD_MEMBERS_PARAM]: z.literal('1').optional(),
     [CHAT_MESSAGE_PARAM]: z.uuid().optional(),
   })
   .refine((query) => {
@@ -138,6 +141,8 @@ export function chatHref(input: {
   readonly filter?: ChatListFilter | null;
   /** ✅ 2026-10-19: 右の情報欄を開く。 */
   readonly info?: boolean;
+  /** ✅ 2026-11-01: グループに人を足す画面（`thread` があるときだけ載せる）。 */
+  readonly addMembers?: boolean;
   /** ✅ 2026-10-29: 開いたときに移る発言（`thread` があるときだけ載せる）。 */
   readonly message?: string | null;
 }): string {
@@ -157,6 +162,7 @@ export function chatHref(input: {
   const filter = input.filter === null || input.filter === undefined ? null : chatFilterValue(input.filter);
   if (filter !== null) params.set(CHAT_FILTER_PARAM, filter);
   if (input.info === true) params.set(CHAT_INFO_PARAM, '1');
+  if (input.addMembers === true && input.thread !== null && input.thread !== undefined) params.set(CHAT_ADD_MEMBERS_PARAM, '1');
   if (input.message !== null && input.message !== undefined && input.thread !== null && input.thread !== undefined) {
     params.set(CHAT_MESSAGE_PARAM, input.message);
   }
@@ -214,6 +220,11 @@ export const CHAT_OPEN_DM_API_PATH = '/api/threads/dm';
 
 /** ✅ 2026-10-19（#128）: `POST /api/threads/groups`（グループを作る。作成者は自動で入る）。 */
 export const CHAT_CREATE_GROUP_API_PATH = '/api/threads/groups';
+
+/** ✅ 2026-11-01: グループに人を足す（`POST`。`docs/05` §6.5 #51h）。 */
+export function chatGroupMembersApiPath(threadId: string): string {
+  return `/api/threads/${threadId}/members`;
+}
 
 /** ✅ 2026-10-19: 自分のひとこと状態（`PUT`。`docs/05` §6.5 #51j）。 */
 export const CHAT_USER_STATUS_API_PATH = '/api/chat/status';

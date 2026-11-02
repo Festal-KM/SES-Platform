@@ -47,7 +47,7 @@ import { ChatRailToggle } from './chat-rail-toggle';
 import { ChatToastHost } from './chat-toast-host';
 import { ChatAutoRefresh } from './chat-auto-refresh';
 import { ChatViewportHeight } from './chat-viewport-height';
-import { CHAT_THREAD_SORT_DEFAULT } from '../../../lib/chat/thread-tree';
+import { CHAT_THREAD_SORT_DEFAULT, hideCompanyRooms } from '../../../lib/chat/thread-tree';
 import { readMyChatUserStatus } from '../../../lib/chat/user-status';
 import { readMySavedList } from '../../../lib/chat/saved';
 import { readMyChatTemplates } from '../../../lib/chat/templates';
@@ -56,7 +56,10 @@ import { PageHeading } from '../_shell/page-heading';
 import { ChatStatusSection } from './chat-status-section';
 import { ChatConversation } from './chat-conversation';
 import { ChatPaneDropZone } from './chat-pane-drop-zone';
-import { chatAttachmentLabels, chatConversationMessages, chatPaneDropMessages } from './chat-props';
+import { chatAddMembersLabels, chatAttachmentLabels, chatConversationMessages, chatPaneDropMessages } from './chat-props';
+import { ChatAddMembersForm } from './chat-add-members-form';
+import { chatPeoplePickerLabels } from './chat-people-section';
+import { readChatGroupAddCandidates } from '../../../lib/chat/people';
 import { ChatThreadList } from './chat-thread-list';
 import { ChatThreadPanel } from './chat-thread-panel';
 
@@ -115,6 +118,10 @@ export default async function ChatPage({
     selected !== null && !tiled && infoOpen && attachableIds.has(selected.id) ? await listChatAttachments(ctx, selected.id, {}) : null;
   // ✅ 2026-10-19（#128 §7.1 ①）: 自分のひとこと状態（入口の初期値）。閲覧専用には入口を描かないので読まない。
   const myStatus = canPost ? await readMyChatUserStatus(ctx) : '';
+  // ✅ 2026-11-01（F-038 改訂 17）: グループにメンバーを追加する画面（`add=1`）。グループ・投稿できる人・並べていないときだけ。
+  //    🔴 候補はサーバが部屋の取引先の決まりで絞る（`readGroupAddCandidates`）。見えなければ会話に戻す。
+  const canAddMembers = selected !== null && selected.kind === 'GROUP' && canPost && !tiled;
+  const addCandidates = canAddMembers && query.add === '1' ? await readChatGroupAddCandidates(ctx, selected.id) : null;
   // ✅ 2026-10-14: 会話を開く・閉じる URL に一覧の検索語と並べ方を引き継ぐ（開くたびに検索が消えない）。
   // ✅ 2026-10-19（v2）: 左の列の絞り込み（`f=`）。旧「未読のみ」（`unread=1`）は「未読」の絞り込みとして読む。
   const filter = query.f === undefined && query.unread === '1' ? parseChatFilter('unread') : parseChatFilter(query.f);
@@ -141,6 +148,11 @@ export default async function ChatPage({
     mutedIds: [],
     lastSnippets: {},
   };
+  // ✅ 2026-10-30（紺野の決定。F-038 改訂 16 ⑱）: 会社グループの部屋は一覧・左の列に出さない（鍵は変えない。`?thread=` では開ける）。
+  //    隠した部屋の未読・`@` は数えない（押せる行の無い数を出さない）。
+  const listed = hideCompanyRooms(tree.groups);
+  const listUnread = Object.fromEntries(Object.entries(tree.unreadCounts).filter(([id]) => !listed.hiddenIds.has(id)));
+  const listMentions = data.mentionUnreadIds.filter((id) => !listed.hiddenIds.has(id));
 
   return (
     // スマホは上部の帯と下部ナビの実寸を引き、履歴だけをスクロールさせる。
@@ -224,7 +236,7 @@ export default async function ChatPage({
                   href: chatHref({ filter: { kind: 'unread' } }),
                   label: t('chat.rail.unread'),
                   active: filter.kind === 'unread',
-                  count: Object.entries({ ...tree.unreadCounts, ...(data.people?.unreadCounts ?? {}) })
+                  count: Object.entries({ ...listUnread, ...(data.people?.unreadCounts ?? {}) })
                     .filter(([id]) => !tree.mutedIds.includes(id))
                     .reduce((sum, [, count]) => sum + count, 0),
                 },
@@ -234,10 +246,10 @@ export default async function ChatPage({
               ]}
             >
             <ChatRail
-              groups={tree.groups}
+              groups={listed.groups}
               rooms={data.people?.rooms ?? []}
-              unreadCounts={{ ...tree.unreadCounts, ...(data.people?.unreadCounts ?? {}) }}
-              mentionUnreadIds={data.mentionUnreadIds}
+              unreadCounts={{ ...listUnread, ...(data.people?.unreadCounts ?? {}) }}
+              mentionUnreadIds={listMentions}
               filter={filter}
               showContacts={data.people !== null}
               showSaved={canPost}
@@ -256,13 +268,13 @@ export default async function ChatPage({
             }
           >
             <ChatThreadList
-              groups={tree.groups}
+              groups={listed.groups}
               truncated={tree.truncated}
               messageHits={tree.messageHits}
               saved={saved}
               templates={ownTemplates}
-              unreadCounts={tree.unreadCounts}
-              mentionUnreadIds={data.mentionUnreadIds}
+              unreadCounts={listUnread}
+              mentionUnreadIds={listMentions}
               pinnedIds={tree.pinnedIds}
               mutedIds={tree.mutedIds}
               people={data.people}
@@ -290,6 +302,27 @@ export default async function ChatPage({
               <p className="m-0 p-5 text-body text-fg-muted" data-testid="chat-select-prompt">
                 {t('chat.select.prompt')}
               </p>
+            ) : addCandidates !== null ? (
+              <ChatAddMembersForm
+                key={`add-${selected.id}`}
+                threadId={selected.id}
+                companies={addCandidates.companies.map((company) => ({
+                  companyName: company.companyName ?? t('chat.thread.unknownName'),
+                  isHost: company.isHost,
+                  people: company.people.map((person) => ({
+                    userId: person.userId,
+                    name: person.name ?? t('chat.thread.unknownName'),
+                    status: person.status ?? null,
+                  })),
+                }))}
+                memberUserIds={addCandidates.memberUserIds}
+                backHref={chatHref({ ...paneState, ...listQuery, info: infoOpen })}
+                todayJst={new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)}
+                ruleNote={addCandidates.external ? t('chat.groupAdd.partnerOnly') : t('chat.groupAdd.internalOnly')}
+                truncated={addCandidates.truncated}
+                labels={chatAddMembersLabels()}
+                pickerLabels={{ ...chatPeoplePickerLabels(), noMatch: t('chat.groupAdd.noMatch'), alreadyIn: t('chat.groupAdd.alreadyIn') }}
+              />
             ) : (
               <ChatConversation
                 // ✅ 2026-10-26（Codex のレビュー）: 🔴 部屋ごとに作り直す。同じ部品を使い回すと、前の部屋のアナウンス・発言・
@@ -311,6 +344,7 @@ export default async function ChatPage({
                 selfName={data.viewerName}
                 // ✅ 2026-10-29（F-038 ⑰）: 一覧の「本文で見つかった発言」から開いたら、その発言へ移る（この部屋の中だけ）。
                 jumpToMessageId={query.msg ?? null}
+                {...(canAddMembers ? { addMembersHref: chatHref({ ...paneState, ...listQuery, info: infoOpen, addMembers: true }) } : {})}
                 canPost={canPost}
                 canAttach={canPost && attachableIds.has(selected.id)}
                 messages={conversationMessages}

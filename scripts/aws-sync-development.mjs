@@ -48,7 +48,10 @@ try {
   const uri = `s3://${foundation.FilesBucket}/bootstrap/development/${id}.tar.gz`;
   aws(['s3', 'cp', archive, uri, '--sse', 'aws:kms', '--sse-kms-key-id', foundation.StorageKeyArn, '--only-show-errors'], { json: false });
   const commands = [
-    'set -e', 'mkdir -p /workspaces/ses-platform', 'cd /workspaces/ses-platform',
+    // ✅ 2026-11-02: main からの自動反映（cicd の SSM ドキュメント）と同じロックを取る。
+    //    取れなければ転送しない —— 自動反映のビルド中に手動で上書きすると、新旧のソースが混ざってビルドが失敗する（実際に起きた）。
+    'set -e', 'exec 9>/var/lock/ses-development-deploy.lock', 'flock -n 9 || { echo "自動反映（GitHub Actions）の配備が実行中です。終わってから転送してください"; exit 1; }',
+    'mkdir -p /workspaces/ses-platform', 'cd /workspaces/ses-platform',
     'if [ -f .aws-source-manifest.json ]; then cp .aws-source-manifest.json .aws-source-manifest.previous.json; fi',
     `aws s3 cp '${uri}' '/tmp/ses-source-${id}.tar.gz' --region ap-northeast-1 --only-show-errors`,
     `tar -xzf '/tmp/ses-source-${id}.tar.gz' -C /workspaces/ses-platform --no-same-owner`,

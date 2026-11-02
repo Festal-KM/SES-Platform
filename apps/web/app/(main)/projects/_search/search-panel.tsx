@@ -81,13 +81,11 @@
 import { useEffect, useId, useRef, useState, useTransition } from 'react';
 // 🔴 **クライアント遷移の入口**（ファイル冒頭の 🔴🔴）。`next/navigation` の router は
 //    App Router のクライアント側であり、文書を読み込み直さず RSC の差分だけを取りに行く。
-import { t } from '@ses/i18n';
 import { useRouter } from 'next/navigation';
 import {
   Badge,
   Button,
   Card,
-  PROJECT_SEARCH_PANEL_CLASSES,
   DIALOG_PANEL_NARROW_CLASSES,
   FILTER_BODY_CLASSES,
   FILTER_BODY_COLLAPSE_CLASSES,
@@ -98,7 +96,6 @@ import {
   Icon,
   IconButton,
   Input,
-  Select,
   cn,
 } from '@ses/ui';
 // 🔴 overlay 部品（Radix）は `@ses/ui/client` に分かれている。
@@ -426,7 +423,7 @@ export function SearchPanel({
         chipsOf={(item) => projectSearchChips(item.filters, messages.chipLabels).map((chip) => ({
           ...chip,
           // 一覧では列見出しが文脈を担うので、バッジは条件の値を優先する。
-          label: ['q', 'category', 'price', 'prefecture', 'startWithin'].includes(chip.key)
+          label: ['q', 'price', 'prefecture', 'startWithin'].includes(chip.key) || chip.key.startsWith('category:')
             ? chip.label.slice(chip.label.indexOf(messages.chipLabels.fieldSeparator) + messages.chipLabels.fieldSeparator.length)
             : chip.label,
         }))}
@@ -487,7 +484,7 @@ export function SearchPanel({
   const saveFieldError = dialogError ?? (name !== '' && !nameValid ? messages.nameError : undefined);
 
   return (
-    <Card className={cn(PROJECT_SEARCH_PANEL_CLASSES, 'w-full')} data-testid="project-list-search-panel">
+    <Card className="w-full" data-testid="project-list-search-panel">
       {/* 🔴 **素の GET フォーム**（ファイル冒頭の 🔴🔴）。 */}
       <form
         // 🔴 **幅を測るのはこの要素である**（= 検索エリア自身の幅。指示書 §2）。
@@ -542,7 +539,7 @@ export function SearchPanel({
         }}
       >
         <Tabs
-          className="gap-0 [&_[role=tablist]]:flex-1 [&_[role=tablist]]:justify-between [&_[role=tab]]:text-cell [&_[role=tab][data-state=active]]:text-fg [&_[role=tab][data-state=active]]:border-transparent [&_[role=tab]:first-child]:text-lg [&_[role=tab]:first-child]:font-semibold"
+          className="gap-0 [&_[role=tab]]:text-cell [&_[role=tab][data-state=active]]:border-b-fg [&_[role=tab][data-state=active]]:text-fg"
           label={messages.tabsLabel}
           value={tab}
           onValueChange={(value) => {
@@ -552,18 +549,13 @@ export function SearchPanel({
           }}
           headerRight={
             <>
-              <div className="min-w-0" data-testid={activeItem ? `project-list-search-selected-name` : undefined}><Select className="w-44" aria-label={t('projects.search.saved')} value={activeId ?? ''} data-testid="project-list-search-saved-select" onChange={event => {
-                const item = items.find(item => item.id === event.currentTarget.value);
-                if (!item) return;
-                setDraft(item.filters); selectSaved(item.id); setTab('SEARCH');
-                persist(items.map(saved => saved.id === item.id ? { ...saved, lastUsedAt: new Date().toISOString() } : saved));
-              }}>
-                <option value="">{t('projects.search.saved')}</option>{items.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </Select></div>
+              {/* ✅ 2026-11-01（人間の指示）: 保存した条件はタブ（「保存した条件 N」）で切り替える形に戻した。
+                  #200 がヘッダーに足したプルダウンは撤去。ヘッダーには選択中の条件名だけを出す。 */}
               {activeItem === null ? null : (
                 <div className="flex min-w-0 items-center gap-2 text-xs" data-testid="project-list-search-selected">
                   <span className="sr-only">{messages.selectedSavedLabel}</span>
-                  <strong className="sr-only" title={activeItem.name}>{activeItem.name}</strong>
+                  <strong className="min-w-0 truncate font-medium text-fg" title={activeItem.name}
+                    data-testid="project-list-search-selected-name">{activeItem.name}</strong>
                   {savedModified ? <Badge data-testid="project-list-search-selected-modified">{messages.selectedSavedModified}</Badge> : null}
                 </div>
               )}
@@ -576,10 +568,11 @@ export function SearchPanel({
                 </Tooltip>
               )}
               <Tooltip content={messages.save}>
-                <Button type="button" variant="secondary" size="sm"
+                <IconButton type="button" variant="ghost" size="sm"
                   aria-label={messages.save}
+                  icon={<Icon name="list-plus" />}
                   data-testid="project-list-search-save"
-                  onClick={() => { openDialog({ kind: 'SAVE' }); }}><Icon name="list-plus" />{t('projects.search.save')}</Button>
+                  onClick={() => { openDialog({ kind: 'SAVE' }); }} />
               </Tooltip>
               <Tooltip content={expanded ? messages.collapse : messages.expand}>
                 <IconButton type="button" variant="ghost" size="sm"
@@ -591,7 +584,7 @@ export function SearchPanel({
             </>
           }
           items={[
-            { value: 'SEARCH', label: t('projects.search.title'), icon: 'search', content: collapsible },
+            { value: 'SEARCH', label: messages.tabSearch, content: collapsible },
             {
               value: 'SAVED',
               // 🔴 **件数はタブの語に入れる**（指示書 §2「保存した条件 N」）。
@@ -641,9 +634,7 @@ export function SearchPanel({
         {draft.status === '' ? null : (
           <input type="hidden" name={PROJECT_SEARCH_FIELD_NAMES.status} value={draft.status} />
         )}
-        {draft.category === '' ? null : (
-          <input type="hidden" name={PROJECT_SEARCH_FIELD_NAMES.category} value={draft.category} />
-        )}
+        {draft.categories.map(category => <input key={`category:${category}`} type="hidden" name={PROJECT_SEARCH_FIELD_NAMES.categories} value={category} />)}
         {draft.remoteMode === '' ? null : (
           <input type="hidden" name={PROJECT_SEARCH_FIELD_NAMES.remoteMode} value={draft.remoteMode} />
         )}

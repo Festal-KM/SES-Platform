@@ -209,3 +209,27 @@ describe('案件の追加検索条件', () => {
     for (const input of [{ keywordGroups: '{' }, { keywordGroups: JSON.stringify(Array.from({length:11}, () => ['Java'])) }, { developmentPhases: ['UNKNOWN'] }, { developmentMethod: 'UNKNOWN' }, { utilizationMin: '101' }, { utilizationMax: '0' }]) expect(projectListQuerySchema.safeParse(input).success).toBe(false);
   });
 });
+
+it('番号指定は正の整数だけを受け付け、旧カーソルも保持する', () => {
+  for(const page of ['0','-1','1.5','NaN','1000001']) expect(projectListQuerySchema.safeParse({page}).success).toBe(false);
+  expect(projectListQuerySchema.parse({page:'3',limit:'25'})).toMatchObject({page:3,limit:25});
+});
+
+// ✅✅ 2026-11-01（人間の明示指示「カテゴリのリスト値を変更」「複数検索（OR検索）」）。
+describe('🔴 カテゴリは複数選択・OR で、古い URL も読める', () => {
+  it('1 個（古い URL の形）でも 2 個以上でも配列に均す', () => {
+    expect(projectListQuerySchema.parse({ category: 'BACKEND' }).category).toEqual(['BACKEND']);
+    expect(projectListQuerySchema.parse({ category: ['CLOUD', 'NETWORK'] }).category).toEqual(['CLOUD', 'NETWORK']);
+  });
+  it('🔴 廃止した旧値は移送先に読み替え、重複を畳む（古いリンクを 400 にしない）', () => {
+    expect(projectListQuerySchema.parse({ category: 'INFRA' }).category).toEqual(['CLOUD']);
+    expect(projectListQuerySchema.parse({ category: ['AI', 'DATA'] }).category).toEqual(['DATA_AI']);
+  });
+  it('🔴 空は「指定なし」（`[]` を通して全件 0 件にしない）', () => {
+    expect(projectListQuerySchema.parse({ category: '' }).category).toBeUndefined();
+    expect(projectListQuerySchema.parse({}).category).toBeUndefined();
+  });
+  it('未知の値は拒否する', () => {
+    expect(projectListQuerySchema.safeParse({ category: 'UNKNOWN' }).success).toBe(false);
+  });
+});

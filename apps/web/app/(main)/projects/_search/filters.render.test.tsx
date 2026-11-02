@@ -24,7 +24,7 @@ import {
   type ProjectSearchChipLabels,
 } from './filters';
 import { visibleChipCount } from './active-filter-bar';
-import { visibleSkillBadgeCount } from './skill-multi-select';
+import { visibleSkillBadgeCount } from '../../../_components/multi-select';
 import { filterColumnCount } from './search-filter-form';
 
 const labels: ProjectSearchChipLabels = {
@@ -35,6 +35,7 @@ const labels: ProjectSearchChipLabels = {
   categoryOptions: [
     { value: '', label: 'すべて' },
     { value: 'BACKEND', label: 'バックエンド' },
+    { value: 'CLOUD', label: 'クラウド系' },
   ],
   remoteModeOptions: [
     { value: '', label: 'すべて' },
@@ -71,7 +72,7 @@ describe('🔴 条件バーのバッジ（指示書 §4）', () => {
 
   it('🔴 意味が曖昧になる値には項目名を付ける（勤務地：東京都 / カテゴリ：バックエンド）', () => {
     const chips = projectSearchChips(
-      { ...EMPTY_PROJECT_SEARCH_DRAFT, prefecture: '13', category: 'BACKEND' },
+      { ...EMPTY_PROJECT_SEARCH_DRAFT, prefecture: '13', categories: ['BACKEND'] },
       labels,
     );
 
@@ -299,6 +300,39 @@ describe('🔴 段組みは「器の幅」で決まる（指示書 §2）', () =
   });
 
 
+});
+
+// ✅✅ 2026-11-01（人間の明示指示「カテゴリを複数検索（OR検索）できるようにしてください」）。
+describe('🔴 カテゴリの複数選択（OR）', () => {
+  it('1 値につき 1 バッジで、個別に解除できる', () => {
+    const draft = { ...EMPTY_PROJECT_SEARCH_DRAFT, categories: ['BACKEND', 'CLOUD'] };
+    const chips = projectSearchChips(draft, labels);
+    expect(chips).toEqual([
+      { key: 'category:BACKEND', label: 'カテゴリ：バックエンド' },
+      { key: 'category:CLOUD', label: 'カテゴリ：クラウド系' },
+    ]);
+    expect(removeProjectSearchChip(draft, 'category:BACKEND').categories).toEqual(['CLOUD']);
+  });
+
+  it('並び順が違っても同じ条件（未適用にしない）', () => {
+    expect(
+      isSameProjectSearchDraft(
+        { ...EMPTY_PROJECT_SEARCH_DRAFT, categories: ['BACKEND', 'CLOUD'] },
+        { ...EMPTY_PROJECT_SEARCH_DRAFT, categories: ['CLOUD', 'BACKEND'] },
+      ),
+    ).toBe(true);
+    expect(
+      isSameProjectSearchDraft(EMPTY_PROJECT_SEARCH_DRAFT, { ...EMPTY_PROJECT_SEARCH_DRAFT, categories: ['CLOUD'] }),
+    ).toBe(false);
+  });
+
+  it('🔴 旧形式の保存条件（`category` 1 つ）も読み、廃止した旧値は移送先に読み替える', () => {
+    expect(parseSavedProjectSearchDraft({ category: 'BACKEND' })?.categories).toEqual(['BACKEND']);
+    expect(parseSavedProjectSearchDraft({ category: 'INFRA' })?.categories).toEqual(['CLOUD']);
+    expect(parseSavedProjectSearchDraft({ category: '' })?.categories).toEqual([]);
+    // AI と DATA はどちらも DATA_AI に寄るので、重複させない。
+    expect(parseSavedProjectSearchDraft({ categories: ['AI', 'DATA', 'BACKEND', 3] })?.categories).toEqual(['DATA_AI', 'BACKEND']);
+  });
 });
 
 describe('基本検索と詳細検索の保存・解除', () => {
