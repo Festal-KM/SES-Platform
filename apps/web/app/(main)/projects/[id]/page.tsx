@@ -184,6 +184,7 @@ export default async function ProjectDetailPage({
                 options={options}
                 canEdit={isProjectEditorRole(outcome.ctx.role)}
                 publishedToCount={data.publishedToCount}
+                canViewAuditLogs={outcome.ctx.role === "OWNER" || outcome.ctx.role === "ADMIN"}
               />
             ) : undefined
           }

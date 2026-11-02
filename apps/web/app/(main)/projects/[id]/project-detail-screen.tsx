@@ -19,7 +19,7 @@
 //    - **遮断しない**（Tier 3 相当のセクションもモバイルで隠さない）
 //
 // 🔴 文言は props（`packages/i18n`）から受け取る。ここにベタ書きしない（`CLAUDE.md` §3.5）。
-import type { ReactNode } from "react";
+import { cloneElement, isValidElement, type ReactNode } from "react";
 import Link from "next/link";
 // 🔴 型だけを import する（本ファイルはサーバコンポーネントだが、`@ses/db` の**値**を
 //    持ち込むと `*.render.test.tsx` が Prisma クライアントを読み込むことになる）。
@@ -120,11 +120,21 @@ function Section({
   id,
   title,
   children,
+  flat = false,
 }: {
   readonly id: string;
   readonly title: string;
   readonly children: ReactNode;
+  /** ✅ 2026-11-02: 案件詳細のタブの中では、外側のセクション見出しがあるので枠と見出しを出さない（カードの入れ子にしない）。 */
+  readonly flat?: boolean;
 }) {
+  if (flat) {
+    return (
+      <div id={`project-detail-${id}`} data-testid={`project-detail-${id}`}>
+        {children}
+      </div>
+    );
+  }
   return (
     <Card id={`project-detail-${id}`} data-testid={`project-detail-${id}`}>
       <h2 className="border-b border-border px-4 py-3 text-lg font-bold text-fg">
@@ -363,11 +373,13 @@ function PublishProgressNotice({
 
 function ProposalsSection({
   messages,
+  flat = false,
 }: {
   readonly messages: ProjectDetailScreenMessages;
+  readonly flat?: boolean;
 }) {
   return (
-    <Section id="proposals" title={messages.sectionProposals}>
+    <Section id="proposals" title={messages.sectionProposals} flat={flat}>
       <p
         className="mb-2 text-body text-fg-muted"
         data-testid="project-detail-proposals-empty"
@@ -392,13 +404,15 @@ function VisibilitySection({
   view,
   canEdit,
   messages,
+  flat = false,
 }: {
   readonly view: Extract<ProjectDetailView, { audience: "HOST" }>;
   readonly canEdit: boolean;
   readonly messages: ProjectDetailScreenMessages;
+  readonly flat?: boolean;
 }) {
   return (
-    <Section id="visibility" title={messages.sectionVisibility}>
+    <Section id="visibility" title={messages.sectionVisibility} flat={flat}>
       {view.visibilities.length === 0 ? (
         <p
           className="text-body text-fg-muted"
@@ -491,7 +505,7 @@ export function ProjectDetailScreen({
         <div><dt className="sr-only">{headline[0]?.label}</dt><dd className="m-0" data-testid="project-detail-headline-status"><StatusBadge entity="project" state={view.status} label={headline[0]?.value??''}/></dd></div>
         <div><dt className="sr-only">{compactHeader.categoryLabel}</dt><dd className="m-0"><Badge variant="outline">{compactHeader.category}</Badge></dd></div>
         <div><dt className="sr-only">{compactHeader.sourceKindLabel}</dt><dd className="m-0"><Badge variant="outline">{compactHeader.sourceKind}</Badge></dd></div>
-        {headline.slice(1).map(row=><div key={row.key} className="flex items-center gap-1"><dt>{row.label}</dt><dd className="m-0" data-testid={`project-detail-headline-${row.key}`}>{row.value}</dd></div>)}
+        {/* ✅ 2026-11-02: 募集人数・開始時期などの主要条件は、タブの上の共通サマリー（ProjectCardEditor）に集約した。ここには出さない（重複させない）。 */}
         <div className="flex items-center gap-1"><dt>{compactHeader.updatedLabel}</dt><dd className="m-0">{compactHeader.updatedAt}</dd></div>
         {compactHeader.assignee?<div className="flex items-center gap-1"><dt>{compactHeader.assigneeLabel}</dt><dd className="m-0">{compactHeader.assignee}</dd></div>:null}
       </dl> : (      <dl
@@ -572,17 +586,15 @@ export function ProjectDetailScreen({
       </div>
 
       {cards && view.audience === "HOST" ? (
-        <div className="flex flex-col gap-4">
-          {cards}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <ProposalsSection messages={messages} />
-            <VisibilitySection
-              view={view}
-              canEdit={canEdit}
-              messages={messages}
-            />
-          </div>
-        </div>
+        // ✅ 2026-11-02: 公開範囲と提案は、案件詳細のタブ（概要の「公開状況」/ 関連・履歴）の中に置く。
+        isValidElement<{ visibility?: ReactNode; proposals?: ReactNode }>(cards) ? (
+          cloneElement(cards, {
+            visibility: <VisibilitySection view={view} canEdit={canEdit} messages={messages} flat />,
+            proposals: <ProposalsSection messages={messages} flat />,
+          })
+        ) : (
+          cards
+        )
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {/* 左（デスクトップ）/ 上（タブレット以下）: 要件 → 条件 → 外部公開用の記載 */}

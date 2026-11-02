@@ -63,6 +63,8 @@
 import { createElement } from 'react';
 import {
   Archive,
+  JapaneseYen,
+  MapPin,
   Undo2,
   ArrowDown,
   ArrowUp,
@@ -181,6 +183,10 @@ export const ICONS = {
   pencil: Pencil,
   'save-all': SaveAll,
   'filter-x': FilterX,
+  // ✅ 2026-11-02（人間の指示: 案件詳細の上部サマリーは「小さなアイコン・項目名・値」）。
+  // 🔴 比喩ではない（円記号 = 金額 / ピン = 場所）。他の意味で使い回さない。
+  yen: JapaneseYen,
+  'map-pin': MapPin,
   // ✅ 2026-10-02（`docs/04` 改訂 23 / §7.5 の許可④）: ホームのセクション見出しと KPI カードの印。
   // 🔴 **§7.5 ④ が `clock` を名指しで列挙している**（`S-003` / `S-004` の `返信待ち`）。
   //    新しい用途の区分を作ったのではなく、**条文が挙げた名前にアイコンを与えただけ**である。

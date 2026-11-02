@@ -349,7 +349,7 @@ export function projectPanelTab(raw: string | readonly string[] | undefined): Pr
 // ⚠️ **2026-10-19: `projectSkillRemoveHref` を削除した。** バッジの `×` が
 //    **URL への遷移をやめ、チェックを外す操作**になったためである
 //    （受領モックの「チェック = バッジ」に揃えた。
-//    `app/(main)/projects/_search/skill-multi-select.tsx` 冒頭の 🔴。
+//    `app/_components/multi-select.tsx` 冒頭の 🔴。
 //    ⚠️ 旧 `skill-filter-select.tsx` は 2026-10-19 の検索エリア改修で
 //       `_search/` に吸収されて消えた）。
 // 🔴 **使われない組み立てを残さない** —— 残すと「おそらくこっちが正」と読める
