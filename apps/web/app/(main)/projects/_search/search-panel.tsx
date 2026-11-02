@@ -81,7 +81,6 @@
 import { useEffect, useId, useRef, useState, useTransition } from 'react';
 // 🔴 **クライアント遷移の入口**（ファイル冒頭の 🔴🔴）。`next/navigation` の router は
 //    App Router のクライアント側であり、文書を読み込み直さず RSC の差分だけを取りに行く。
-import { t } from '@ses/i18n';
 import { useRouter } from 'next/navigation';
 import {
   Badge,
@@ -97,7 +96,6 @@ import {
   Icon,
   IconButton,
   Input,
-  Select,
   cn,
 } from '@ses/ui';
 // 🔴 overlay 部品（Radix）は `@ses/ui/client` に分かれている。
@@ -541,7 +539,7 @@ export function SearchPanel({
         }}
       >
         <Tabs
-          className="gap-0 [&_[role=tablist]]:flex-1 [&_[role=tablist]]:basis-full sm:[&_[role=tablist]]:basis-auto [&_[role=tab]]:whitespace-nowrap [&_[role=tab]]:shrink-0 [&_[role=tablist]]:justify-between [&_[role=tab]]:text-cell [&_[role=tab][data-state=active]]:text-fg [&_[role=tab][data-state=active]]:border-transparent [&_[role=tab]:first-child]:text-lg [&_[role=tab]:first-child]:font-semibold"
+          className="gap-0 [&_[role=tab]]:text-cell [&_[role=tab][data-state=active]]:border-b-fg [&_[role=tab][data-state=active]]:text-fg"
           label={messages.tabsLabel}
           value={tab}
           onValueChange={(value) => {
@@ -551,18 +549,13 @@ export function SearchPanel({
           }}
           headerRight={
             <>
-              <div className="min-w-0" data-testid={activeItem ? `project-list-search-selected-name` : undefined}><Select className="w-44" aria-label={t('projects.search.saved')} value={activeId ?? ''} data-testid="project-list-search-saved-select" onChange={event => {
-                const item = items.find(item => item.id === event.currentTarget.value);
-                if (!item) return;
-                setDraft(item.filters); selectSaved(item.id); setTab('SEARCH');
-                persist(items.map(saved => saved.id === item.id ? { ...saved, lastUsedAt: new Date().toISOString() } : saved));
-              }}>
-                <option value="">{t('projects.search.saved')}</option>{items.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </Select></div>
+              {/* ✅ 2026-11-01（人間の指示）: 保存した条件はタブ（「保存した条件 N」）で切り替える形に戻した。
+                  #200 がヘッダーに足したプルダウンは撤去。ヘッダーには選択中の条件名だけを出す。 */}
               {activeItem === null ? null : (
                 <div className="flex min-w-0 items-center gap-2 text-xs" data-testid="project-list-search-selected">
                   <span className="sr-only">{messages.selectedSavedLabel}</span>
-                  <strong className="sr-only" title={activeItem.name}>{activeItem.name}</strong>
+                  <strong className="min-w-0 truncate font-medium text-fg" title={activeItem.name}
+                    data-testid="project-list-search-selected-name">{activeItem.name}</strong>
                   {savedModified ? <Badge data-testid="project-list-search-selected-modified">{messages.selectedSavedModified}</Badge> : null}
                 </div>
               )}
@@ -591,7 +584,7 @@ export function SearchPanel({
             </>
           }
           items={[
-            { value: 'SEARCH', label: t('projects.search.title'), icon: 'search', content: collapsible },
+            { value: 'SEARCH', label: messages.tabSearch, content: collapsible },
             {
               value: 'SAVED',
               // 🔴 **件数はタブの語に入れる**（指示書 §2「保存した条件 N」）。

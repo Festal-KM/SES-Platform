@@ -1,7 +1,14 @@
 'use client';
 
-// apps/web/app/(main)/projects/_search/skill-multi-select.tsx
-// `S-010` の検索条件「スキル」（複数選択 / OR）。改修指示書 §3。
+// apps/web/app/_components/multi-select.tsx
+// 🔴🔴 **複数選択リストの共通部品**（2026-11-01 人間の指示「複数選択の UI をスキルと同じに統一。
+//    共通化して、他の複数選択リストでも同じ UI になるようにして」）。
+//    元は `S-010` の検索条件「スキル」（改修指示書 §3）専用だった `skill-multi-select.tsx`。
+//    🔴 **見た目の分岐（チェックボックス付き・上のヒント行）を持たない。** 2026-10-29 に開発フェーズ・
+//    カテゴリ用の `checklist` / `topHint` が足されて 2 種類の見た目になっていたのを撤去した。
+//    「複数選択・OR」の説明は欄のラベル（`Field`）が持つ。
+//    🔴 **複数選択リストを新しく作らない。** `<select multiple>` も使わず、この部品を使う
+//    （GET のフォームでは `FormMultiSelect` が hidden input を送る）。
 //
 // ============================================================================
 // 🔴🔴 この部品の一番の要求は「**高さが絶対に変わらない**」ことである
@@ -37,8 +44,8 @@
 //    （本文を折りたたんでも検索できる、という指示書 §4 の要求がそれを強制する）。
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { t } from '@ses/i18n';
 import {
-  Checkbox,
   Badge,
   FOCUS_RING_CLASSES,
   Icon,
@@ -64,7 +71,12 @@ import {
   SECONDARY_LINK_CLASSES,
   cn,
 } from '@ses/ui';
-import type { ProjectSearchOption } from './filters';
+/** 選択肢（`shortLabel` は引き金のバッジだけに使う短い語）。 */
+export type MultiSelectOption = {
+  readonly value: string;
+  readonly label: string;
+  readonly shortLabel?: string;
+};
 
 /**
  * 🔴 **サーバでは `useEffect` に落とす**（`active-filter-bar.tsx` と同じ）。
@@ -133,7 +145,7 @@ export function visibleSkillBadgeCount(
 /** ポップオーバーの中の 2 面（指示書 §3「『すべて』『選択中 N』の小さな切り替え」）。 */
 type SkillPopoverMode = 'ALL' | 'SELECTED';
 
-export type SkillMultiSelectMessages = {
+export type MultiSelectMessages = {
   /** 未選択のときの引き金の語（指示書「未選択 →『スキルを選択』」）。 */
   readonly placeholder: string;
   /** `×` の読み上げ（`${label}${remove}` で「Python を解除」になる）。 */
@@ -157,21 +169,20 @@ export type SkillMultiSelectMessages = {
   readonly triggerLabel: string;
 };
 
-export function SkillMultiSelect({
+export function MultiSelect({
   options,
   values,
   onChange,
   messages,
   testIdPrefix,
-  checklist = false,
-  topHint,
+  testId,
 }: {
-  readonly checklist?: boolean;
-  readonly topHint?: string;
-  readonly options: readonly ProjectSearchOption[];
+  /** 引き金の testid（既定は `${testIdPrefix}skills`。凍結 testid を持つ画面は文字列リテラルで渡す）。 */
+  readonly testId?: string;
+  readonly options: readonly MultiSelectOption[];
   readonly values: readonly string[];
   readonly onChange: (next: readonly string[]) => void;
-  readonly messages: SkillMultiSelectMessages;
+  readonly messages: MultiSelectMessages;
   readonly testIdPrefix: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -303,7 +314,7 @@ export function SkillMultiSelect({
    * 🔴 **`×` も `<button>` にしない** —— 押せる `×` が 2 つになる。
    * ⚠️ 幅は `<span>` でも同じ（同じクラス・同じ中身である）。
    */
-  const skillBadge = (option: ProjectSearchOption, measuring = false) => (
+  const skillBadge = (option: MultiSelectOption, measuring = false) => (
     <Badge
       key={option.value}
       variant="brand"
@@ -354,7 +365,7 @@ export function SkillMultiSelect({
           FOCUS_RING_CLASSES,
           open ? MULTI_SELECT_TRIGGER_OPEN_CLASSES : null,
         )}
-        data-testid={`${testIdPrefix}skills`}
+        data-testid={testId ?? `${testIdPrefix}skills`}
         onClick={() => {
           if (open) close(false);
           else openWith('ALL');
@@ -477,7 +488,6 @@ export function SkillMultiSelect({
             ))}
           </div>
           {/* 中央: 一覧（1 行 36px / 最大 240px でスクロール）。 */}
-          {topHint ? <p className="m-0 px-3 py-2 text-xs text-fg-muted">{topHint}</p> : null}
           <div className={POPOVER_LIST_CLASSES} role="listbox" aria-multiselectable="true" onKeyDown={event => {
             if (!['ArrowDown','ArrowUp','Home','End'].includes(event.key)) return;
             const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role=option]'));
@@ -510,9 +520,9 @@ export function SkillMultiSelect({
                       toggle(option.value);
                     }}
                   >
-                    <>{checklist ? <Checkbox checked={checked} readOnly tabIndex={-1} aria-hidden className="pointer-events-none" /> : null}<span className="min-w-0 flex-1 truncate">{option.label}</span></>
+                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
                     {/* 🔴 選んである行だけ**右端に小さなチェック**（未選択の行に空の箱を置かない）。 */}
-                    {checked && !checklist ? <Icon name="check" size="sm" className="shrink-0" /> : null}
+                    {checked ? <Icon name="check" size="sm" className="shrink-0" /> : null}
                   </button>
                 );
               })
@@ -537,5 +547,56 @@ export function SkillMultiSelect({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * スキル欄の既定の語（`S-005` / `S-016` / `S-010` で共通）。🔴 欄の名前（読み上げ名）は呼び出し側が渡す。
+ */
+export function skillMultiSelectMessages(triggerLabel: string): MultiSelectMessages {
+  return {
+    placeholder: t('projects.list.search.skillPlaceholder'),
+    remove: t('projects.list.search.chipRemove'),
+    overflowLabel: t('projects.list.search.skillOverflow'),
+    selectedCountSuffix: t('projects.list.search.skillSelectedCount'),
+    searchLabel: t('projects.list.search.skillSearchLabel'),
+    searchPlaceholder: t('projects.list.search.skillSearchPlaceholder'),
+    modeAll: t('projects.list.search.skillModeAll'),
+    modeSelected: t('projects.list.search.skillModeSelected'),
+    noMatch: t('projects.list.search.skillNoMatch'),
+    selectedSummarySuffix: t('projects.list.search.skillSelectedSummary'),
+    clearSelection: t('projects.list.search.skillClearSelection'),
+    triggerLabel,
+  };
+}
+
+/**
+ * 素の `<form method="get">` で使う版。選んだ値を `name` の hidden input で送る
+ * （`<select multiple name>` と同じ形の query になる）。
+ */
+export function FormMultiSelect({
+  name,
+  options,
+  defaultValues,
+  label,
+  testIdPrefix,
+  testId,
+}: {
+  readonly name: string;
+  readonly options: readonly MultiSelectOption[];
+  readonly defaultValues: readonly string[];
+  /** 欄の読み上げ名。🔴 語は部品の側で組む（サーバ部品から関数を渡せないため。RSC の境界）。 */
+  readonly label: string;
+  readonly testIdPrefix: string;
+  readonly testId?: string;
+}) {
+  const [values, setValues] = useState<readonly string[]>(defaultValues);
+  return (
+    <>
+      <MultiSelect options={options} values={values} onChange={setValues} messages={skillMultiSelectMessages(label)} testIdPrefix={testIdPrefix} testId={testId} />
+      {values.map((value) => (
+        <input key={value} type="hidden" name={name} value={value} />
+      ))}
+    </>
   );
 }

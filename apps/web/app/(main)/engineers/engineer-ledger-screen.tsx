@@ -103,6 +103,7 @@ import {
   FILTER_FORM_CLASSES,
 } from '../_shared/filter-form-classes';
 import { SkillBadges } from '../_shared/skill-badges';
+import { FormMultiSelect } from '../../_components/multi-select';
 import type {
   EngineerActiveFilterView,
   EngineerListRowView,
@@ -405,22 +406,19 @@ export function EngineerLedgerScreen({
                         data-testid="engineer-list-filter-q"
                       />
                     </Field>
-                    <Field label={messages.searchSkills}>
+                    <Field as="div" label={messages.searchSkills}>
                       {/* 🔴 辞書からの選択のみ（自由入力は別名候補の起票であり `S-007` の責務。
                           `F-010 AC-1`「採用されるまで検索の正規化に使われない」）。 */}
-                      <Select
+                      {/* ✅ 2026-11-01（人間の指示）: 複数選択は共通部品に統一（`<select multiple>` をやめた）。
+                          送信は hidden input（`name="skills"`）で、query の形は変わらない。 */}
+                      <FormMultiSelect
                         name="skills"
-                        multiple
-                        size={5}
-                        defaultValue={[...filters.skills]}
-                        data-testid="engineer-list-filter-skills"
-                      >
-                        {skillOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
+                        options={skillOptions}
+                        defaultValues={filters.skills}
+                        label={messages.searchSkills}
+                        testIdPrefix="engineer-list-filter-"
+                        testId="engineer-list-filter-skills"
+                      />
                       {/* 🔴 `FieldDescription`（`<p>`）にしない —— `<label>` の中に `<p>` を入れると
                           説明文が入力欄のアクセシブル名に畳み込まれる（`@ses/ui` の `field.tsx` 冒頭）。 */}
                       <span className="text-xs text-fg-muted">{messages.searchSkillsHint}</span>
