@@ -42,7 +42,7 @@ import {
   chatHref,
   type ChatListFilter,
 } from '../../../lib/chat/screen-query';
-import { CHAT_THREAD_SORT_DEFAULT, type ChatThreadGroup, type ChatThreadSort } from '../../../lib/chat/thread-tree';
+import { CHAT_THREAD_SORT_DEFAULT, roomsMatching, type ChatThreadGroup, type ChatThreadSort } from '../../../lib/chat/thread-tree';
 import type { ChatRoomListItem, ChatThreadListItem, ChatThreadKind } from '../../../lib/chat/views';
 import type { ChatPeopleData } from '../../../lib/chat/people';
 import type { ChatMessageHit } from '../../../lib/chat/read';
@@ -467,7 +467,7 @@ export function ChatThreadList({
 }: ChatThreadListProps) {
   const filter: ChatListFilter = filterProp ?? (unreadOnly ? { kind: 'unread' } : { kind: 'all' });
   const paneState: ChatPaneState = { thread: selectedThreadId, panes: paneThreadIds };
-  const rooms = people?.rooms ?? [];
+  const rooms = roomsMatching(people?.rooms ?? [], q);
   const allUnread = { ...unreadCounts, ...(people?.unreadCounts ?? {}) };
   const allMuted = new Set([...mutedIds, ...(people?.mutedIds ?? [])]);
   const context: RowContext = {

@@ -5,6 +5,7 @@
 //   「会社から探す」= 会社の一覧（自社が先・取引先は社名順）。会社を押すとその会社の人が開く。
 //   「名前から探す」= 見える人を名前順（日本語の並び）に 1 列で。
 // 連絡先（`f=contacts`。人を押すと「その人との会話」へ）と「新しいグループ」（`f=newgroup`。人を押すと選ぶ / 外す）で同じ部品を使う。
+// ✅ 2026-11-01: 「メンバーを追加」（`add=1`）でも使う。いまのメンバーは「参加中」として出し、押せる形にしない（`fixed`）。
 //
 // 🔴 ここが守るもの
 //   ① 母集団は渡された人だけ（`lib/chat/people.ts` が RLS で決めたもの）。ここで人や会社を足さない。
@@ -41,6 +42,8 @@ export type ChatPeoplePickerLabels = {
   readonly noMatch: string;
   readonly external: string;
   readonly memberUnit: string;
+  /** ✅ 2026-11-01: 「参加中」（`fixed` の人に添える。省略時は「メンバーを追加」以外の画面）。 */
+  readonly alreadyIn?: string;
 };
 
 type Common = {
@@ -49,7 +52,7 @@ type Common = {
   readonly query: string;
   readonly labels: ChatPeoplePickerLabels;
   /** 目印の頭（`chat-contacts` / `chat-new-group`）。 */
-  readonly testIdPrefix: 'chat-contacts' | 'chat-new-group';
+  readonly testIdPrefix: 'chat-contacts' | 'chat-new-group' | 'chat-add-members';
   readonly defaultTab?: ChatPeoplePickerTab;
   /** 「会社から探す」の上に置くもの（連絡先の「最近やり取りした人」）。 */
   readonly companyTop?: ReactNode;
@@ -63,6 +66,8 @@ export type ChatPeoplePickerProps =
       readonly onToggle: (userId: string) => void;
       /** 出さない会社（「新しいグループ」で取引先の人を選んだ後の、ほかの取引先）。 */
       readonly hideCompany?: (company: ChatPickerCompany) => boolean;
+      /** ✅ 2026-11-01: 既に入っている人（選べない。「参加中」と出す）。 */
+      readonly fixed?: readonly string[];
     });
 
 const TAG_CLASSES = 'shrink-0 rounded-xs bg-info-bg px-1 text-xs text-info';
@@ -110,12 +115,44 @@ export function ChatContactRow({
   );
 }
 
+/** ✅ 2026-11-01: 既に入っている人（押せる形にしない。`disabled` のボタンも置かない）。 */
+function FixedRow({
+  person,
+  company,
+  externalLabel,
+  alreadyIn,
+  testIdPrefix,
+}: {
+  readonly person: ChatPickerPerson;
+  readonly company: ChatPickerCompany | null;
+  readonly externalLabel: string;
+  readonly alreadyIn: string;
+  readonly testIdPrefix: string;
+}) {
+  return (
+    <li className="flex min-h-11 w-full items-center gap-3 rounded-md px-2 py-1" data-testid={`${testIdPrefix}-fixed-${person.userId}`}>
+      <Avatar initials={displayInitials(person.name)} title={person.name} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-cell text-fg-muted">{person.name}</span>
+      </span>
+      {company === null ? null : (
+        <>
+          {company.isHost ? null : <span className={TAG_CLASSES}>{externalLabel}</span>}
+          <span className="shrink-0 truncate text-xs text-fg-muted">{company.companyName}</span>
+        </>
+      )}
+      <span className="shrink-0 text-xs text-fg-muted">{alreadyIn}</span>
+    </li>
+  );
+}
+
 function SelectRow({
   person,
   on,
   onToggle,
   company,
   externalLabel,
+  testIdPrefix,
 }: {
   readonly person: ChatPickerPerson;
   readonly on: boolean;
@@ -123,6 +160,7 @@ function SelectRow({
   /** 名前のタブでは会社名を添える（会社のタブでは見出しで分かるので `null`）。 */
   readonly company: ChatPickerCompany | null;
   readonly externalLabel: string;
+  readonly testIdPrefix: string;
 }) {
   return (
     <li>
@@ -132,7 +170,7 @@ function SelectRow({
         aria-checked={on}
         onClick={() => onToggle(person.userId)}
         className={cn('flex min-h-11 w-full items-center gap-3 rounded-md px-2 py-1 text-left', on ? 'bg-brand-bg' : ROW_HOVER_CLASSES)}
-        data-testid={`chat-new-group-member-${person.userId}`}
+        data-testid={`${testIdPrefix}-member-${person.userId}`}
       >
         <Avatar initials={displayInitials(person.name)} title={person.name} />
         <span className="flex min-w-0 flex-1 flex-col">
@@ -195,9 +233,22 @@ export function ChatPeoplePicker(props: ChatPeoplePickerProps) {
         />
       );
     }
+    if (props.fixed?.includes(person.userId) === true) {
+      return (
+        <FixedRow
+          key={person.userId}
+          person={person}
+          company={inCompany ? null : company}
+          externalLabel={labels.external}
+          alreadyIn={labels.alreadyIn ?? ''}
+          testIdPrefix={testIdPrefix}
+        />
+      );
+    }
     return (
       <SelectRow
         key={person.userId}
+        testIdPrefix={testIdPrefix}
         person={person}
         on={props.selected.includes(person.userId)}
         onToggle={props.onToggle}

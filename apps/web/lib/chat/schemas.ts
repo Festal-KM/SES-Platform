@@ -218,6 +218,26 @@ export const chatGroupBodySchema = z
   .strict();
 assertNoIsolationKeys(Object.keys(chatGroupBodySchema.shape), 'chatGroupBodySchema');
 
+// ✅ 2026-11-01（紺野の決定）: グループに人を足す（`docs/05` §6.5 #51h）。🔴 部屋・取引先・足す人の所属は受け取らない。
+/** 足した人が読める過去の範囲。`ALL` = これまでの発言をすべて / `JOINED` = 追加した時から / `DATE` = 指定した日（日本時間の 0 時）から。 */
+export const CHAT_GROUP_HISTORY_MODES = ['ALL', 'JOINED', 'DATE'] as const;
+export type ChatGroupHistoryMode = (typeof CHAT_GROUP_HISTORY_MODES)[number];
+
+/** `POST /api/threads/{id}/members` — 人を足す（足すだけ。外す・抜けるは別の段）。 */
+export const chatGroupMembersBodySchema = z
+  .object({
+    userIds: z.array(z.uuid()).min(1).max(49),
+    history: z.enum(CHAT_GROUP_HISTORY_MODES).default('ALL'),
+    /** `history = 'DATE'` のときだけ（`YYYY-MM-DD`）。 */
+    historyDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+  })
+  .strict()
+  .refine((body) => (body.history === 'DATE') === (body.historyDate !== undefined), { path: ['historyDate'] });
+assertNoIsolationKeys(['userIds', 'history', 'historyDate'], 'chatGroupMembersBodySchema');
+
 // ✅ 2026-10-19（#128 §7.1 ①）: ひとこと状態（`docs/05` §6.5 #51j）。🔴 誰の状態かは受け取らない（認証コンテキストの本人だけ）。
 /** 🔴 migration 20261019020000 の CHECK（`char_length(text) <= 60`）と同じ値。 */
 export const CHAT_USER_STATUS_MAX_LENGTH = 60;

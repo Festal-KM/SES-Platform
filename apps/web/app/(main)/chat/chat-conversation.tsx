@@ -93,6 +93,11 @@ export type ChatConversationProps = {
    * 🔴 この部屋の中だけを探す。見つからなければ移らずに一言出す。
    */
   readonly jumpToMessageId?: string | null;
+  /**
+   * ✅ 2026-11-01（F-038 改訂 17）: 「メンバーを追加」の行き先（グループで、投稿できる人のときだけ渡す）。省略時は描かない。
+   * 🔴 拒否の本体は API（#51h のガード・RLS・トリガ）。ここは導線の出し分けだけ。
+   */
+  readonly addMembersHref?: string;
 };
 
 export function ChatConversation(props: ChatConversationProps) {
@@ -253,6 +258,18 @@ return (
               <Icon name="chat-export" /><span className={closeHref === undefined ? "md:sr-only" : undefined}>{messages.exportLink}</span>
             </a>
           ) : null}
+          {/* ✅ 2026-11-01: グループにメンバーを追加（会話の列が追加の画面に切り替わる）。 */}
+          {props.addMembersHref === undefined || messages.addMembers === undefined ? null : (
+            <Link
+              href={props.addMembersHref}
+              aria-label={messages.addMembers}
+              title={messages.addMembers}
+              className={cn(SECONDARY_LINK_CLASSES, 'inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2')}
+              data-testid={`chat-add-members-open-${threadId}`}
+            >
+              <Icon name="chat-add-member" /><span className={closeHref === undefined ? "md:sr-only" : undefined}>{messages.addMembers}</span>
+            </Link>
+          )}
           {/* ✅ 2026-10-16: ピン留め・ミュート（自分の表示の設定）。 */}
           {prefs === undefined ? null : (
             <ChatThreadPrefsToggle
@@ -300,7 +317,9 @@ return (
       {announcementFailed ? (
         <div className="shrink-0 px-3 py-2 md:px-5">
           <Alert variant="danger" data-testid={`chat-announcement-failed-${threadId}`}>
-            {messages.announcementFailed}
+            {announcementFailed === 'outsideWindow' && messages.announcementOutsideWindow !== undefined
+              ? messages.announcementOutsideWindow
+              : messages.announcementFailed}
           </Alert>
         </div>
       ) : null}

@@ -64,7 +64,8 @@ export function useChatMessages({
   /** ✅ 2026-10-26（Codex のレビュー）: アナウンスの操作の世代（古い読み直しの応答を捨てるため）。 */
   const announcementGeneration = useRef(0);
   const [announcementNotLoaded, setAnnouncementNotLoaded] = useState(false);
-  const [announcementFailed, setAnnouncementFailed] = useState(false);
+  // ✅ 2026-11-01: 失敗の種類（`outsideWindow` = 参加前の発言を指すアナウンスで変えられない。409）。`false` = 失敗していない。
+  const [announcementFailed, setAnnouncementFailed] = useState<false | 'failed' | 'outsideWindow'>(false);
   const [olderGuard] = useState(() => createSubmitGuard<'LOADED' | 'FAILED'>());
   const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -260,7 +261,7 @@ export function useChatMessages({
         body: JSON.stringify({ messageId }),
       });
       if (!response.ok) {
-        setAnnouncementFailed(true);
+        setAnnouncementFailed(response.status === 409 ? 'outsideWindow' : 'failed');
         return;
       }
       // 自分の操作の応答も、さらに後の操作があれば使わない。
@@ -269,7 +270,7 @@ export function useChatMessages({
       if (settled === announcementGeneration.current) setAnnouncement(result);
       setAnnouncementNotLoaded(false);
     } catch {
-      setAnnouncementFailed(true);
+      setAnnouncementFailed('failed');
     }
   }
 

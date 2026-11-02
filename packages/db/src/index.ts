@@ -821,3 +821,4 @@ export type { AuditLogExportMeta, AuditLogExportOutcome } from './audit-log-expo
 // ✅ 2026-10-19（#128）: DM の既読表示。相手の既読位置を SECURITY DEFINER 関数 `app_dm_peer_read` で 1 値だけ読む
 //    （`chat_read_states` の C7 SELF は変えない）。
 export { readDmPeerReadMessageIds } from './chat-dm-peer-read.js';
+export { isChatAnnouncementOutsideMyWindow } from './chat-announcement-window.js';

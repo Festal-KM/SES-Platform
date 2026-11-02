@@ -111,6 +111,7 @@ import {
   ScrollText,
   Search,
   TextSearch,
+  UserPlus,
   Save,
   SaveAll,
   FilterX,
@@ -241,6 +242,7 @@ export const ICONS = {
   'chat-search': TextSearch, // この会話の中を検索（2026-10-29。上部バーの全体検索〔`search`〕と見分ける）
   'chat-move-up': ArrowUp, // 左の列の並び替え: 1 つ上へ（2026-10-29）
   'chat-move-down': ArrowDown, // 左の列の並び替え: 1 つ下へ（2026-10-29）
+  'chat-add-member': UserPlus, // グループにメンバーを追加（2026-11-01）
 } as const;
 
 /** 🔴 写像に無い名前は**型エラー**になる（`docs/05` §17.7.1 (i)①）。 */
