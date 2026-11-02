@@ -175,6 +175,7 @@ describe('🔴 逆リレーション（他モデルのテナントキー列を�
       'chatSavedMessages', // 2026-10-22 チャットレーン（保存済み。本人だけ・発言が読めるときだけ。migration 20261022010000）
       'chatMessageTemplates', // 2026-10-22 チャットレーン（自分の定型文。本人だけ。migration 20261022020000）
       'chatThreadAnnouncements', // 2026-10-26 チャットレーン（アナウンス。1 部屋 1 件・部屋が読める人だけ。migration 20261026010000）
+      'chatThreadMemberWindows', // 2026-11-01 チャットレーン（グループに後から足した人の入った時刻と読める範囲。本人だけが読む。migration 20261101000000）
       'contracts',
       'contractDocuments',
       'contractTemplates',

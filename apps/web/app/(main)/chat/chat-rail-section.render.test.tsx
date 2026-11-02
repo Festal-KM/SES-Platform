@@ -25,10 +25,18 @@ describe('畳んだ左の列の節', () => {
   });
 });
 
+const PROJECT_THREAD = {
+  id: 'thread-project',
+  kind: 'PROJECT',
+  project: { id: 'project-1', name: '基幹移行' },
+  counterpartyName: '株式会社ダミーチャーリー',
+  lastMessageAt: '2026-10-29T00:00:00.000Z',
+} as const;
+
 describe('会社の印', () => {
   it('会社の頭文字の印（墨色）を開いた列でも出し、畳んだ列では社名を読み上げ用に残す', () => {
     const html = renderToStaticMarkup(createElement(ChatRail, {
-      groups: [{ key: 'company-chat', counterpartyName: '株式会社ダミーチャーリー', chat: null, threads: [], fastReply: false }],
+      groups: [{ key: 'company-chat', counterpartyName: '株式会社ダミーチャーリー', chat: null, threads: [PROJECT_THREAD], fastReply: false }],
       rooms: [], unreadCounts: {}, filter: { kind: 'all' }, showContacts: false,
     }));
     expect(html).toContain('data-testid="chat-rail-company-company-chat"');
@@ -36,5 +44,37 @@ describe('会社の印', () => {
     expect(html).toMatch(/<span aria-hidden="true" class="[^"]*inline-flex[^"]*rounded-md bg-fg text-bg">ダ<\/span>/);
     expect(html).not.toContain('bg-neutral-bg');
     expect(html).toContain('truncate md:in-[[data-collapsed=true]]:sr-only">ダミーチャーリー</span>');
+  });
+});
+
+describe('✅ 2026-10-30（F-038 改訂 16 ⑱）: 会社グループの部屋を出さないので、押しても何も並ばない会社は左の列に出さない', () => {
+  const render = (rooms: Parameters<typeof ChatRail>[0]['rooms']) =>
+    renderToStaticMarkup(createElement(ChatRail, {
+      groups: [
+        { key: 'only-company-room', counterpartyName: '株式会社ダミーアルファ', chat: null, threads: [], fastReply: false },
+        { key: 'with-thread', counterpartyName: '株式会社ダミーチャーリー', chat: null, threads: [PROJECT_THREAD], fastReply: false },
+      ],
+      rooms, unreadCounts: {}, filter: { kind: 'all' }, showContacts: false,
+    }));
+
+  it('スレッドも DM・グループも無い会社は出さない（スレッドがある会社は出す）', () => {
+    const html = render([]);
+    expect(html).not.toContain('chat-rail-company-only-company-room');
+    expect(html).toContain('data-testid="chat-rail-company-with-thread"');
+  });
+
+  it('その会社の人との DM・グループがあれば出す（鍵は会社グループの ID のまま）', () => {
+    const html = render([
+      { id: 'room-1', kind: 'GROUP', name: '相談', memberCount: 3, lastMessageAt: null, memberUserIds: [], external: true, companyKey: 'only-company-room' },
+    ]);
+    expect(html).toContain('data-testid="chat-rail-company-only-company-room"');
+  });
+
+  it('出す会社が 1 つも無ければ「取引先」の見出しごと出さない', () => {
+    const html = renderToStaticMarkup(createElement(ChatRail, {
+      groups: [{ key: 'only-company-room', counterpartyName: '株式会社ダミーアルファ', chat: null, threads: [], fastReply: false }],
+      rooms: [], unreadCounts: {}, filter: { kind: 'all' }, showContacts: false,
+    }));
+    expect(html).not.toContain('data-testid="chat-rail-companies"');
   });
 });

@@ -83,9 +83,19 @@ describe('🔴 ① 閲覧専用には「DM を開く」を描かない', () => {
     expect(contacts).not.toContain('data-testid="chat-favorites"');
     expect(contacts).toMatch(/<\/form><div[^>]*><div[^>]*data-testid="chat-contacts"><h3[^>]*>連絡先<\/h3>/);
     expect(contacts).toContain(`data-testid="chat-contact-link-${HOST_PERSON}"`);
-    expect(contacts).toContain(`data-testid="chat-contact-link-${PARTNER_PERSON}"`);
-    expect(contacts).toContain(`f=person.${PARTNER_PERSON}`);
+    // ✅ 2026-10-30（F-038 改訂 16 ⑲）: 既定は「会社から探す」で、開いているのは自社だけ。取引先の人は会社を押すと出る。
+    expect(contacts).toContain('data-testid="chat-contacts-tab-company"');
+    expect(contacts).toContain('data-testid="chat-contacts-company-toggle-1"');
+    expect(contacts).not.toContain(`data-testid="chat-contact-link-${PARTNER_PERSON}"`);
     expect(contacts).toContain('data-testid="chat-contacts-recent"');
+    // 上の検索欄の語（`q`）で絞ると、当たった会社が開いて人が出る。押すと「その人との会話」へ。
+    const searched = renderToStaticMarkup(
+      createElement(ChatThreadList, { groups: [], selectedThreadId: null, nextCursor: null, people: PEOPLE, canPost: true, filter: { kind: 'contacts' }, q: '花子' }),
+    );
+    expect(searched).toContain(`data-testid="chat-contact-link-${PARTNER_PERSON}"`);
+    expect(searched).toContain(`f=person.${PARTNER_PERSON}`);
+    expect(searched).not.toContain(`data-testid="chat-contact-link-${HOST_PERSON}"`);
+    expect(searched).toContain(`placeholder="${t('chat.people.search.placeholder')}"`);
   });
 });
 
@@ -183,7 +193,9 @@ describe('✅ グループを作る（連絡先の入口 → 「新しいグル�
   });
   it('「新しいグループ」画面には連絡先の人が候補に出る。閲覧専用にはフォームを出さない', () => {
     expect(view(true, 'newgroup')).toContain('data-testid="chat-new-group"');
-    expect(view(true, 'newgroup')).toContain(`data-testid="chat-new-group-member-${PARTNER_PERSON}"`);
+    expect(view(true, 'newgroup')).toContain(`data-testid="chat-new-group-member-${HOST_PERSON}"`);
+    // ✅ 2026-10-30: 取引先の人は会社を押すと出る（既定で開くのは自社だけ）。
+    expect(view(true, 'newgroup')).toContain('data-testid="chat-new-group-company-toggle-1"');
     expect(view(false, 'newgroup')).not.toContain('chat-new-group');
   });
 });

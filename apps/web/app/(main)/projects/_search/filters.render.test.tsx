@@ -24,7 +24,7 @@ import {
   type ProjectSearchChipLabels,
 } from './filters';
 import { visibleChipCount } from './active-filter-bar';
-import { visibleSkillBadgeCount } from './skill-multi-select';
+import { visibleSkillBadgeCount } from '../../../_components/multi-select';
 import { filterColumnCount } from './search-filter-form';
 
 const labels: ProjectSearchChipLabels = {

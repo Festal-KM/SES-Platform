@@ -5,6 +5,32 @@
 `docs/04` S-031 改訂 47。DB・API は変えていない。既存の `ChatResizablePane`（並べた会話の幅）に `minExtent` / `maxExtent` を足し、一覧にも使った（240〜640px、`storageKey="list"`）。一覧のスクロールは内側の器に移した（外側でスクロールすると境目が流れる）。境目は普段 1px・ホバー／フォーカス／ドラッグ中だけ 4px。🔴 線のクラスは画面に書けない（`tests/static/ui-state-in-primitives.test.ts` の (j)）ので `@ses/ui` の `RESIZE_HANDLE_LINE_CLASSES` に置いた。一覧の `border-r`・並べた会話の `border-l` は線が兼ねるので外した。文言キー `chat.list.resize` を追加。E2E `chat.layout.spec.ts` に 1 本足したがローカルでは回していない（CI で確認）。
 ⚠️ **Mac（Apple Silicon）でローカルを立ち上げるときの罠 2 つ**: ① `docker/postgres/initdb/000-roles.sh` に実行権限が無く（`-rw-r--r--`）、初期化で `bad interpreter: Permission denied` になり DB ロールが作られない → `docker exec` で中から `bash` で流すと通る ② `clamav/clamav:1.5.4` に arm64 のイメージが無い → `docker pull --platform linux/amd64` してから `DOCKER_DEFAULT_PLATFORM=linux/amd64 docker compose up -d clamav`。また seed は `APP_ENV=development` を付けないと拒否される。
 
+
+## 2026-11-01 ⏳ チャット: グループに後から人を足す（ブランチ `chat/group-add-members`。まだ PR にしていない）
+
+紺野の決定（F-038 改訂 17 ㉑ / AC-22 / S-031 改訂 48 / docs/05 #51h・§3.7.1）。#203（`chat/contacts-tabs`）の上に積んでいる。🔴 **DB を変えた = 宮田さんの確認が要る**（migration `20261101100000_chat_group_add_members`。番号は push 直前に最新へ付け直す可能性あり）。グループのメンバーなら誰でも「メンバーを追加」（見出し。スマホは「…」）→ 会話の列が `add=1` の画面に切り替わる（`chat-add-members-form.tsx`。`chat-people-picker.tsx` の select に `fixed` = 「参加中」を足した）。読める過去の範囲を選ぶ（すべて〔既定〕/ 追加した時から / 日付〔日本時間 0 時〕）。🔴 範囲は **RLS の境界**: 新しい表 `chat_thread_member_windows`（後から足した人 1 人 1 行。本人だけが読む・UPDATE/DELETE なし）+ `messages` の RESTRICTIVE `messages_member_history_window`（`app_thread_history_ok`。`app_thread_probe` 所有）+ アナウンスの RESTRICTIVE（指した発言が読めるときだけ）。凍結トリガは「GROUP・足すだけ・足す人がメンバー・50 人まで・足した人全員に窓の行」のときだけ `member_user_ids` を通す（CREATE OR REPLACE）。未読は `joined_at` から数える（🔴 足した人の既読位置は書かない。`CLAUDE.md` §4.1）。⚠️ 受け入れた例外: 古い発言を誰かが引用して返信すると、足した人にも引用部分が見える。⚠️ `CLAUDE.md` §4.1 の表に新しい概念の行が要るかもしれない（人間の判断。オーケストレーターが扱う）。登録: `rls-enforced` の表の数 63 → 64 / `PURGE_SPEC.retain` / `scope-injection`・`tenant-relation` のリレーション一覧。分離テスト `tests/isolation/chat-group-add-members.test.ts`（20 件）と既存のチャット・RLS・解約の分離テストはローカル緑。E2E `chat.group-members.spec.ts` / `chat.group-members.mobile.spec.ts` は手元で回していない（CI で確認）。外す・抜けるは範囲外。
+✅ 2026-11-01 レビュー（REQUEST_CHANGES）の対応: 🔴 範囲・未読は `messages.posted_at`（新しい列。DB の now()・UPDATE で動かない）で判定（アプリの時計のずれ・検査の CLEAN で `sent_at` が進む件）。「追加した時から」はアプリの時計を使わず DB が入った時刻に揃える。定義者関数はグループのメンバーにだけ・まだいない人についてだけ答える。参加前の発言を指すアナウンスの設定・外すは 409。追加は部屋の行を掴んでから決める（監査は実際に足した人だけ）。一覧の時刻は読める発言だけ。分離テスト 27 件を 3 回連続で緑。
+
+
+## 2026-11-02 ✅ 案件詳細を 4 タブ＋共通サマリー＋1 カラムにした（docs/04 改訂 49）
+
+ホストの案件詳細（`project-card-editor.tsx`）。カードをセクションに変え、4 タブ（概要 / 要件・技術 / 稼働・契約 / 関連・履歴）に振り分けた。業務概要を要件から分けるため `PROJECT_CARD_FIELDS` に `summary`（`publicSummary`）を足し、`content` は要件だけを持つ。公開範囲・提案のセクションは `project-detail-screen.tsx` が `cloneElement` で editor に渡す（`flat` で枠なし）。🔴 Radix のタブは非表示のタブの中身を DOM に置かないので、render テストは `initialTab` を指定し、E2E は先にタブを押す。⚠️ 変更履歴は作成・更新日時と監査ログへの案内だけ（案件別の監査ログ読み出しは未実装＝境界の判断が要る）。
+
+## 2026-11-01 ✅ 開発環境の反映中に画面を止めない
+
+人間の指摘「反映中ずっと 502」。web・worker を `/workspaces/ses-platform-live`（画面用のコピー）から動かし、反映は `/workspaces/ses-platform` でビルドし終えてから差分を `rsync` して再起動する形にした（`infra/aws/development.compose.yml` / `scripts/aws-bootstrap-development.sh`）。手動の直接反映（`aws-sync-development.mjs`）と main からの自動反映の両方に効く。実測: 初回（コピー作成）で停止約 64 秒、以前は 5〜10 分。🔴 `next.config.ts` の `distDir` を環境変数で切り替える案は、`process.env` 直読みを `NODE_ENV` 1 つに限る規律（`build-node-env-guard.test.ts`）に反するので採らなかった。⚠️ Windows の Git Bash から `aws-sync-development.mjs` を実行すると GNU tar が `C:` をホスト名と誤解して失敗する —— PowerShell で `$env:PATH = "C:\Windows\System32;" + $env:PATH` としてから実行する。
+
+## 2026-10-30 ⏳ チャット: 会社グループを一覧から外す・連絡先と新しいグループを 2 つのタブに（ブランチ `chat/contacts-tabs`。まだ PR にしていない）
+
+紺野の決定（F-038 改訂 16 ⑱⑲⑳ / S-031 改訂 47）。DB・API は変えていない。#199（`chat/search-reorder-fast`）の上に積んでいる。⑱ 会社グループ（`COMPANY`）の部屋を一覧・左の列・お気に入りに出さない。🔴 隠すのは画面だけ（`page.tsx` で `lib/chat/thread-tree.ts` の `hideCompanyRooms`）—— `read.ts` は変えていない（分離テストの fixtures は会社グループの部屋を主な会話にしており、読み出しを変えると `chat-threads` / `chat-mentions` の分離テストの前提が崩れる）。鍵（`companyKeysOf`）は会社グループの ID のまま。隠した部屋の未読・`@` は数から外した。左の列の「取引先」は、押して何か並ぶ会社だけ。⑲⑳ 共通の `chat-people-picker.tsx`（`Tabs` を使う。`packages/ui` の `Tabs` にタブごとの `testId` を足した → `testid-inventory` の素通しの一覧に `tabs.tsx` を追加）。⚠️ seed:isolation の取引先の会話は会社グループだけなので、E2E は一覧の行を押す代わりに `?thread=` / `&pane=` で開くよう直した（`chat.spec` ④⑥ / `chat.layout` / `chat.mobile` ① / `chat.header.mobile` / `chat.announcement`）。新しい `chat.contacts.spec.ts`。どれも手元では回していない（CI で確認）。
+⚠️ 判断待ち: 一覧の「本文で見つかった発言」は会社グループの部屋の発言も従来どおり出す（データへの道を残す）。外すなら `page.tsx` で `hiddenIds` を当てるだけ。
+
+
+
+## 2026-11-01 ✅ 案件詳細のカード編集（PR #202）のレビュー対応
+
+code-reviewer の指摘（サーバ側の権限・取引先の締め出し・再検査は OK、画面側で S-012 の境界の表示が抜けていた・設計書が未更新）に対応した。凍結 testid `project-detail-commerce-notice` の中身を F-013 AC-2 の注記に戻し（金額の説明は `project-card-money-hint` に移した）、公開欄の印・再検査の事前表示と完了表示・商流/企業/メモの注記・卸単価の見分け・「該当の欄を直す」の行き先・手動サマリの注意を足した。公開先の社数はホスト専用の `readHostProjectCards` の中で数える。docs/04 改訂 48・docs/05 #26 に記録。使われていない `projectCopySummaryBodySchema` を消した。
+
 ## 2026-11-01 ⏳ 案件検索のカテゴリを 12 値・複数選択（OR）にする（ブランチ `feat/project-category-or`）
 
 人間の指示でカテゴリの選択肢を 12 値に置き換え、検索を複数選択・OR にした。値集合の出所は `packages/db/src/schema-value-sets.ts` の `PROJECT_CATEGORIES` の 1 本（並び = 画面の順）。🔴 **migration `20261101000000` は既存行を書き換える**ので HANDOFF §3.1 の手順（FORCE 解除 → 旧 CHECK を外す → 移送 → 残存 0 件の検査 → 新 CHECK → FORCE 復帰 → カタログ検査）で書いた。移送は INFRA → CLOUD / AI・DATA → DATA_AI（INFRA の行き先は既定でクラウド系。違う案件は編集で直す）。URL のキーは従来どおり `category`（繰り返し）で、古い 1 値の URL・保存条件・旧値はそのまま読める（`LEGACY_PROJECT_CATEGORY_MAP`。検索欄はクライアント部品で `@ses/db` を読めないので `_search/legacy-categories.ts` に写しを置き、テストで一致を固定した）。デモの seed の旧値も新しい値に直した（`PROJECT_TEXTS` の 3 行と、追加案件 114 件の雛形 `buildDemoProjectSamples` —— 雛形はレビューで漏れが見つかり、12 値すべてを含む形にした。`seed.test.ts` が全件を値集合で照合する）。🔴 **文言キー `projects.category.INFRA` / `AI` / `DATA` を削除し、検索欄の testid を `project-list-filter-category` → `project-list-filter-category-skills` にした**（いずれも 2026-09-30 の凍結ベースラインの外。値が廃止されたので語を残すと「選べない値の語」になり、欄はフェーズと同じ複数選択の部品に替えたため）。CHECK と値集合の照合を `schema-enum-drift.test.ts` に足した。🔴 **ローカルの `packages/*/dist` が main より古いと、`@ses/db` のビルドや render テストが無関係のエラーで落ちる**（今回 domain / ui を作り直して解消）。分離テスト（実 DB の `IN` と旧値の 400）と E2E は CI で確認する。
@@ -31,6 +57,25 @@
 
 紺野の決定（F-038 改訂 14 ⑮⑯⑰ / S-031 改訂 46 / docs/05 #51s）。DB は変えていない。⑮ 5 秒の取り消し待ちをやめ、送信箱（`apps/web/lib/chat/outbox.ts`。手元だけ）で「送信中」の吹き出しを先に出す。旧 `CHAT_UNDO_SEND_MS` と入力欄の「取り消す／今すぐ送る」は消した（文言キーは追加のみの約束で残す）。E2E `chat.compose.spec.ts` を書き直し、`chat.project-card.spec.ts` の「今すぐ送る」を外した。⑯ 並びは `localStorage` の `ses.chat.rail.order`（鍵の配列だけ）。⑰ 新 API `GET /api/threads/{id}/messages/search`（`lib/chat/search.ts`）。🔴 照合は `freeWordFilter` で絞り、引用の見出し・写しは `search-text.ts` で除く。分離テスト `tests/isolation/chat-search.test.ts`（ローカル緑）。E2E `chat.search.spec.ts` は手元で回していない（CI で確認）。
 同じブランチで続けて（紺野の追加依頼）: 左の列の印と一覧のアバターの色分けを #167 の前に戻した / 案件スレッドも自分の発言を右（`conversationLayoutFor` は常に `chat`）/ 案件カードの「案件詳細を開く」をチャットの中の `Drawer` で開く（既存の #27 を呼ぶだけ = 監査・公開範囲は従来どおり。分離テスト `chat-project-panel.test.ts`）。⚠️ `Drawer` の「閉じる」は共通部品の文字リンクでスマホ 44px を満たさない（宮田さんの判断待ち）。
+
+## 2026-11-01 ⏳ チャット: 会話の中の検索で、一致した語だけに印（紺野の許可）
+
+`docs/04` S-031 改訂 46「会話の中の検索」の追記。DB・API は変えていない。結果の冒頭を `lib/chat/search-text.ts` の `splitChatSearchMatches`（DB と同じく語全体・大文字小文字を区別しない。位置は元の文字列で切る）で分け、一致部分を `<mark>`（`bg-warning-border text-fg`）で包む。🔴 印の語は `use-chat-search.ts` の結果に足した `q`（取りに行ったときの語）—— 欄の `searchQuery` を使うと、入力中に結果と語がずれる。吹き出しの中には付けていない。
+
+
+## 2026-10-31 添付画像の情報密度を再調整
+
+人間から画像との照合を重ねて求められたため、ホスト詳細の上部を状態・カテゴリ・区分のバッジと主要値の横並びへ縮め、候補検索とサマリコピーをタイトル横へ配置。更新者のデータは無いため担当者を更新者と偽らず担当者と表記する。ラベル幅を縮め、業務概要と企業欄はラベルを上へ、精算上下限を一組にして支払いサイトと並べる。長いサマリは閲覧時にスクロール、管理情報のラベルは一文字ずつ折り返さない。グローバルヘッダー・サイドバー・他画面は変更しない。ヘッダーのコピーも保存した手動サマリを優先する。共通Textareaに明示的なcompactオプションを追加し、案件詳細だけが使用する。既定の80px最小高さは他画面で維持し、要件表やメモは入力欄と同じ最小高さから内容に合わせて伸びる。
+
+## 2026-10-30 カード編集の再提示指示への調整
+
+同じ依頼のPR #202を継続。再提示の入力UIに従い、稼働率にも共通セグメントを表示する。保存列は具体的な整数％のまま。80%は0.5～1.0人月と導出し、その範囲の選び直しで80%を丸めない。異なる範囲へ移った場合は具体値の入力を求め、代表値を勝手に保存しない。「すべて」は未設定、1.0人月は100%。添付に合わせてカード内の関連する項目を横に並べる。既存の一度に1カード・差分保存・権限・他画面を維持する。検証結果はPR参照。
+
+## 2026-10-30 案件詳細のカード単位編集
+
+人間の指示で詳細画面のホスト側にカード単位編集を追加中。一度に1カード、差分PATCH、失敗時の入力保持、未保存の切替確認を実装する。稼働率は人間の追記により具体的な整数％だけを入力・保存し、区分は既存の検索条件で導出する。区分列の追加はしない。手動サマリは明示されたときだけ更新し、他カードの保存では触らない。取引先向けの射影・監査・公開再検査の仕組みを維持する。PCでアプリ・Docker・重い検査を起動しない。検証状況はPRへ記載。
+
+AWS確認用にPR #201と一時統合したソースでビルド成功。SSM 37e2cb56-b47c-4c01-8cc4-8338f844ee40で初期閲覧・単独編集・未保存切替・差分保存・再読込・失敗時保持・要件行追加削除・375pxの操作と横はみ出しを確認した。既知の未公開架空案件の稼働率だけ変更しfinallyで復元。最新のCI結果はPR #202を参照。
 
 ## 2026-10-30 詳細検索の入力導線改善
 
@@ -511,6 +556,7 @@ OneDriveは追加の人間指示で既定OFFへ変更済み：HKCU RunのOneDriv
     - ⚠️ **止めても `next dev` の起動は通る。** `packages/config` の検証は `MALWARE_SCANNER='clamav'` のとき `CLAMAV_HOST` / `CLAMAV_PORT` が**在るか**しか見ない（`schema.ts:475`）—— 疎通は見ないので、落とした状態で再起動しても失敗しない。失敗するのは実際にスキャンを呼ぶ操作だけ。
     - 実測の効果: **ページインが 2,842/秒 → 512/秒**（約 5.5 分の 1）。物理の空き自体は 0.7 GB のままだが（Windows 側のアプリが吸う）、**ディスクの叩き方が目に見えて減る** —— メモリ監視に dev サーバーを止められる主因はこれである。
   - ⚠️ **`.wslconfig` の `memory=` は予約ではなく上限である。** 実測では `vmmemWSL` はコンテナの実使用ぶんしか持たない（5 本で 1.17 GB / 既定の上限は 6.70 GB）。**上限を絞っても空きは増えない** —— 効くのは「コンテナを止める」ことだけ。
+  - ✅ 2026-11-01 の実測: **Docker Desktop 自体が停止しており、コンテナは 0 本**（開発環境は AWS で動かす運用になったため）。空き 0.9 GB の内訳は Chrome 5.2 GB / VS Code 1.6 GB / WebView2 1.3 GB / Codex 0.8 GB / Claude Code 0.8 GB。不要なタブ・アプリを閉じて 2.1 GB まで回復した。Claude Code はメモリが逼迫するとバックグラウンドのコマンドを自動で止める（CI の見張りが止められた）。
   - 🔴 **逼迫の主因は Docker ではなく Windows 側のアプリである**（実測: Chrome 2.9 GB / WebView2 1.2 GB / Defender 0.87 GB / VS Code 0.71 GB / Edge 0.61 GB）。`next dev`（0.5〜1.5 GB）と `tsc`（`--max-old-space-size=6144` が必要）を**同時に走らせない**。
 - したがって **Playwright（`pnpm test:e2e`）と `tests/isolation` の全数はローカルで回せない。** **CI で検証する**（1 周 20 分程度）。
 - 長いコマンドはバックグラウンドで実行し、メモリ監視に止められたら**再実行せず CI に委ねる**。

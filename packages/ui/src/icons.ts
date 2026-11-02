@@ -63,6 +63,8 @@
 import { createElement } from 'react';
 import {
   Archive,
+  JapaneseYen,
+  MapPin,
   Undo2,
   ArrowDown,
   ArrowUp,
@@ -109,6 +111,7 @@ import {
   ScrollText,
   Search,
   TextSearch,
+  UserPlus,
   Save,
   SaveAll,
   FilterX,
@@ -177,8 +180,13 @@ export const ICONS = {
   // 🔴 **比喩ではない**（虫めがね = 検索そのもの）。🔴 **他の意味で使い回していない。**
   search: Search,
   save: Save,
+  pencil: Pencil,
   'save-all': SaveAll,
   'filter-x': FilterX,
+  // ✅ 2026-11-02（人間の指示: 案件詳細の上部サマリーは「小さなアイコン・項目名・値」）。
+  // 🔴 比喩ではない（円記号 = 金額 / ピン = 場所）。他の意味で使い回さない。
+  yen: JapaneseYen,
+  'map-pin': MapPin,
   // ✅ 2026-10-02（`docs/04` 改訂 23 / §7.5 の許可④）: ホームのセクション見出しと KPI カードの印。
   // 🔴 **§7.5 ④ が `clock` を名指しで列挙している**（`S-003` / `S-004` の `返信待ち`）。
   //    新しい用途の区分を作ったのではなく、**条文が挙げた名前にアイコンを与えただけ**である。
@@ -234,6 +242,7 @@ export const ICONS = {
   'chat-search': TextSearch, // この会話の中を検索（2026-10-29。上部バーの全体検索〔`search`〕と見分ける）
   'chat-move-up': ArrowUp, // 左の列の並び替え: 1 つ上へ（2026-10-29）
   'chat-move-down': ArrowDown, // 左の列の並び替え: 1 つ下へ（2026-10-29）
+  'chat-add-member': UserPlus, // グループにメンバーを追加（2026-11-01）
 } as const;
 
 /** 🔴 写像に無い名前は**型エラー**になる（`docs/05` §17.7.1 (i)①）。 */

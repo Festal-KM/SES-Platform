@@ -19,7 +19,7 @@ export type ChatSearchResult =
   | { readonly kind: 'idle' }
   | { readonly kind: 'loading' }
   | { readonly kind: 'failed' }
-  | { readonly kind: 'done'; readonly items: readonly ChatMessageSearchHitView[] };
+  | { readonly kind: 'done'; readonly q: string; readonly items: readonly ChatMessageSearchHitView[] };
 
 export function useChatSearch({ threadId, onUnavailable }: { readonly threadId: string; readonly onUnavailable: () => void }) {
   const [open, setOpen] = useState(false);
@@ -50,7 +50,7 @@ export function useChatSearch({ threadId, onUnavailable }: { readonly threadId: 
             return;
           }
           const payload = (await response.json()) as { readonly items: readonly ChatMessageSearchHitView[] };
-          if (current) setResult({ kind: 'done', items: payload.items });
+          if (current) setResult({ kind: 'done', q: needle, items: payload.items });
         } catch {
           if (current) setResult({ kind: 'failed' });
         }

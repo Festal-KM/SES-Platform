@@ -103,11 +103,9 @@ test.describe('S-031 チャット — 会話を右に並べる（2026-10-14）',
       await page.goto(`/chat?thread=${first.threadId}`);
       await expect(page.locator(`[data-testid="chat-conversation"][data-thread-id="${first.threadId}"]`)).toBeVisible();
 
-      // ドラッグの代わりの導線（一覧の「右に並べる」）。
-      // ✅ 2026-10-19（v2）: 「右に並べる」は行にマウスを当てたときだけ出る（`chat-row-shell.tsx`）。
-      await page.getByTestId(`chat-thread-row-${second.threadId}`).hover();
-      await page.getByTestId(`chat-thread-open-beside-${second.threadId}`).click();
-      await expect(page).toHaveURL(new RegExp(`pane=${second.threadId}`));
+      // ✅ 2026-10-30（F-038 改訂 16 ⑱）: seed の会話は会社グループの部屋で、一覧に出ない（「右に並べる」の行が無い）。
+      //    並べ方は URL（`pane=`）が持つので、URL で並べる。行の「右に並べる」の URL は render テストが確かめている。
+      await page.goto(`/chat?thread=${first.threadId}&pane=${second.threadId}`);
       const left = page.locator(`[data-testid="chat-conversation"][data-thread-id="${first.threadId}"]`);
       const right = page.locator(`[data-testid="chat-conversation"][data-thread-id="${second.threadId}"]`);
       await expect(left).toBeVisible();
@@ -159,7 +157,10 @@ test.describe('S-031 チャット — 会話を右に並べる（2026-10-14）',
 
 // ✅ 2026-10-14（チャットレーン）: 一覧を会社ごとの木にし、検索・並べ替えを足した（`lib/chat/thread-tree.ts`）。
 test.describe('S-031 チャット — 会社ごとの一覧・検索（2026-10-14）', () => {
-  test('⑥ ホストが会社名で検索すると、その会社のチャットだけが残り、会話を開いても検索が保たれる', async ({
+  // ✅ 2026-10-30（F-038 改訂 16 ⑱。紺野の決定）: 会社グループの部屋は一覧に出さない（ホストも取引先も）。
+  //    seed の会話はどちらも会社グループなので、一覧にも検索結果にも行が出ないこと・URL では開けること・
+  //    検索語が会話を開いても保たれることを確かめる。
+  test('⑥ 会社グループの部屋は一覧にも会社名の検索にも出ないが、URL で開け、開いても検索語が保たれる', async ({
     browser,
   }) => {
     const first = partnerIds(1, 1);
@@ -168,20 +169,20 @@ test.describe('S-031 チャット — 会社ごとの一覧・検索（2026-10-1
     try {
       const { page } = session;
       await page.goto('/chat');
-      // 2 社ぶんのチャットが一覧に出ている（対照）。
-      await expect(page.getByTestId(`chat-thread-row-${first.threadId}`)).toBeVisible();
-      await expect(page.getByTestId(`chat-thread-row-${second.threadId}`)).toBeVisible();
+      await expect(page.getByTestId('chat-threads')).toBeVisible();
+      await expect(page.getByTestId(`chat-thread-row-${first.threadId}`)).toHaveCount(0);
+      await expect(page.getByTestId(`chat-thread-row-${second.threadId}`)).toHaveCount(0);
 
       // 🔴 seed の会社名（`isolationSeedCompanyNames`。架空の社名）で検索する（実在しない語で 0 件を見ても検査にならない）。
       const firstName = isolationSeedCompanyNames(1).partners[0];
       await page.getByTestId('chat-threads-q').fill(firstName);
       await page.getByTestId('chat-threads-search-submit').click();
       await expect(page).toHaveURL(/[?&]q=/);
-      await expect(page.getByTestId(`chat-thread-row-${first.threadId}`)).toBeVisible();
+      await expect(page.getByTestId(`chat-thread-row-${first.threadId}`)).toHaveCount(0);
       await expect(page.getByTestId(`chat-thread-row-${second.threadId}`)).toHaveCount(0);
 
-      // 会話を開いても検索語は URL に残る。
-      await page.getByTestId(`chat-thread-link-${first.threadId}`).click();
+      // 一覧に出なくても URL で開け、検索語は残る。
+      await page.goto(`/chat?q=${encodeURIComponent(firstName)}&thread=${first.threadId}`);
       await expect(page.locator(`[data-testid="chat-conversation"][data-thread-id="${first.threadId}"]`)).toBeVisible();
       await expect(page.getByTestId('chat-threads-q')).toHaveValue(firstName);
 

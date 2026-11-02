@@ -11,7 +11,8 @@ test('スマホの一覧に三つの切り替えがあり、会話の見出し�
     await page.goto('/chat');
     await expect(page.getByTestId('chat-rail-tabs')).toBeVisible();
     for (const tab of ['all', 'unread', 'saved']) await expect(page.getByTestId(`chat-rail-tab-${tab}`)).toBeVisible();
-    await page.getByTestId(`chat-thread-link-${own.threadId}`).click();
+    // ✅ 2026-10-30（F-038 改訂 16 ⑱）: 会社グループの部屋は一覧に出ないので、URL で開く。
+    await page.goto(`/chat?thread=${own.threadId}`);
     await expect(page.getByTestId('chat-back-to-list')).toBeVisible();
     await expect(page.getByTestId('chat-conversation-title')).toBeVisible();
     const menu = page.getByTestId(`chat-header-menu-${own.threadId}`);
