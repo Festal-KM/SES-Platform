@@ -102,6 +102,7 @@ test("案件カードは一つずつ編集し、キャンセル・失敗・保�
     await page.getByTestId("project-card-save-notes").click();
     await expect(page.locator('[data-editing="true"]')).toHaveCount(0);
     await page.reload();
+    await page.getByTestId("project-detail-tab-related").click();
     await expect(page.getByTestId("project-card-value-copySummary")).toHaveText(
       "取引先向けの手動サマリ",
     );
