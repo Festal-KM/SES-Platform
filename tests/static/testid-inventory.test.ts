@@ -1825,6 +1825,8 @@ describe('🔴 `packages/ui` の testid は「リテラル / テンプレート 
       //    呼び出し側から素通しする（`page-header` と同じ形）。
       'packages/ui/src/components/page-greeting.tsx',
       'packages/ui/src/components/page-header.tsx',
+      // ✅ 2026-10-30: タブ 1 つずつの `testId` を呼び出し側から素通しする（チャットの連絡先の 2 つのタブ）。
+      'packages/ui/src/components/tabs.tsx',
     ]);
   });
 });

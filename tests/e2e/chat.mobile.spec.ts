@@ -4,6 +4,7 @@
 // 🔴 チャットは「移動中のスマートフォンで返信が発生する」画面であり、モバイルで**操作まで完結**できなければならない
 //    （§13.1）。ここでは Pixel 5（`playwright.config.ts` の `mobile-chromium`）で次を固定する:
 //   ① 一覧 → 会話の 2 画面遷移（**遮断ではなく切替**。`docs/04` §S-031 デバイス別）と、会話からの戻り道
+//      ✅ 2026-10-30（F-038 改訂 16 ⑱）: 会社グループの部屋は一覧に出ないので、会話は `?thread=` で開く（開けることも確かめる）
 //   ② 会話型（企業スレッド）の右寄せがモバイルでも保たれる
 //   ③ 送信欄が描かれ、横スクロールが出ない（Tier 1 で入力が画面外に逃げない）
 import { expect, test } from '@playwright/test';
@@ -18,17 +19,20 @@ test.describe('S-031 チャット — モバイル（Tier 1）', () => {
     try {
       const { page } = session;
       await page.goto('/chat');
-      // 未選択のときは一覧が全幅で見える。
-      await expect(page.getByTestId(`chat-thread-row-${own.threadId}`)).toBeVisible();
+      // 未選択のときは一覧が全幅で見える。✅ 2026-10-30: 会社グループの部屋（seed の会話）は一覧に出ない。
+      await expect(page.getByTestId('chat-threads')).toBeVisible();
+      await expect(page.getByTestId(`chat-thread-row-${own.threadId}`)).toHaveCount(0);
 
-      await page.getByTestId(`chat-thread-link-${own.threadId}`).click();
+      // 一覧に出なくても URL で直接開ける（データは消していない）。
+      await page.goto(`/chat?thread=${own.threadId}`);
       await expect(page.getByTestId('chat-conversation')).toBeVisible();
       // 選択中は一覧を畳む（会話を全幅で読む）。
-      await expect(page.getByTestId(`chat-thread-row-${own.threadId}`)).toBeHidden();
+      await expect(page.getByTestId('chat-threads')).toBeHidden();
 
       // 🔴 戻り道が在る（遮断ではなく切替）。
       await page.getByTestId('chat-back-to-list').click();
-      await expect(page.getByTestId(`chat-thread-row-${own.threadId}`)).toBeVisible();
+      await expect(page.getByTestId('chat-threads')).toBeVisible();
+      await expect(page.getByTestId(`chat-thread-row-${own.threadId}`)).toHaveCount(0);
 
       session.outbound.assertNone();
     } finally {

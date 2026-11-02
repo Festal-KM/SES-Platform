@@ -1,5 +1,12 @@
 # HANDOFF.md — 作業の引き継ぎ
 
+## 2026-10-30 ⏳ チャット: 会社グループを一覧から外す・連絡先と新しいグループを 2 つのタブに（ブランチ `chat/contacts-tabs`。まだ PR にしていない）
+
+紺野の決定（F-038 改訂 16 ⑱⑲⑳ / S-031 改訂 47）。DB・API は変えていない。#199（`chat/search-reorder-fast`）の上に積んでいる。⑱ 会社グループ（`COMPANY`）の部屋を一覧・左の列・お気に入りに出さない。🔴 隠すのは画面だけ（`page.tsx` で `lib/chat/thread-tree.ts` の `hideCompanyRooms`）—— `read.ts` は変えていない（分離テストの fixtures は会社グループの部屋を主な会話にしており、読み出しを変えると `chat-threads` / `chat-mentions` の分離テストの前提が崩れる）。鍵（`companyKeysOf`）は会社グループの ID のまま。隠した部屋の未読・`@` は数から外した。左の列の「取引先」は、押して何か並ぶ会社だけ。⑲⑳ 共通の `chat-people-picker.tsx`（`Tabs` を使う。`packages/ui` の `Tabs` にタブごとの `testId` を足した → `testid-inventory` の素通しの一覧に `tabs.tsx` を追加）。⚠️ seed:isolation の取引先の会話は会社グループだけなので、E2E は一覧の行を押す代わりに `?thread=` / `&pane=` で開くよう直した（`chat.spec` ④⑥ / `chat.layout` / `chat.mobile` ① / `chat.header.mobile` / `chat.announcement`）。新しい `chat.contacts.spec.ts`。どれも手元では回していない（CI で確認）。
+⚠️ 判断待ち: 一覧の「本文で見つかった発言」は会社グループの部屋の発言も従来どおり出す（データへの道を残す）。外すなら `page.tsx` で `hiddenIds` を当てるだけ。
+
+
+
 ## 2026-11-01 ✅ 案件詳細のカード編集（PR #202）のレビュー対応
 
 code-reviewer の指摘（サーバ側の権限・取引先の締め出し・再検査は OK、画面側で S-012 の境界の表示が抜けていた・設計書が未更新）に対応した。凍結 testid `project-detail-commerce-notice` の中身を F-013 AC-2 の注記に戻し（金額の説明は `project-card-money-hint` に移した）、公開欄の印・再検査の事前表示と完了表示・商流/企業/メモの注記・卸単価の見分け・「該当の欄を直す」の行き先・手動サマリの注意を足した。公開先の社数はホスト専用の `readHostProjectCards` の中で数える。docs/04 改訂 48・docs/05 #26 に記録。使われていない `projectCopySummaryBodySchema` を消した。

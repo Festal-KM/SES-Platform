@@ -47,7 +47,7 @@ import { ChatRailToggle } from './chat-rail-toggle';
 import { ChatToastHost } from './chat-toast-host';
 import { ChatAutoRefresh } from './chat-auto-refresh';
 import { ChatViewportHeight } from './chat-viewport-height';
-import { CHAT_THREAD_SORT_DEFAULT } from '../../../lib/chat/thread-tree';
+import { CHAT_THREAD_SORT_DEFAULT, hideCompanyRooms } from '../../../lib/chat/thread-tree';
 import { readMyChatUserStatus } from '../../../lib/chat/user-status';
 import { readMySavedList } from '../../../lib/chat/saved';
 import { readMyChatTemplates } from '../../../lib/chat/templates';
@@ -141,6 +141,11 @@ export default async function ChatPage({
     mutedIds: [],
     lastSnippets: {},
   };
+  // ✅ 2026-10-30（紺野の決定。F-038 改訂 16 ⑱）: 会社グループの部屋は一覧・左の列に出さない（鍵は変えない。`?thread=` では開ける）。
+  //    隠した部屋の未読・`@` は数えない（押せる行の無い数を出さない）。
+  const listed = hideCompanyRooms(tree.groups);
+  const listUnread = Object.fromEntries(Object.entries(tree.unreadCounts).filter(([id]) => !listed.hiddenIds.has(id)));
+  const listMentions = data.mentionUnreadIds.filter((id) => !listed.hiddenIds.has(id));
 
   return (
     // スマホは上部の帯と下部ナビの実寸を引き、履歴だけをスクロールさせる。
@@ -224,7 +229,7 @@ export default async function ChatPage({
                   href: chatHref({ filter: { kind: 'unread' } }),
                   label: t('chat.rail.unread'),
                   active: filter.kind === 'unread',
-                  count: Object.entries({ ...tree.unreadCounts, ...(data.people?.unreadCounts ?? {}) })
+                  count: Object.entries({ ...listUnread, ...(data.people?.unreadCounts ?? {}) })
                     .filter(([id]) => !tree.mutedIds.includes(id))
                     .reduce((sum, [, count]) => sum + count, 0),
                 },
@@ -234,10 +239,10 @@ export default async function ChatPage({
               ]}
             >
             <ChatRail
-              groups={tree.groups}
+              groups={listed.groups}
               rooms={data.people?.rooms ?? []}
-              unreadCounts={{ ...tree.unreadCounts, ...(data.people?.unreadCounts ?? {}) }}
-              mentionUnreadIds={data.mentionUnreadIds}
+              unreadCounts={{ ...listUnread, ...(data.people?.unreadCounts ?? {}) }}
+              mentionUnreadIds={listMentions}
               filter={filter}
               showContacts={data.people !== null}
               showSaved={canPost}
@@ -256,13 +261,13 @@ export default async function ChatPage({
             }
           >
             <ChatThreadList
-              groups={tree.groups}
+              groups={listed.groups}
               truncated={tree.truncated}
               messageHits={tree.messageHits}
               saved={saved}
               templates={ownTemplates}
-              unreadCounts={tree.unreadCounts}
-              mentionUnreadIds={data.mentionUnreadIds}
+              unreadCounts={listUnread}
+              mentionUnreadIds={listMentions}
               pinnedIds={tree.pinnedIds}
               mutedIds={tree.mutedIds}
               people={data.people}

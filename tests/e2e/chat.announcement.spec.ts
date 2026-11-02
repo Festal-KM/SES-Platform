@@ -90,12 +90,13 @@ test.describe('S-031 チャット — アナウンス', () => {
     try {
       await page.goto(`/chat?thread=${first.threadId}`);
       await announce(page, first.threadId, first.partnerMessageId);
-      await page.getByTestId(`chat-thread-link-${second.threadId}`).click();
+      // ✅ 2026-10-30（F-038 改訂 16 ⑱）: 会社グループの部屋は一覧に出ないので、URL で切り替える。
+      await page.goto(`/chat?thread=${second.threadId}`);
       await expect(page.getByTestId('chat-conversation')).toHaveAttribute('data-thread-id', second.threadId);
       await expect(page.getByTestId(`chat-message-${second.partnerMessageId}`)).toBeVisible();
       await expect(page.getByTestId(`chat-announcement-${first.threadId}`)).toHaveCount(0);
       await expect(page.getByTestId(`chat-announcement-${second.threadId}`)).toHaveCount(0);
-      await page.getByTestId(`chat-thread-link-${first.threadId}`).click();
+      await page.goto(`/chat?thread=${first.threadId}`);
       await expect(page.getByTestId(`chat-announcement-${first.threadId}`)).toHaveAttribute('data-message-id', first.partnerMessageId);
       session.outbound.assertNone();
     } finally {
