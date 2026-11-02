@@ -100,13 +100,28 @@ describe('⑰ 会話の中の検索', () => {
         conversation: {
           ...base,
           searchQuery: '面談',
-          searchResult: { kind: 'done', items: [{ messageId: MESSAGE, sentAt: '2026-10-29T01:00:00.000Z', senderName: '佐藤', snippet: '…来週の面談の件…' }] },
+          searchResult: { kind: 'done', q: '面談', items: [{ messageId: MESSAGE, sentAt: '2026-10-29T01:00:00.000Z', senderName: '佐藤', snippet: '…来週の面談の件…' }] },
         },
       }),
     );
     expect(html).toContain(`data-testid="chat-search-hit-${MESSAGE}"`);
     expect(html).toContain('佐藤');
-    expect(html).toContain('…来週の面談の件…');
+    // ✅ 2026-11-01: 一致した語だけを印にする（前後はそのまま）。
+    expect(html).toMatch(/…来週の<mark [^>]*data-testid="chat-search-match"[^>]*>面談<\/mark>の件…/);
+    expect(html.match(/<mark /g)).toHaveLength(1);
+  });
+
+  it('入力中で語が変わっても、印は結果を取りに行ったときの語で付ける', () => {
+    const html = renderToStaticMarkup(
+      createElement(ChatSearchPanel, {
+        conversation: {
+          ...base,
+          searchQuery: '面談の日',
+          searchResult: { kind: 'done', q: '面談', items: [{ messageId: MESSAGE, sentAt: '2026-10-29T01:00:00.000Z', senderName: '佐藤', snippet: '…来週の面談の件…' }] },
+        },
+      }),
+    );
+    expect(html).toMatch(/<mark [^>]*>面談<\/mark>/);
     expect(html).not.toMatch(/\d+\s*件(?!まで)/);
   });
 
@@ -114,7 +129,7 @@ describe('⑰ 会話の中の検索', () => {
     const short = renderToStaticMarkup(createElement(ChatSearchPanel, { conversation: { ...base, searchQuery: '面', searchResult: { kind: 'idle' } } }));
     expect(short).toContain(messages.search.hint);
     const empty = renderToStaticMarkup(
-      createElement(ChatSearchPanel, { conversation: { ...base, searchQuery: '面談', searchResult: { kind: 'done', items: [] } } }),
+      createElement(ChatSearchPanel, { conversation: { ...base, searchQuery: '面談', searchResult: { kind: 'done', q: '面談', items: [] } } }),
     );
     expect(empty).toContain(messages.search.empty);
   });

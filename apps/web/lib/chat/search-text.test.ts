@@ -2,7 +2,7 @@
 // ✅ 2026-10-29（F-038 ⑰）: 会話の中の検索の本文の扱い（`lib/chat/search-text.ts`）。
 import { describe, expect, it } from 'vitest';
 import { buildQuotedBody } from './quote';
-import { CHAT_SEARCH_SNIPPET_MAX, chatOwnTextIncludes, chatSearchSnippet } from './search-text';
+import { CHAT_SEARCH_SNIPPET_MAX, chatOwnTextIncludes, chatSearchSnippet, splitChatSearchMatches } from './search-text';
 
 const QUOTED_ID = '01930000-0000-7000-8000-000000000121';
 
@@ -46,5 +46,37 @@ describe('chatSearchSnippet', () => {
 
   it('改行は空白に畳む', () => {
     expect(chatSearchSnippet('一行目\n二行目', '二行目')).toBe('一行目 二行目');
+  });
+});
+
+describe('splitChatSearchMatches', () => {
+  it('一致した部分だけを印にし、元の文字をそのまま残す', () => {
+    expect(splitChatSearchMatches('ご連絡ありがとうございます。また連絡します', '連絡')).toEqual([
+      { text: 'ご', match: false },
+      { text: '連絡', match: true },
+      { text: 'ありがとうございます。また', match: false },
+      { text: '連絡', match: true },
+      { text: 'します', match: false },
+    ]);
+  });
+
+  it('大文字小文字を区別せず、表記は本文のまま返す', () => {
+    expect(splitChatSearchMatches('Java と JAVA', 'java')).toEqual([
+      { text: 'Java', match: true },
+      { text: ' と ', match: false },
+      { text: 'JAVA', match: true },
+    ]);
+  });
+
+  it('正規表現の記号を語として扱う', () => {
+    expect(splitChatSearchMatches('C++ と C#', 'c++')).toEqual([
+      { text: 'C++', match: true },
+      { text: ' と C#', match: false },
+    ]);
+  });
+
+  it('空の語・当たらない語では分けない', () => {
+    expect(splitChatSearchMatches('本文', '  ')).toEqual([{ text: '本文', match: false }]);
+    expect(splitChatSearchMatches('本文', '案件')).toEqual([{ text: '本文', match: false }]);
   });
 });
