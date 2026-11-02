@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { t, type MessageKey } from "@ses/i18n";
 import {
   Button,
-  Card,
   Checkbox,
   Field,
   Icon,
@@ -23,7 +22,8 @@ import {
   Textarea,
   cn,
 } from "@ses/ui";
-import { Dialog, Tooltip } from "@ses/ui/client";
+import { Dialog, Tabs, Tooltip } from "@ses/ui/client";
+import type { IconName } from "@ses/ui";
 import {
   PROJECT_CARD_FIELDS,
   projectCardPatch,
@@ -35,6 +35,9 @@ import {
 import type { ProjectCardData } from "../../../../lib/projects/card-data";
 
 type Option = { value: string; label: string };
+// ✅ 2026-11-02（人間の指示「4タブ＋上部共通サマリー＋1カラム＋セクション単位編集」）。
+const PROJECT_DETAIL_TABS = ["overview", "requirements", "working", "related"] as const;
+type ProjectDetailTab = (typeof PROJECT_DETAIL_TABS)[number];
 export type ProjectCardOptions = Record<string, readonly Option[]>;
 const label = (key: string) => t(`projects.cards.field.${key}` as MessageKey);
 const title = (card: string) => t(`projects.cards.title.${card}` as MessageKey);
@@ -54,7 +57,7 @@ const multiline = new Set([
   "remarks",
   "copySummary",
 ]);
-const pairedFields = new Set(['category', 'sourceKind', 'startDate', 'endDate', 'headcount', 'parallelOk', 'unitPrice', 'internalUnitPrice', 'settlementMinHours', 'settlementMaxHours', 'paymentSiteDays', 'distribution', 'distributionLimit']);
+// ✅ 2026-11-02: 1 カラム。どの項目も「項目名 1 : 値 4」の同じ列幅でそろえる（以前の 2 項目横並びはやめた）。
 const utilizationOptions = [
   {value:'',label:t('projects.search.all')},
   ...(['FULL','HALF_TO_FULL','UNDER_HALF'] as const).map(value=>({value,label:t(`projects.search.band.${value}`)})),
@@ -63,7 +66,7 @@ const required = new Set(["name", "status", "sourceKind", "headcount"]);
 // 🔴 公開先の取引先が読む欄（保存で再検査の対象。`projects.recheckNotice.willRun` と同じ集合）。
 const publicFields = new Set(["name", "publicSummary", "locationDetail", "publicMemo"]);
 // 公開欄を含むカード（要件の自由記述は content カード）。
-const publicCards = new Set<ProjectCardId>(["basic", "content", "working", "notes"]);
+const publicCards = new Set<ProjectCardId>(["basic", "summary", "content", "working", "notes"]);
 // 🔴 取引先に出ない項目を持つカード（F-013 AC-2 の注記を常に添える）。
 const hostOnlyCards = new Set<ProjectCardId>(["commercial", "company", "notes"]);
 
@@ -72,7 +75,19 @@ export function ProjectCardEditor({
   options,
   canEdit,
   publishedToCount = 0,
+  visibility,
+  proposals,
+  canViewAuditLogs = false,
+  initialTab = "overview",
 }: {
+  /** 最初に開くタブ（既定は概要）。 */
+  readonly initialTab?: ProjectDetailTab;
+  /** 概要タブの「公開状況」に置く既存の公開範囲セクション（サーバ側で組んだもの）。 */
+  readonly visibility?: ReactNode;
+  /** 関連・履歴タブに置く既存の提案セクション。 */
+  readonly proposals?: ReactNode;
+  /** 監査ログ（S-041）へ案内してよいロールか（OWNER / ADMIN）。 */
+  readonly canViewAuditLogs?: boolean;
   readonly initial: ProjectCardData;
   readonly options: ProjectCardOptions;
   readonly canEdit: boolean;
@@ -89,6 +104,9 @@ export function ProjectCardEditor({
   );
   const [rateBand, setRateBand] = useState(projectUtilizationBand(String(initial.values.utilizationRate ?? '')));
   const [nextCard, setNextCard] = useState<ProjectCardId | null>(null);
+  // ✅ 2026-11-02: 4 タブ。未保存の変更があるときの切り替えは確認ダイアログを挟む。
+  const [tab, setTab] = useState<ProjectDetailTab>(initialTab);
+  const [nextTab, setNextTab] = useState<ProjectDetailTab | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
@@ -516,12 +534,12 @@ export function ProjectCardEditor({
   function card(id: ProjectCardId) {
     const editing = active === id;
     return (
-      <Card
+      <section
         id={`project-detail-card-${id}`}
         className={cn(
-          "min-w-0 overflow-hidden",
-          editing ? "border-brand" : undefined,
-          id === "notes" ? "xl:col-span-5" : id === "company" ? "xl:col-span-3" : undefined,
+          // ✅ 2026-11-02: カードではなく、タブ内の 1 枚の白い面を区切り線で分けたセクション。編集中だけ淡いブルー。
+          "min-w-0 border-b border-border last:border-b-0",
+          editing ? "bg-brand-bg" : undefined,
         )}
         data-testid={`project-detail-card-${id}`}
         data-editing={editing ? "true" : "false"}
@@ -542,7 +560,7 @@ export function ProjectCardEditor({
             void save(id);
           }}
         >
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 pb-2 pt-4">
             <h2 className="m-0 text-lg font-semibold">{title(id)}</h2>
             <div className="flex items-center gap-1">
               {canEdit ? (
@@ -605,9 +623,9 @@ export function ProjectCardEditor({
               </section>
             ) : null}
             <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">{PROJECT_CARD_FIELDS[id].filter(key=>key!=="settlementMaxHours").map((key) =>
-              <div key={key} className={pairedFields.has(key) ? "min-w-0" : "min-w-0 sm:col-span-2"}>{editing ? (
+              <div key={key} className="min-w-0 sm:col-span-2">{editing ? (
                 <Field key={key} as="div">
-                  <div className={cn("grid min-w-0 grid-cols-1 items-start gap-2", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:grid-cols-3" : "sm:grid-cols-5")}>
+                  <div className={cn("grid min-w-0 grid-cols-1 items-start gap-2", "sm:grid-cols-5")}>
                     <span className="pt-2 text-xs text-fg-muted">
                       {label(key === "settlementMinHours" ? "settlementHours" : key)}
                       {required.has(key) ? (
@@ -616,17 +634,17 @@ export function ProjectCardEditor({
                         </span>
                       ) : null}
                     </span>
-                    <div className={cn("min-w-0", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:col-span-2" : "sm:col-span-4")}>{key === "settlementMinHours" ? <div className="flex min-w-0 items-center gap-2">{control(key)}<span>{t('projects.cards.rangeSeparator')}</span>{control('settlementMaxHours')}<span className="shrink-0 text-xs">{t('projects.cards.hours')}</span></div> : control(key)}{publicFields.has(key) ? <p className="m-0 mt-1 text-xs text-brand" data-testid={`project-card-public-field-${key}`}>{t("projects.publicField.notice")}</p> : null}{key === "unitPrice" ? <p className="m-0 mt-1 text-xs text-brand" data-testid="project-card-unit-price-shared">{t("projects.cards.unitPriceShared")}</p> : null}</div>
+                    <div className={cn("min-w-0", "sm:col-span-4")}>{key === "settlementMinHours" ? <div className="flex min-w-0 items-center gap-2">{control(key)}<span>{t('projects.cards.rangeSeparator')}</span>{control('settlementMaxHours')}<span className="shrink-0 text-xs">{t('projects.cards.hours')}</span></div> : control(key)}{publicFields.has(key) ? <p className="m-0 mt-1 text-xs text-brand" data-testid={`project-card-public-field-${key}`}>{t("projects.publicField.notice")}</p> : null}{key === "unitPrice" ? <p className="m-0 mt-1 text-xs text-brand" data-testid="project-card-unit-price-shared">{t("projects.cards.unitPriceShared")}</p> : null}</div>
                   </div>
                 </Field>
               ) : (
                 <div
                   key={key}
-                  className={cn("grid min-w-0 grid-cols-1 gap-2 text-body", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:grid-cols-3" : "sm:grid-cols-5")}
+                  className={cn("grid min-w-0 grid-cols-1 gap-2 text-body", "sm:grid-cols-5")}
                 >
                   <span className="text-xs text-fg-muted">{label(key === "settlementMinHours" ? "settlementHours" : key)}</span>
                   <span
-                    className={cn("min-w-0 whitespace-pre-wrap break-words", id === "content" || id === "company" ? undefined : pairedFields.has(key) ? "sm:col-span-2" : "sm:col-span-4", key === "copySummary" ? "max-h-48 overflow-y-auto" : undefined)}
+                    className={cn("min-w-0 whitespace-pre-wrap break-words", "sm:col-span-4", key === "copySummary" ? "max-h-48 overflow-y-auto" : undefined)}
                     data-testid={
                       key === "publicSummary"
                         ? "project-detail-public-summary"
@@ -675,8 +693,137 @@ export function ProjectCardEditor({
             ) : null}
           </div>
         </form>
-      </Card>
+      </section>
     );
+  }
+  // 🔴 読むだけのセクション（管理情報・関連情報など）も、編集できるセクションと同じ見出しの形にそろえる。
+  function staticSection(id: "publish" | "related" | "management" | "history", children: ReactNode) {
+    return (
+      <section
+        className="min-w-0 border-b border-border last:border-b-0"
+        data-testid={
+          id === "publish"
+            ? "project-detail-section-publish"
+            : id === "related"
+              ? "project-detail-card-related"
+              : id === "management"
+                ? "project-detail-card-management"
+                : "project-detail-section-history"
+        }
+      >
+        <div className="px-4 pb-2 pt-4">
+          <h2 className="m-0 text-lg font-semibold">{title(id)}</h2>
+        </div>
+        <div className="px-4 pb-4">{children}</div>
+      </section>
+    );
+  }
+  function definitionRows(rows: readonly (readonly [string, string])[]) {
+    return (
+      <dl className="m-0 flex flex-col divide-y divide-border text-body">
+        {rows.map(([key, value]) => (
+          <div key={key} className="grid min-w-0 grid-cols-1 gap-1 py-2 sm:grid-cols-5">
+            <dt className="text-xs text-fg-muted">{label(key)}</dt>
+            <dd className="m-0 min-w-0 break-words sm:col-span-4">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    );
+  }
+  // ✅ 2026-11-02: どのタブでも見える主要条件。保存後のクライアントの値（data）から描くので、保存すると即座に変わる。
+  const none = t("projects.detail.valueNone");
+  const summaryItems: readonly { key: string; icon: IconName; value: string }[] = [
+    { key: "unitPrice", icon: "yen", value: display("unitPrice") },
+    { key: "internalUnitPrice", icon: "yen", value: display("internalUnitPrice") },
+    { key: "remoteMode", icon: "briefcase", value: display("remoteMode") },
+    {
+      key: "location",
+      icon: "map-pin",
+      value:
+        [display("prefecture"), String(data.values.locationDetail ?? "")]
+          .filter((part) => part && part !== none)
+          .join(" ") || none,
+    },
+    { key: "startDate", icon: "calendar-clock", value: display("startDate") },
+    { key: "endDate", icon: "calendar-clock", value: display("endDate") },
+    { key: "headcount", icon: "users", value: display("headcount") },
+  ];
+  const panel = (children: ReactNode) => (
+    <div className="min-w-0 overflow-hidden rounded-md border border-border bg-bg">{children}</div>
+  );
+  const sections: Record<ProjectDetailTab, ReactNode> = {
+    overview: panel(
+      <>
+        {card("basic")}
+        {card("summary")}
+        {card("company")}
+        {staticSection("publish", visibility ?? null)}
+      </>,
+    ),
+    requirements: panel(
+      <>
+        {card("content")}
+        {card("development")}
+      </>,
+    ),
+    working: panel(
+      <>
+        {card("working")}
+        {card("commercial")}
+      </>,
+    ),
+    related: panel(
+      <>
+        {staticSection(
+          "related",
+          <div className="flex flex-col gap-3 text-body">
+            <div className="flex flex-wrap gap-4">
+              <Button variant="ghost" size="sm" onClick={() => requestTab("overview")} data-testid="project-detail-related-visibility">
+                {t("projects.cards.visibility")}
+              </Button>
+              <a href={`/projects/${data.id}/candidates`}>{t("projects.detail.candidates.open")}</a>
+            </div>
+            {proposals ?? null}
+          </div>,
+        )}
+        {card("notes")}
+        {staticSection(
+          "management",
+          definitionRows([
+            ["id", data.id],
+            ["createdAt", data.createdAt],
+            ["updatedAt", data.updatedAt],
+            ["origin", data.origin],
+          ]),
+        )}
+        {staticSection(
+          "history",
+          <div className="flex flex-col gap-2">
+            {definitionRows([
+              ["createdAt", data.createdAt],
+              ["updatedAt", data.updatedAt],
+            ])}
+            <p className="m-0 text-xs text-fg-muted">
+              {canViewAuditLogs ? (
+                <a href="/settings/audit-logs">{t("projects.cards.history.note")}</a>
+              ) : (
+                t("projects.cards.history.note")
+              )}
+            </p>
+          </div>,
+        )}
+      </>,
+    ),
+  };
+  function requestTab(value: string): void {
+    const target = PROJECT_DETAIL_TABS.find((item) => item === value);
+    if (!target || target === tab) return;
+    if (active && dirty) {
+      setNextTab(target);
+      return;
+    }
+    setActive(null);
+    setTab(target);
   }
   return (
     <div className="flex flex-col gap-4" data-testid="project-card-editor">
@@ -685,54 +832,67 @@ export function ProjectCardEditor({
           {notice}
         </p>
       ) : null}
-      <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="flex min-w-0 flex-col gap-4">
-          {card("basic")}
-          {card("content")}
-        </div>
-        <div className="flex min-w-0 flex-col gap-4">
-          {card("development")}
-          {card("working")}
-          {card("commercial")}
-        </div>
-      </div>
-      <div className="grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-2 xl:grid-cols-12">
-        {card("notes")}
-        {card("company")}
-        <Card
-          className="min-w-0 p-4 xl:col-span-2"
-          data-testid="project-detail-card-management"
-        >
-          <h2 className="mb-3 text-lg font-semibold">{title("management")}</h2>
-          <dl className="flex flex-col gap-3 text-xs">
-            {[
-              ["id", data.id],
-              ["createdAt", data.createdAt],
-              ["updatedAt", data.updatedAt],
-              ["origin", data.origin],
-            ].map(([key, value]) => (
-              <div key={key} className="flex min-w-0 items-start gap-2">
-                <dt className="shrink-0 whitespace-nowrap text-fg-muted">{label(key!)}</dt>
-                <dd className="m-0 min-w-0 flex-1 break-words text-right">{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </Card>
-        <Card className="min-w-0 p-4 xl:col-span-2" data-testid="project-detail-card-related">
-          <h2 className="mb-3 text-lg font-semibold">{title("related")}</h2>
-          <div className="flex flex-col gap-3 text-body">
-            <a href="#project-detail-visibility">
-              {t("projects.cards.visibility")}
-            </a>
-            <a href="#project-detail-proposals">
-              {t("projects.cards.proposals")}
-            </a>
-            <a href={`/projects/${data.id}/candidates`}>
-              {t("projects.detail.candidates.open")}
-            </a>
+      <dl
+        className="m-0 grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 rounded-md border border-border bg-bg px-4 py-3 sm:grid-cols-4 xl:grid-cols-7"
+        aria-label={t("projects.cards.summary.label")}
+        data-testid="project-detail-summary-strip"
+      >
+        {summaryItems.map((item) => (
+          <div key={item.key} className="flex min-w-0 items-start gap-2">
+            <Icon name={item.icon} size="sm" className="mt-1 shrink-0 text-brand" />
+            <div className="min-w-0">
+              <dt className="text-xs text-fg-muted">
+                {item.key === "location" ? t("projects.cards.summary.location") : label(item.key)}
+              </dt>
+              <dd
+                className="m-0 truncate font-semibold tabular-nums text-fg"
+                title={item.value}
+                data-testid={`project-detail-summary-${item.key}`}
+              >
+                {item.value}
+              </dd>
+            </div>
           </div>
-        </Card>
-      </div>
+        ))}
+      </dl>
+      <Tabs
+        label={t("projects.cards.tab.label")}
+        value={tab}
+        onValueChange={requestTab}
+        data-testid="project-detail-tabs"
+        items={[
+          { value: "overview", label: t("projects.cards.tab.overview"), content: sections.overview, testId: "project-detail-tab-overview" },
+          { value: "requirements", label: t("projects.cards.tab.requirements"), content: sections.requirements, testId: "project-detail-tab-requirements" },
+          { value: "working", label: t("projects.cards.tab.working"), content: sections.working, testId: "project-detail-tab-working" },
+          { value: "related", label: t("projects.cards.tab.related"), content: sections.related, testId: "project-detail-tab-related" },
+        ]}
+      />
+      <Dialog
+        open={nextTab !== null}
+        onOpenChange={(open) => {
+          if (!open) setNextTab(null);
+        }}
+        title={t("projects.cards.discardTitle")}
+        body={t("projects.cards.tabDiscardBody")}
+        cancelLabel={t("projects.cards.continue")}
+        data-testid="project-card-tab-discard-dialog"
+        confirm={
+          <Button
+            variant="primary"
+            onClick={() => {
+              if (nextTab) {
+                setActive(null);
+                setError("");
+                setTab(nextTab);
+              }
+              setNextTab(null);
+            }}
+            data-testid="project-card-tab-discard-confirm"
+          >
+            {t("projects.cards.discard")}
+          </Button>
+        }
+      />
       <Dialog
         open={nextCard !== null}
         onOpenChange={(open) => {
@@ -775,7 +935,7 @@ export function ProjectCardEditTrigger({
       onClick={() =>
         window.dispatchEvent(
           new CustomEvent("project-card-edit", {
-            detail: { id, card: field === "name" ? "basic" : "content" },
+            detail: { id, card: field === "name" ? "basic" : field === "publicSummary" ? "summary" : "content" },
           }),
         )
       }

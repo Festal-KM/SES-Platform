@@ -1,5 +1,9 @@
 # HANDOFF.md — 作業の引き継ぎ
 
+## 2026-11-02 ✅ 案件詳細を 4 タブ＋共通サマリー＋1 カラムにした（docs/04 改訂 49）
+
+ホストの案件詳細（`project-card-editor.tsx`）。カードをセクションに変え、4 タブ（概要 / 要件・技術 / 稼働・契約 / 関連・履歴）に振り分けた。業務概要を要件から分けるため `PROJECT_CARD_FIELDS` に `summary`（`publicSummary`）を足し、`content` は要件だけを持つ。公開範囲・提案のセクションは `project-detail-screen.tsx` が `cloneElement` で editor に渡す（`flat` で枠なし）。🔴 Radix のタブは非表示のタブの中身を DOM に置かないので、render テストは `initialTab` を指定し、E2E は先にタブを押す。⚠️ 変更履歴は作成・更新日時と監査ログへの案内だけ（案件別の監査ログ読み出しは未実装＝境界の判断が要る）。
+
 ## 2026-11-01 ✅ 開発環境の反映中に画面を止めない
 
 人間の指摘「反映中ずっと 502」。web・worker を `/workspaces/ses-platform-live`（画面用のコピー）から動かし、反映は `/workspaces/ses-platform` でビルドし終えてから差分を `rsync` して再起動する形にした（`infra/aws/development.compose.yml` / `scripts/aws-bootstrap-development.sh`）。手動の直接反映（`aws-sync-development.mjs`）と main からの自動反映の両方に効く。実測: 初回（コピー作成）で停止約 64 秒、以前は 5〜10 分。🔴 `next.config.ts` の `distDir` を環境変数で切り替える案は、`process.env` 直読みを `NODE_ENV` 1 つに限る規律（`build-node-env-guard.test.ts`）に反するので採らなかった。⚠️ Windows の Git Bash から `aws-sync-development.mjs` を実行すると GNU tar が `C:` をホスト名と誤解して失敗する —— PowerShell で `$env:PATH = "C:\Windows\System32;" + $env:PATH` としてから実行する。

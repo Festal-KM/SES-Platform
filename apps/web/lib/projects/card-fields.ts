@@ -1,7 +1,9 @@
 // カードが所有する項目だけを差分更新する。金額はAPIと同じ円、稼働率は整数％。
 export const PROJECT_CARD_FIELDS = {
   basic: ["name", "status", "category", "sourceKind"],
-  content: ["publicSummary"],
+  // ✅ 2026-11-02: 業務概要（概要タブ）と要件（要件・技術タブ）を別のセクションに分けた。content は要件だけを持つ。
+  summary: ["publicSummary"],
+  content: [],
   development: ["developmentPhases", "developmentMethod", "utilizationRate"],
   working: [
     "remoteMode",
