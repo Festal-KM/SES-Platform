@@ -1,5 +1,9 @@
 # HANDOFF.md — 作業の引き継ぎ
 
+## 2026-11-01 ✅ 開発環境の反映中に画面を止めない
+
+人間の指摘「反映中ずっと 502」。web・worker を `/workspaces/ses-platform-live`（画面用のコピー）から動かし、反映は `/workspaces/ses-platform` でビルドし終えてから差分を `rsync` して再起動する形にした（`infra/aws/development.compose.yml` / `scripts/aws-bootstrap-development.sh`）。手動の直接反映（`aws-sync-development.mjs`）と main からの自動反映の両方に効く。実測: 初回（コピー作成）で停止約 64 秒、以前は 5〜10 分。🔴 `next.config.ts` の `distDir` を環境変数で切り替える案は、`process.env` 直読みを `NODE_ENV` 1 つに限る規律（`build-node-env-guard.test.ts`）に反するので採らなかった。⚠️ Windows の Git Bash から `aws-sync-development.mjs` を実行すると GNU tar が `C:` をホスト名と誤解して失敗する —— PowerShell で `$env:PATH = "C:\Windows\System32;" + $env:PATH` としてから実行する。
+
 ## 2026-10-30 ⏳ チャット: 会社グループを一覧から外す・連絡先と新しいグループを 2 つのタブに（ブランチ `chat/contacts-tabs`。まだ PR にしていない）
 
 紺野の決定（F-038 改訂 16 ⑱⑲⑳ / S-031 改訂 47）。DB・API は変えていない。#199（`chat/search-reorder-fast`）の上に積んでいる。⑱ 会社グループ（`COMPANY`）の部屋を一覧・左の列・お気に入りに出さない。🔴 隠すのは画面だけ（`page.tsx` で `lib/chat/thread-tree.ts` の `hideCompanyRooms`）—— `read.ts` は変えていない（分離テストの fixtures は会社グループの部屋を主な会話にしており、読み出しを変えると `chat-threads` / `chat-mentions` の分離テストの前提が崩れる）。鍵（`companyKeysOf`）は会社グループの ID のまま。隠した部屋の未読・`@` は数から外した。左の列の「取引先」は、押して何か並ぶ会社だけ。⑲⑳ 共通の `chat-people-picker.tsx`（`Tabs` を使う。`packages/ui` の `Tabs` にタブごとの `testId` を足した → `testid-inventory` の素通しの一覧に `tabs.tsx` を追加）。⚠️ seed:isolation の取引先の会話は会社グループだけなので、E2E は一覧の行を押す代わりに `?thread=` / `&pane=` で開くよう直した（`chat.spec` ④⑥ / `chat.layout` / `chat.mobile` ① / `chat.header.mobile` / `chat.announcement`）。新しい `chat.contacts.spec.ts`。どれも手元では回していない（CI で確認）。
