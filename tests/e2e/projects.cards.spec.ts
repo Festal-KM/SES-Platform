@@ -137,6 +137,11 @@ test("案件見出しから状態を保存し、編集欄と同期する", async
     const trigger = page.getByTestId("project-detail-status-trigger");
     await trigger.click();
     await expect(page.getByRole("menuitem", { name: "募集中" })).toHaveAttribute("aria-current", "true");
+    let patches = 0;
+    page.on("request", request => { if (request.method() === "PATCH" && request.url().endsWith(`/api/projects/${id}`)) patches += 1; });
+    await page.getByRole("menuitem", { name: "募集中" }).click();
+    expect(patches).toBe(0);
+    await trigger.click();
     await page.getByRole("menuitem", { name: "終了" }).click();
     await expect(trigger).toContainText("終了");
     await expect(page.getByTestId("project-card-value-status")).toHaveText("終了");
