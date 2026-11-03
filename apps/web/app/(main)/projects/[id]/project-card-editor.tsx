@@ -153,6 +153,7 @@ export function ProjectCardEditor({
     setNextCard(null);
   }
   function request(card: ProjectCardId): void {
+    if (session?.busy) { setNotice(t("projects.detail.status.pending")); return; }
     if (sending.current || refreshing) return;
     if (active && dirty) {
       setNextCard(card);

@@ -150,7 +150,7 @@ test("案件見出しから状態を保存し、編集欄と同期する", async
     await page.route(`**/api/projects/${id}`, route => route.request().method() === "PATCH" ? route.fulfill({ status: 500, body: "{}" }) : route.continue());
     await trigger.click();
     await page.getByRole("menuitem", { name: "募集中" }).click();
-    await expect(page.getByRole("alert")).toContainText("ステータスを変更できませんでした");
+    await expect(page.getByText("ステータスを変更できませんでした。もう一度お試しください。")).toBeVisible();
     await expect(trigger).toContainText("終了");
     await page.unroute(`**/api/projects/${id}`);
     session.outbound.assertNone();

@@ -30,6 +30,7 @@ export type Locale = (typeof LOCALES)[number];
 export const DEFAULT_LOCALE: Locale = 'ja';
 
 const ja = {
+  'projects.detail.status.pending': 'ステータスの更新が終わるまでお待ちください。',
   'projects.detail.status.change': 'ステータスを変更',
   'projects.detail.status.busy': '編集中のセクションを保存またはキャンセルしてから変更してください。',
   'projects.detail.status.failed': 'ステータスを変更できませんでした。もう一度お試しください。',
