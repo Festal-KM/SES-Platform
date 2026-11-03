@@ -33,6 +33,19 @@ describe("案件詳細カードの初期表示", () => {
     expect(html).toContain("project-detail-edit-link");
     expect(html).not.toContain("/edit");
   });
+  it("主要条件と補足条件を順に表示し、空の要件に表を出さない", () => {
+    const overview = renderToStaticMarkup(createElement(ProjectCardEditor, { initial, options: {}, canEdit: true }));
+    const keys = ["unitPrice", "location", "remoteMode", "startDate", "internalUnitPrice", "endDate", "headcount"];
+    const positions = keys.map(key => overview.indexOf(`data-testid="project-detail-summary-${key}"`));
+    expect(positions.every(position => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    expect(overview).toContain("未設定");
+    const requirements = renderToStaticMarkup(createElement(ProjectCardEditor, { initial, options: {}, canEdit: true, initialTab: "requirements" }));
+    expect(requirements).not.toContain("<table");
+    const related = renderToStaticMarkup(createElement(ProjectCardEditor, { initial, options: {}, canEdit: true, initialTab: "related" }));
+    expect(related).toContain("全文を表示");
+    expect(related).toContain('data-testid="project-detail-copy-summary-inline"');
+  });
   it("閲覧専用では編集操作を出さない", () => {
     const html = renderToStaticMarkup(
       createElement(ProjectCardEditor, {

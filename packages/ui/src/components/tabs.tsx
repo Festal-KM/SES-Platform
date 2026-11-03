@@ -96,6 +96,8 @@ export type TabsProps = {
    * 🔴 **渡さなければ帯の形は 1px も変わらない**（既存 6 画面に影響が無い）。
    */
   readonly headerRight?: ReactNode;
+  /** 案件詳細など、狭い幅で帯を横に送る場合。 */
+  readonly scrollable?: boolean;
   readonly className?: string;
   readonly 'data-testid'?: string;
 };
@@ -107,6 +109,7 @@ export function Tabs({
   defaultValue,
   label,
   headerRight,
+  scrollable = false,
   className,
   ...passThrough
 }: TabsProps) {
@@ -133,9 +136,9 @@ export function Tabs({
       {/* 🔴 `headerRight` が無いときは**帯そのものをそのまま返す**（器を 1 つ増やさない。
           器を常に入れると、`flex-wrap` で折り返していた既存の 4 タブの帯の挿るまいが変わる）。 */}
       {headerRight === undefined ? (
-        <TabsPrimitive.List className={TABS_LIST_CLASSES} aria-label={label}>
+        <TabsPrimitive.List className={cn(TABS_LIST_CLASSES, scrollable && "flex-nowrap overflow-x-auto")} aria-label={label}>
           {items.map((item) => (
-            <TabsPrimitive.Trigger key={item.value} value={item.value} className={TABS_TRIGGER_CLASSES} data-testid={item.testId}>
+            <TabsPrimitive.Trigger key={item.value} value={item.value} className={cn(TABS_TRIGGER_CLASSES, scrollable && "shrink-0")} data-testid={item.testId}>
               {item.icon === undefined ? null : <Icon name={item.icon} size="md" />}
               {item.label}
               {item.count === undefined ? null : <Badge variant="brand">{item.count}</Badge>}
@@ -146,7 +149,7 @@ export function Tabs({
         <div className={TABS_HEADER_ROW_CLASSES}>
           <TabsPrimitive.List className={cn(TABS_LIST_CLASSES, 'min-w-0 px-0')} aria-label={label}>
             {items.map((item) => (
-              <TabsPrimitive.Trigger key={item.value} value={item.value} className={TABS_TRIGGER_CLASSES} data-testid={item.testId}>
+              <TabsPrimitive.Trigger key={item.value} value={item.value} className={cn(TABS_TRIGGER_CLASSES, scrollable && "shrink-0")} data-testid={item.testId}>
                 {item.icon === undefined ? null : <Icon name={item.icon} size="md" />}
                 {item.label}
                 {item.count === undefined ? null : <Badge variant="brand">{item.count}</Badge>}
