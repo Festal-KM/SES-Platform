@@ -124,3 +124,30 @@ test("案件カードは一つずつ編集し、キャンセル・失敗・保�
     await session.close();
   }
 });
+
+test("案件見出しから状態を保存し、編集欄と同期する", async ({ browser }) => {
+  const session = await openTenantSession(browser, hostOwner(1));
+  const page = session.page;
+  try {
+    await page.goto("/projects");
+    const created = await apiRequest(page, "/api/projects", { method: "POST", body: { name: `状態変更検証-${randomUUID()}` } });
+    expect(created.status).toBe(201);
+    const { id } = JSON.parse(created.text) as { id: string };
+    await page.goto(`/projects/${id}`);
+    const trigger = page.getByTestId("project-detail-status-trigger");
+    await trigger.click();
+    await expect(page.getByRole("menuitem", { name: "募集中" })).toHaveAttribute("aria-current", "true");
+    await page.getByRole("menuitem", { name: "終了" }).click();
+    await expect(trigger).toContainText("終了");
+    await expect(page.getByTestId("project-card-value-status")).toHaveText("終了");
+    await page.reload();
+    await expect(trigger).toContainText("終了");
+    await page.route(`**/api/projects/${id}`, route => route.request().method() === "PATCH" ? route.fulfill({ status: 500, body: "{}" }) : route.continue());
+    await trigger.click();
+    await page.getByRole("menuitem", { name: "募集中" }).click();
+    await expect(page.getByRole("alert")).toContainText("ステータスを変更できませんでした");
+    await expect(trigger).toContainText("終了");
+    await page.unroute(`**/api/projects/${id}`);
+    session.outbound.assertNone();
+  } finally { await session.close(); }
+});

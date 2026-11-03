@@ -28,7 +28,6 @@ import type { ProjectPublicField, ProjectPublishStateView } from "@ses/domain";
 import {
   cn,
   Badge,
-  StatusBadge,
   PRIMARY_LINK_CLASSES,
   Card,
   NameCell,
@@ -52,6 +51,7 @@ import {
 import { formatDateTimeJst } from "../../../../lib/format/datetime";
 import type { ProjectDetailView } from "../../../../lib/projects/service";
 import { ProjectCardEditTrigger, ProjectDetailCopyAction } from "./project-card-editor";
+import { ProjectDetailStatus } from "./project-detail-status";
 
 export type ProjectDetailScreenMessages = {
   readonly sectionRequirements: string;
@@ -476,7 +476,7 @@ export function ProjectDetailScreen({
   readonly view: ProjectDetailView;
   readonly requirementKinds: RequirementKindOrder;
   readonly cards?: ReactNode;
-  readonly compactHeader?: {readonly categoryLabel:string;readonly sourceKindLabel:string;readonly category:string;readonly sourceKind:string;readonly updatedAt:string;readonly assignee:string|null;readonly copyText:string;readonly updatedLabel:string;readonly assigneeLabel:string;readonly candidatesLabel:string};
+  readonly compactHeader?: {readonly categoryLabel:string;readonly sourceKindLabel:string;readonly category:string;readonly sourceKind:string;readonly updatedAt:string;readonly assignee:string|null;readonly copyText:string;readonly updatedLabel:string;readonly assigneeLabel:string;readonly candidatesLabel:string; readonly statusOptions: readonly {value:string;label:string}[]};
   /**
    * 🔴 `VIEWER` と取引先には `S-012` への導線を出さない（docs/04 §S-011 権限差分）。
    *    ⚠️ これは UI の配慮であって拒否の本体ではない（本体は #26 のガードと `S-012` の
@@ -497,12 +497,12 @@ export function ProjectDetailScreen({
         >
           {view.name}
         </h1>
-        {compactHeader?<div className="flex flex-wrap items-center gap-2"><ProjectDetailCopyAction text={compactHeader.copyText}/><Link className={PRIMARY_LINK_CLASSES} href={`/projects/${view.id}/candidates`} data-testid="project-detail-candidates">{compactHeader.candidatesLabel}</Link></div>:null}
+        {compactHeader?<div className="flex flex-wrap items-center gap-2"><ProjectDetailCopyAction text={compactHeader.copyText} id={view.id}/><Link className={PRIMARY_LINK_CLASSES} href={`/projects/${view.id}/candidates`} data-testid="project-detail-candidates">{compactHeader.candidatesLabel}</Link></div>:null}
       </div>
 
       {/* 🔴 折りたたみの外（`CLAUDE.md` §13.3）。移動中の判断に要る 3 値。 */}
       {compactHeader ? <dl className="mb-4 flex flex-wrap items-center gap-3 text-xs text-fg-muted" data-testid="project-detail-headline">
-        <div><dt className="sr-only">{headline[0]?.label}</dt><dd className="m-0" data-testid="project-detail-headline-status"><StatusBadge entity="project" state={view.status} label={headline[0]?.value??''}/></dd></div>
+        <div><dt className="sr-only">{headline[0]?.label}</dt><dd className="m-0" data-testid="project-detail-headline-status"><ProjectDetailStatus status={view.status} label={headline[0]?.value??''} options={compactHeader.statusOptions} canEdit={canEdit && view.audience === "HOST"}/></dd></div>
         <div><dt className="sr-only">{compactHeader.categoryLabel}</dt><dd className="m-0"><Badge variant="outline">{compactHeader.category}</Badge></dd></div>
         <div><dt className="sr-only">{compactHeader.sourceKindLabel}</dt><dd className="m-0"><Badge variant="outline">{compactHeader.sourceKind}</Badge></dd></div>
         {/* ✅ 2026-11-02: 募集人数・開始時期などの主要条件は、タブの上の共通サマリー（ProjectCardEditor）に集約した。ここには出さない（重複させない）。 */}

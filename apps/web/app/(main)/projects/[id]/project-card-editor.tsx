@@ -22,7 +22,7 @@ import {
   Textarea,
   cn,
 } from "@ses/ui";
-import { Dialog, Tabs, Tooltip } from "@ses/ui/client";
+import { Dialog, Tabs, Tooltip, Toast } from "@ses/ui/client";
 import type { IconName } from "@ses/ui";
 import {
   PROJECT_CARD_FIELDS,
@@ -33,6 +33,8 @@ import {
   type ProjectCardValues,
 } from "../../../../lib/projects/card-fields";
 import type { ProjectCardData } from "../../../../lib/projects/card-data";
+import type { ProjectStatus } from "@ses/db";
+import { patchProject, useProjectDetailSession } from "./project-detail-session";
 
 type Option = { value: string; label: string };
 // ✅ 2026-11-02（人間の指示「4タブ＋上部共通サマリー＋1カラム＋セクション単位編集」）。
@@ -95,9 +97,14 @@ export function ProjectCardEditor({
   readonly publishedToCount?: number;
 }) {
   const router = useRouter();
+  const session = useProjectDetailSession();
+  const sessionStatus = session?.status;
+  const setEditing = session?.setEditing;
   const [refreshing, startRefresh] = useTransition();
   const [data, setData] = useState(initial);
   const [active, setActive] = useState<ProjectCardId | null>(null);
+  useEffect(() => { setEditing?.(active !== null); return () => setEditing?.(false); }, [active, setEditing]);
+  useEffect(() => { if (sessionStatus) setData(current => ({ ...current, values: { ...current.values, status: sessionStatus } })); }, [sessionStatus]);
   const [draft, setDraft] = useState<ProjectCardValues>(initial.values);
   const [requirements, setRequirements] = useState<readonly CardRequirement[]>(
     initial.requirements,
@@ -199,14 +206,8 @@ export function ProjectCardEditor({
     setSaving(true);
     setError("");
     try {
-      const response = await fetch(`/api/projects/${data.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      if (!response.ok) throw new Error(String(response.status));
-      // 🔴 保存の成否と再検査を 1 つの表示に混ぜない。応答の `recheck.queued` で出し分ける（F-014 AC-6）。
-      const saved = (await response.json().catch(() => null)) as { recheck?: { queued?: boolean } } | null;
+      const saved = await patchProject(data.id, patch);
+      if (card === "basic" && typeof patch.status === "string") session?.setStatus(patch.status as ProjectStatus);
       setData((current) => ({
         ...current,
         values: {
@@ -946,10 +947,20 @@ export function ProjectCardEditTrigger({
   );
 }
 
-export function ProjectDetailCopyAction({text}:{readonly text:string}) {
-  const [result,setResult]=useState<{text:string;state:'copying'|'copied'|'failed'}|null>(null);
-  const state=result?.text===text?result.state:'idle';
-  const busy=useRef(false);
-  async function copy(){if(busy.current)return;busy.current=true;setResult({text,state:'copying'});try{await navigator.clipboard.writeText(text);setResult({text,state:'copied'});}catch{setResult({text,state:'failed'});}finally{busy.current=false;}}
-  return <div className="flex items-center gap-2"><Tooltip content={t('projects.list.panel.copy.action')}><IconButton variant="secondary" size="sm" icon={<Icon name="copy"/>} aria-label={t('projects.list.panel.copy.action')} aria-busy={state==='copying'} onClick={()=>void copy()} data-testid="project-detail-copy-summary"/></Tooltip>{state==='copied'||state==='failed'?<span role={state==='failed'?'alert':'status'} className="text-xs text-fg-muted">{t(state==='copied'?'projects.list.panel.copy.copied':'projects.list.panel.copy.failed')}</span>:null}</div>;
+export function ProjectDetailCopyAction({ text, id }: { readonly text: string; readonly id: string }) {
+  const [result, setResult] = useState<"copied" | "failed" | null>(null);
+  const busy = useRef(false);
+  useEffect(() => { if (!result) return; const timer = window.setTimeout(() => setResult(null), 3000); return () => window.clearTimeout(timer); }, [result]);
+  async function copy() {
+    if (busy.current) return;
+    busy.current = true;
+    try { await navigator.clipboard.writeText(text); setResult("copied"); }
+    catch { setResult("failed"); }
+    finally { busy.current = false; }
+  }
+  return <>
+    <Tooltip content={t("projects.list.panel.copy.action")}><IconButton variant="secondary" size="sm" icon={<Icon name="copy"/>} aria-label={t("projects.list.panel.copy.action")} onClick={() => void copy()} data-testid="project-detail-copy-summary" /></Tooltip>
+    <Toast open={result === "copied"} kind="completed" kindLabel={t("projects.detail.copy.kind")} message={t("projects.detail.copy.done")} dismissLabel={t("projects.detail.copy.dismiss")} onDismiss={() => setResult(null)} subject={{ href: `/projects/${id}`, label: t("projects.detail.copy.subject") }} data-testid="project-detail-copy-toast" />
+    {result === "failed" ? <div role="alert" className="fixed bottom-4 right-4 z-50 border border-danger-border bg-surface p-4 text-body text-danger">{t("projects.list.panel.copy.failed")}</div> : null}
+  </>;
 }
