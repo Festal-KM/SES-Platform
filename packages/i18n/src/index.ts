@@ -30,6 +30,18 @@ export type Locale = (typeof LOCALES)[number];
 export const DEFAULT_LOCALE: Locale = 'ja';
 
 const ja = {
+  'projects.cards.related.unavailable': '件数は未対応',
+  'projects.cards.related.published': '公開先',
+  'projects.cards.related.publishRequests': '公開申請',
+  'projects.cards.requirement.unregistered': '未登録',
+  'projects.cards.related.proposals': '提案',
+  'projects.cards.related.requests': '提案依頼',
+  'projects.cards.related.contracts': '契約',
+  'projects.cards.related.assignments': '稼働情報',
+  'projects.cards.related.count': '件',
+  'projects.cards.visibility.unpublished': '未公開',
+  'projects.cards.visibility.unpublishedNote': '取引先には公開されていません。',
+  'projects.cards.copyId': '案件IDをコピー',
   'projects.cards.summary.show': '全文を表示',
   'projects.cards.summary.hide': '折りたたむ',
   'projects.cards.summary.unset': '未設定',
@@ -37,6 +49,7 @@ const ja = {
   'projects.cards.field.settlementHours': '精算時間',
   'projects.cards.rangeSeparator': '～',
   'projects.cards.rateRequired': '選択した範囲の具体的な稼働率を％で入力してください。',
+  'projects.cards.refreshing': '更新中です。完了後に編集できます。',
   'projects.cards.edit': '編集',
   'projects.cards.save': '保存',
   'projects.cards.saved': '保存しました。',

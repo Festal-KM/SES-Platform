@@ -78,7 +78,6 @@ export function ProjectCardEditor({
   canEdit,
   publishedToCount = 0,
   visibility,
-  proposals,
   canViewAuditLogs = false,
   initialTab = "overview",
 }: {
@@ -86,8 +85,6 @@ export function ProjectCardEditor({
   readonly initialTab?: ProjectDetailTab;
   /** 概要タブの「公開状況」に置く既存の公開範囲セクション（サーバ側で組んだもの）。 */
   readonly visibility?: ReactNode;
-  /** 関連・履歴タブに置く既存の提案セクション。 */
-  readonly proposals?: ReactNode;
   /** 監査ログ（S-041）へ案内してよいロールか（OWNER / ADMIN）。 */
   readonly canViewAuditLogs?: boolean;
   readonly initial: ProjectCardData;
@@ -149,7 +146,7 @@ export function ProjectCardEditor({
     setNextCard(null);
   }
   function request(card: ProjectCardId): void {
-    if (sending.current || refreshing) return;
+    if (sending.current || refreshing) { setNotice(t("projects.cards.refreshing")); return; }
     if (active && dirty) {
       setNextCard(card);
       return;
@@ -247,7 +244,8 @@ export function ProjectCardEditor({
           .join(" / ") || t("projects.detail.valueNone")
       );
     const text = typeof value === "string" ? value : "";
-    if (!text) return options[key]?.find(option => option.value === "")?.label ?? t("projects.detail.valueNone");
+    if (!text) return t("projects.detail.valueNone");
+    if (dates.has(key)) return text.replaceAll("-", "/");
     if (numeric.has(key))
       return `${Number(text).toLocaleString("ja-JP")}${t(key === "unitPrice" || key === "internalUnitPrice" ? "projects.cards.yenMonth" : key === "utilizationRate" ? "projects.cards.percent" : key === "headcount" ? "projects.headcount.unit" : key === "paymentSiteDays" ? "projects.cards.days" : "projects.cards.hours")}`;
     return options[key]?.find((option) => option.value === text)?.label ?? text;
@@ -528,7 +526,7 @@ export function ProjectCardEditor({
           </Button>
         ) : rows.length === 0 ? (
           <p className="m-0 text-cell text-fg-muted">
-            {t("projects.detail.valueNone")}
+            {t("projects.cards.requirement.unregistered")}
           </p>
         ) : null}
       </div>
@@ -569,54 +567,29 @@ export function ProjectCardEditor({
               {canEdit ? (
                 editing ? (
                   <>
-                    <Tooltip content={t("projects.search.cancel")}>
-                      <IconButton
-                        variant="ghost"
-                        size="sm"
-                        icon={<Icon name="x" />}
-                        aria-label={t("projects.search.cancel")}
-                        disabled={saving}
-                        onClick={() => {
-                          setActive(null);
-                          setError("");
-                        }}
-                        data-testid={`project-card-cancel-${id}`}
-                      />
-                    </Tooltip>
-                    <Tooltip content={t("projects.cards.save")}>
-                      <IconButton
-                        type="submit"
-                        variant="ghost"
-                        size="sm"
-                        icon={<Icon name="save" />}
-                        aria-label={t("projects.cards.save")}
-                        disabled={saving}
-                        aria-busy={saving}
-                        data-testid={`project-card-save-${id}`}
-                      />
-                    </Tooltip>
+                    <Button variant="secondary" size="sm" type="button" onClick={() => { if (!saving) { setActive(null); setError(""); } }} data-testid={`project-card-cancel-${id}`}>
+                      {t("projects.search.cancel")}
+                    </Button>
+                    <Button type="submit" variant="primary" size="sm" aria-busy={saving} data-testid={`project-card-save-${id}`}>
+                      {t("projects.cards.save")}
+                    </Button>
                   </>
                 ) : (
-                  <Tooltip content={t("projects.cards.edit")}>
-                    <IconButton
-                      variant="ghost"
-                      size="sm"
-                      icon={<Icon name="pencil" />}
-                      aria-label={t("projects.cards.edit")}
-                      disabled={saving || refreshing}
-                      onClick={() => request(id)}
-                      data-testid={
-                        id === "basic"
-                          ? "project-detail-edit-link"
-                          : `project-card-edit-${id}`
-                      }
-                    />
-                  </Tooltip>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    onClick={() => request(id)}
+                    data-testid={id === "basic" ? "project-detail-edit-link" : `project-card-edit-${id}`}
+                  >
+                    <Icon name="pencil" size="sm" />
+                    {t("projects.cards.edit")}
+                  </Button>
                 )
               ) : null}
             </div>
           </div>
-          <div className={cn("flex min-w-0 flex-col gap-3 px-4 pb-6 pt-3", id === "content" ? PROJECT_DETAIL_REQUIREMENTS_WIDTH_CLASS : PROJECT_DETAIL_CONTENT_WIDTH_CLASS)}>
+          <div className={cn("flex min-w-0 flex-col gap-3 px-4 pb-4 pt-2", id === "content" ? PROJECT_DETAIL_REQUIREMENTS_WIDTH_CLASS : PROJECT_DETAIL_CONTENT_WIDTH_CLASS)}>
             {/* 🔴 公開中の案件で公開欄を含むカードを編集しているあいだは常に出す（押した後ではない。S-012 改訂 14）。 */}
             {editing && publishedToCount > 0 && publicCards.has(id) ? (
               <section className="border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning" data-testid="project-card-recheck-notice">
@@ -643,7 +616,7 @@ export function ProjectCardEditor({
               ) : (
                 <div
                   key={key}
-                  className={cn("grid min-w-0 grid-cols-1 gap-1 text-body", id !== "notes" && "sm:grid-cols-[10rem_1fr]")}
+                  className={cn("grid min-w-0 grid-cols-1 gap-1 text-body", id !== "notes" && "border-b border-border-row py-1 sm:grid-cols-[10rem_1fr]")}
                 >
                   <span className="text-xs text-fg-muted">{label(key === "settlementMinHours" ? "settlementHours" : key)}</span>
                   <span
@@ -728,7 +701,7 @@ export function ProjectCardEditor({
         {rows.map(([key, value]) => (
           <div key={key} className="grid min-w-0 grid-cols-1 gap-1 sm:grid-cols-[10rem_1fr]">
             <dt className="text-xs text-fg-muted">{label(key)}</dt>
-            <dd className="m-0 min-w-0 break-words">{value}</dd>
+            <dd className="m-0 flex min-w-0 items-center gap-2"><span className={cn("min-w-0", key === "id" ? "truncate" : "break-words")} title={key === "id" ? value : undefined}>{value}</span>{key === "id" ? <ProjectIdCopy text={value} /> : null}</dd>
           </div>
         ))}
       </dl>
@@ -773,14 +746,18 @@ export function ProjectCardEditor({
       <>
         {staticSection(
           "related",
-          <div className="flex flex-col gap-3 text-body">
-            <div className="flex flex-wrap gap-4">
-              <Button variant="ghost" size="sm" onClick={() => requestTab("overview")} data-testid="project-detail-related-visibility">
-                {t("projects.cards.visibility")}
-              </Button>
-              <a href={`/projects/${data.id}/candidates`}>{t("projects.detail.candidates.open")}</a>
-            </div>
-            {proposals ?? null}
+          <div className="flex flex-col text-body">
+            <Button variant="ghost" size="sm" className="justify-between" onClick={() => requestTab("overview")} data-testid="project-detail-related-visibility">
+              <span>{t("projects.cards.visibility")}</span><span>{t("projects.cards.related.published")} {publishedToCount}{t("projects.cards.related.count")} / {t("projects.cards.related.publishRequests")} {data.relatedCounts.publishRequests}{t("projects.cards.related.count")} →</span>
+            </Button>
+            <a className="flex justify-between border-b border-border py-3 text-brand" href={`/proposals?projectId=${data.id}`} data-testid="project-detail-proposals-empty">
+              <span>{t("projects.cards.related.proposals")}</span><span>{data.relatedCounts.proposals}{t("projects.cards.related.count")} →</span>
+            </a>
+            <a className="flex justify-between border-b border-border py-3 text-brand" href="/proposal-requests" data-testid="project-detail-proposals-coming-soon">
+              <span>{t("projects.cards.related.requests")}</span><span>{data.relatedCounts.requests}{t("projects.cards.related.count")} →</span>
+            </a>
+            {(["contracts", "assignments"] as const).map(key => <div key={key} className="flex justify-between border-b border-border py-3"><span>{t(`projects.cards.related.${key}`)}</span><span>{t("projects.cards.related.unavailable")}</span></div>)}
+            <a className="py-3 text-brand" href={`/projects/${data.id}/candidates`}>{t("projects.detail.candidates.open")}</a>
           </div>,
         )}
         {card("notes")}
@@ -937,4 +914,10 @@ export function ProjectDetailCopyAction({text, inline = false}:{readonly text:st
   const busy=useRef(false);
   async function copy(){if(busy.current)return;busy.current=true;setResult({text,state:'copying'});try{await navigator.clipboard.writeText(text);setResult({text,state:'copied'});}catch{setResult({text,state:'failed'});}finally{busy.current=false;}}
   return <div className="flex items-center gap-2"><Tooltip content={t('projects.list.panel.copy.action')}><IconButton variant="secondary" size="sm" icon={<Icon name="copy"/>} aria-label={t('projects.list.panel.copy.action')} aria-busy={state==='copying'} onClick={()=>void copy()} data-testid={inline ? "project-detail-copy-summary-inline" : "project-detail-copy-summary"}/></Tooltip>{state==='copied'||state==='failed'?<span role={state==='failed'?'alert':'status'} className="text-xs text-fg-muted">{t(state==='copied'?'projects.list.panel.copy.copied':'projects.list.panel.copy.failed')}</span>:null}</div>;
+}
+
+function ProjectIdCopy({ text }: { readonly text: string }) {
+  const [result, setResult] = useState<"copied" | "failed" | null>(null);
+  async function copy() { try { await navigator.clipboard.writeText(text); setResult("copied"); } catch { setResult("failed"); } }
+  return <div className="flex items-center gap-2"><Tooltip content={t("projects.cards.copyId")}><IconButton variant="ghost" size="sm" icon={<Icon name="copy" />} aria-label={t("projects.cards.copyId")} onClick={() => void copy()} data-testid="project-detail-copy-id" /></Tooltip>{result ? <span role={result === "failed" ? "alert" : "status"} className="text-xs text-fg-muted">{t(result === "copied" ? "projects.list.panel.copy.copied" : "projects.list.panel.copy.failed")}</span> : null}</div>;
 }

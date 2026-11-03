@@ -6,6 +6,7 @@ import { ProjectCardEditor } from "./project-card-editor";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 const initial: ProjectCardData = {
   id: "own-project",
+  relatedCounts: { proposals: 0, requests: 0, publishRequests: 0 },
   values: { name: "架空案件", utilizationRate: "80", copySummary: "" },
   requirements: [],
   autoSummary: "自動サマリ",
@@ -45,6 +46,16 @@ describe("案件詳細カードの初期表示", () => {
     const related = renderToStaticMarkup(createElement(ProjectCardEditor, { initial, options: {}, canEdit: true, initialTab: "related" }));
     expect(related).toContain("全文を表示");
     expect(related).toContain('data-testid="project-detail-copy-summary-inline"');
+  });
+  it("関連情報に案件別の件数と導線を表示する", () => {
+    const data = { ...initial, relatedCounts: { proposals: 3, requests: 2, publishRequests: 1 } };
+    const html = renderToStaticMarkup(createElement(ProjectCardEditor, { initial: data, options: {}, canEdit: true, initialTab: "related", publishedToCount: 4 }));
+    expect(html).toContain('/proposals?projectId=own-project');
+    expect(html).toContain('3件');
+    expect(html).toContain('2件');
+    expect(html).toContain('4件');
+    expect(html).toContain('1件');
+    expect(html).toContain('data-testid="project-detail-copy-id"');
   });
   it("閲覧専用では編集操作を出さない", () => {
     const html = renderToStaticMarkup(
