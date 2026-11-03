@@ -961,6 +961,6 @@ export function ProjectDetailCopyAction({ text, id }: { readonly text: string; r
   return <>
     <Tooltip content={t("projects.list.panel.copy.action")}><IconButton variant="secondary" size="sm" icon={<Icon name="copy"/>} aria-label={t("projects.list.panel.copy.action")} onClick={() => void copy()} data-testid="project-detail-copy-summary" /></Tooltip>
     <Toast open={result === "copied"} kind="completed" kindLabel={t("projects.detail.copy.kind")} message={t("projects.detail.copy.done")} dismissLabel={t("projects.detail.copy.dismiss")} onDismiss={() => setResult(null)} subject={{ href: `/projects/${id}`, label: t("projects.detail.copy.subject") }} data-testid="project-detail-copy-toast" />
-    {result === "failed" ? <div role="alert" className="fixed bottom-4 right-4 z-50 border border-danger-border bg-surface p-4 text-body text-danger">{t("projects.list.panel.copy.failed")}</div> : null}
+    {result === "failed" ? <div role="alert" className="fixed bottom-4 right-4 z-50 border border-danger-border bg-danger-bg p-4 text-body text-danger">{t("projects.list.panel.copy.failed")}</div> : null}
   </>;
 }
