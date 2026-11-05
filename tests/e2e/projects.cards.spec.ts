@@ -125,6 +125,32 @@ test("案件カードは一つずつ編集し、キャンセル・失敗・保�
   }
 });
 
+test("案件サマリーは保存後も主要条件を表示し、狭い幅で収まる", async ({ browser }) => {
+  const session = await openTenantSession(browser, hostOwner(1));
+  const page = session.page;
+  try {
+    await page.goto("/projects");
+    const created = await apiRequest(page, "/api/projects", { method: "POST", body: { name: `サマリー検証-${randomUUID()}` } });
+    expect(created.status).toBe(201);
+    const { id } = JSON.parse(created.text) as { id: string };
+    await page.goto(`/projects/${id}`);
+    await expect(page.getByTestId("project-detail-summary-startDate")).toHaveText("未設定");
+    await page.getByTestId("project-detail-tab-working").click();
+    await page.getByTestId("project-card-edit-working").click();
+    await page.getByTestId("project-card-input-locationDetail").fill("神田駅（徒歩5分）");
+    await page.getByTestId("project-card-input-startDate").fill("2026-11-18");
+    await page.getByTestId("project-card-save-working").click();
+    await expect(page.getByTestId("project-detail-summary-location")).toHaveText("神田駅（徒歩5分）");
+    await expect(page.getByTestId("project-detail-summary-startDate")).toHaveText("2026/11/18");
+    await page.reload();
+    await expect(page.getByTestId("project-detail-summary-location")).toHaveText("神田駅（徒歩5分）");
+    await expect(page.getByTestId("project-detail-summary-startDate")).toHaveText("2026/11/18");
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expectNoHorizontalOverflow("案件サマリー", page);
+    session.outbound.assertNone();
+  } finally { await session.close(); }
+});
+
 test("案件見出しから状態を保存し、編集欄と同期する", async ({ browser }) => {
   const session = await openTenantSession(browser, hostOwner(1));
   const page = session.page;
