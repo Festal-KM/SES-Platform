@@ -711,14 +711,26 @@ export function ProjectCardEditor({
   }
   // ✅ 2026-11-02: どのタブでも見える主要条件。保存後のクライアントの値（data）から描くので、保存すると即座に変わる。
   const none = t("projects.detail.valueNone");
-  const summaryItems = [
-    { key: "unitPrice", value: display("unitPrice") },
-    { key: "location", value: [display("prefecture"), String(data.values.locationDetail ?? "")].filter((part) => part && part !== none).join(" ") || none },
-    { key: "remoteMode", value: display("remoteMode") },
-    { key: "startDate", value: display("startDate") },
-    { key: "internalUnitPrice", value: display("internalUnitPrice") },
-    { key: "endDate", value: display("endDate") },
-    { key: "headcount", value: display("headcount") },
+  // サマリーの未設定と日付表記だけを整え、編集欄と保存形式は変えない。
+  function summaryValue(key: string): string {
+    const value = data.values[key];
+    if (typeof value !== "string" || !value.trim()) return t("projects.cards.summary.unset");
+    return dates.has(key) ? display(key).replaceAll("-", "/") : display(key);
+  }
+  const location = ["prefecture", "locationDetail"]
+    .map(key => summaryValue(key))
+    .filter(value => value !== t("projects.cards.summary.unset") && value !== none)
+    .join(" ") || t("projects.cards.summary.unset");
+  const primarySummary = [
+    { key: "unitPrice", value: summaryValue("unitPrice") },
+    { key: "location", value: location },
+    { key: "remoteMode", value: summaryValue("remoteMode") },
+    { key: "startDate", value: summaryValue("startDate") },
+  ];
+  const secondarySummary = [
+    { key: "internalUnitPrice", value: summaryValue("internalUnitPrice") },
+    { key: "endDate", value: summaryValue("endDate") },
+    { key: "headcount", value: summaryValue("headcount") },
   ];
   const panel = (children: ReactNode) => (
     <div className="min-w-0 overflow-hidden rounded-md border border-border bg-bg">{children}</div>
@@ -823,13 +835,36 @@ export function ProjectCardEditor({
           {notice}
         </p>
       ) : null}
-      <div className="rounded-md border border-border bg-bg px-4 py-3" data-testid="project-detail-summary-strip" aria-label={t("projects.cards.summary.label")}>
-        {[summaryItems.slice(0, 4), summaryItems.slice(4)].map((group, index) => (
-          <dl key={index} className={cn("m-0 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2", index === 0 ? "lg:grid-cols-4" : "mt-3 border-t border-border pt-3 lg:grid-cols-4")}>
-            {group.map(item => <div key={item.key} className="min-w-0">
-              <dt className="text-xs text-fg-muted">{item.key === "location" ? t("projects.cards.summary.location") : label(item.key)}</dt>
-              <dd className={cn("m-0 break-words text-fg", index === 0 ? "text-lg font-semibold" : "text-cell font-medium")} data-testid={`project-detail-summary-${item.key}`}>{item.value === none ? t("projects.cards.summary.unset") : item.value}</dd>
-            </div>)}
+      <div
+        className="min-w-0 rounded-md border border-border bg-bg px-6 py-4"
+        role="group"
+        aria-label={t("projects.cards.summary.label")}
+        data-testid="project-detail-summary-strip"
+      >
+        {[primarySummary, secondarySummary].map((items, rowIndex) => (
+          <dl
+            key={rowIndex}
+            className={cn(
+              "m-0 grid min-w-0 grid-cols-2 gap-x-4 gap-y-3",
+              rowIndex === 0 ? "lg:grid-cols-4" : "mt-2 border-t border-border pt-2 lg:grid-cols-3",
+            )}
+          >
+            {items.map((item, index) => (
+              <div
+                key={item.key}
+                className={cn("min-w-0", index === 0 ? undefined : index === 2 ? "lg:border-l lg:border-border lg:pl-4" : "border-l border-border pl-4")}
+              >
+                <dt className="text-xs text-fg-muted">
+                  {item.key === "location" ? t("projects.cards.summary.location") : label(item.key)}
+                </dt>
+                <dd
+                  className={cn("m-0 mt-1 break-words tabular-nums text-fg", rowIndex === 0 ? "text-lg font-semibold" : "text-body font-medium")}
+                  data-testid={`project-detail-summary-${item.key}`}
+                >
+                  {item.value}
+                </dd>
+              </div>
+            ))}
           </dl>
         ))}
       </div>
