@@ -377,6 +377,8 @@ export { AUTH_CARD_WIDTH_CLASSES, QR_FIGURE_CLASSES } from './lib/fixed-width-cl
 // 🔴 **外枠の寸法の唯一の出所**（`docs/design-system.md` §4）。画面側はここから取るだけで、
 //    px を書き直さない（`tests/static/layout-tokens.test.ts`）。
 export {
+  PROJECT_DETAIL_CONTENT_WIDTH_CLASS,
+  PROJECT_DETAIL_REQUIREMENTS_WIDTH_CLASS,
   CHAT_BUBBLE_MAX_WIDTH_CLASS,
   CHAT_ATTACHMENT_IMAGE_CLASS,
   CHAT_ATTACHMENT_PDF_CLASS,

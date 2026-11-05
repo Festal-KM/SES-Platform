@@ -5,9 +5,13 @@ import { useRouter } from "next/navigation";
 import { t, type MessageKey } from "@ses/i18n";
 import {
   Button,
+  Badge,
+  PROJECT_DETAIL_CONTENT_WIDTH_CLASS,
+  PROJECT_DETAIL_REQUIREMENTS_WIDTH_CLASS,
   Checkbox,
   Field,
   Icon,
+  IconButton,
   Input,
   Radio,
   SegmentedControl,
@@ -21,8 +25,7 @@ import {
   Textarea,
   cn,
 } from "@ses/ui";
-import { TooltipIconButton, Dialog, Tabs } from "@ses/ui/client";
-import type { IconName } from "@ses/ui";
+import { Dialog, Tabs, Tooltip, TooltipIconButton } from "@ses/ui/client";
 import {
   PROJECT_CARD_FIELDS,
   projectCardPatch,
@@ -75,7 +78,6 @@ export function ProjectCardEditor({
   canEdit,
   publishedToCount = 0,
   visibility,
-  proposals,
   canViewAuditLogs = false,
   initialTab = "overview",
 }: {
@@ -83,8 +85,6 @@ export function ProjectCardEditor({
   readonly initialTab?: ProjectDetailTab;
   /** 概要タブの「公開状況」に置く既存の公開範囲セクション（サーバ側で組んだもの）。 */
   readonly visibility?: ReactNode;
-  /** 関連・履歴タブに置く既存の提案セクション。 */
-  readonly proposals?: ReactNode;
   /** 監査ログ（S-041）へ案内してよいロールか（OWNER / ADMIN）。 */
   readonly canViewAuditLogs?: boolean;
   readonly initial: ProjectCardData;
@@ -106,6 +106,7 @@ export function ProjectCardEditor({
   // ✅ 2026-11-02: 4 タブ。未保存の変更があるときの切り替えは確認ダイアログを挟む。
   const [tab, setTab] = useState<ProjectDetailTab>(initialTab);
   const [nextTab, setNextTab] = useState<ProjectDetailTab | null>(null);
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
@@ -145,7 +146,7 @@ export function ProjectCardEditor({
     setNextCard(null);
   }
   function request(card: ProjectCardId): void {
-    if (sending.current || refreshing) return;
+    if (sending.current || refreshing) { setNotice(t("projects.cards.refreshing")); return; }
     if (active && dirty) {
       setNextCard(card);
       return;
@@ -243,7 +244,8 @@ export function ProjectCardEditor({
           .join(" / ") || t("projects.detail.valueNone")
       );
     const text = typeof value === "string" ? value : "";
-    if (!text) return options[key]?.find(option => option.value === "")?.label ?? t("projects.detail.valueNone");
+    if (!text) return t("projects.detail.valueNone");
+    if (dates.has(key)) return text.replaceAll("-", "/");
     if (numeric.has(key))
       return `${Number(text).toLocaleString("ja-JP")}${t(key === "unitPrice" || key === "internalUnitPrice" ? "projects.cards.yenMonth" : key === "utilizationRate" ? "projects.cards.percent" : key === "headcount" ? "projects.headcount.unit" : key === "paymentSiteDays" ? "projects.cards.days" : "projects.cards.hours")}`;
     return options[key]?.find((option) => option.value === text)?.label ?? text;
@@ -383,11 +385,11 @@ export function ProjectCardEditor({
               : "projects.cards.preferred",
           )}
         </h3>
-        <Table className="table-fixed min-w-lg" overflowNote={t("projects.cards.requirementsOverflow")}>
+        {editing || rows.length > 0 ? <Table className="table-fixed min-w-lg" overflowNote={t("projects.cards.requirementsOverflow")}>
           <TableHeader>
             <TableRow>
               {["skill", "years", "freeText"].map((key) => (
-                <TableHead key={key} className={key === "skill" ? "w-1/4" : key === "years" ? "w-20" : undefined}>
+                <TableHead key={key} className={key === "skill" ? "w-1/4" : key === "years" ? "w-1/6" : undefined}>
                   {t(`projects.cards.requirement.${key}` as MessageKey)}
                 </TableHead>
               ))}
@@ -497,7 +499,7 @@ export function ProjectCardEditor({
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+        </Table> : null}
         {editing ? (
           <Button
             variant="secondary"
@@ -522,7 +524,7 @@ export function ProjectCardEditor({
           </Button>
         ) : rows.length === 0 ? (
           <p className="m-0 text-cell text-fg-muted">
-            {t("projects.detail.valueNone")}
+            {t("projects.cards.requirement.unregistered")}
           </p>
         ) : null}
       </div>
@@ -563,48 +565,29 @@ export function ProjectCardEditor({
               {canEdit ? (
                 editing ? (
                   <>
-                    <TooltipIconButton
-                      variant="ghost"
-                      size="sm"
-                      iconName="x"
-                      label={t("projects.search.cancel")}
-                      disabled={saving}
-                      onClick={() => {
-                        setActive(null);
-                        setError("");
-                      }}
-                      data-testid={`project-card-cancel-${id}`}
-                    />
-                    <TooltipIconButton
-                      type="submit"
-                      variant="ghost"
-                      size="sm"
-                      iconName="save"
-                      label={t("projects.cards.save")}
-                      disabled={saving}
-                      aria-busy={saving}
-                      data-testid={`project-card-save-${id}`}
-                    />
+                    <Button variant="secondary" size="sm" type="button" onClick={() => { if (!saving) { setActive(null); setError(""); } }} data-testid={`project-card-cancel-${id}`}>
+                      {t("projects.search.cancel")}
+                    </Button>
+                    <Button type="submit" variant="primary" size="sm" aria-busy={saving} data-testid={`project-card-save-${id}`}>
+                      {t("projects.cards.save")}
+                    </Button>
                   </>
                 ) : (
-                  <TooltipIconButton
+                  <Button
                     variant="ghost"
                     size="sm"
-                    iconName="pencil"
-                    label={t("projects.cards.edit")}
-                    disabled={saving || refreshing}
+                    type="button"
                     onClick={() => request(id)}
-                    data-testid={
-                      id === "basic"
-                        ? "project-detail-edit-link"
-                        : `project-card-edit-${id}`
-                    }
-                  />
+                    data-testid={id === "basic" ? "project-detail-edit-link" : `project-card-edit-${id}`}
+                  >
+                    <Icon name="pencil" size="sm" />
+                    {t("projects.cards.edit")}
+                  </Button>
                 )
               ) : null}
             </div>
           </div>
-          <div className="flex min-w-0 flex-col gap-3 p-4">
+          <div className={cn("flex min-w-0 flex-col gap-3 px-4 pb-4 pt-2", id === "content" ? PROJECT_DETAIL_REQUIREMENTS_WIDTH_CLASS : PROJECT_DETAIL_CONTENT_WIDTH_CLASS)}>
             {/* 🔴 公開中の案件で公開欄を含むカードを編集しているあいだは常に出す（押した後ではない。S-012 改訂 14）。 */}
             {editing && publishedToCount > 0 && publicCards.has(id) ? (
               <section className="border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning" data-testid="project-card-recheck-notice">
@@ -613,8 +596,8 @@ export function ProjectCardEditor({
                 <p className="m-0 mt-1">{t("projects.recheckNotice.willNotRun")}</p>
               </section>
             ) : null}
-            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">{PROJECT_CARD_FIELDS[id].filter(key=>key!=="settlementMaxHours").map((key) =>
-              <div key={key} className="min-w-0 sm:col-span-2">{editing ? (
+            <div className={cn("grid min-w-0 grid-cols-1 gap-x-6 gap-y-3", !editing && (id === "working" || id === "commercial" || id === "notes") && "md:grid-cols-2")}>{PROJECT_CARD_FIELDS[id].filter(key=>key!=="settlementMaxHours").map((key) =>
+              <div key={key} className={cn("min-w-0", !editing && id === "notes" && key === "copySummary" && "md:col-span-2")}>{editing ? (
                 <Field key={key} as="div">
                   <div className={cn("grid min-w-0 grid-cols-1 items-start gap-2", "sm:grid-cols-5")}>
                     <span className="pt-2 text-xs text-fg-muted">
@@ -631,19 +614,20 @@ export function ProjectCardEditor({
               ) : (
                 <div
                   key={key}
-                  className={cn("grid min-w-0 grid-cols-1 gap-2 text-body", "sm:grid-cols-5")}
+                  className={cn("grid min-w-0 grid-cols-1 gap-1 text-body", id !== "notes" && "border-b border-border-row py-1 sm:grid-cols-[10rem_1fr]")}
                 >
                   <span className="text-xs text-fg-muted">{label(key === "settlementMinHours" ? "settlementHours" : key)}</span>
                   <span
-                    className={cn("min-w-0 whitespace-pre-wrap break-words", "sm:col-span-4", key === "copySummary" ? "max-h-48 overflow-y-auto" : undefined)}
+                    className={cn("min-w-0 whitespace-pre-wrap break-words font-medium", key === "copySummary" && !summaryExpanded && "line-clamp-4")}
                     data-testid={
                       key === "publicSummary"
                         ? "project-detail-public-summary"
                         : key === "settlementMinHours" ? "project-card-value-settlementHours" : `project-card-value-${key}`
                     }
                   >
-                    {key === "settlementMinHours" ? (!data.values.settlementMinHours && !data.values.settlementMaxHours ? t('projects.detail.valueNone') : <><span data-testid="project-card-value-settlementMinHours">{data.values.settlementMinHours || t('projects.detail.valueNone')}</span>{t('projects.cards.rangeSeparator')}<span data-testid="project-card-value-settlementMaxHours">{data.values.settlementMaxHours || t('projects.detail.valueNone')}</span>{t('projects.cards.hours')}</>) : display(key)}
+                    {key === "settlementMinHours" ? (!data.values.settlementMinHours && !data.values.settlementMaxHours ? t('projects.detail.valueNone') : <><span data-testid="project-card-value-settlementMinHours">{data.values.settlementMinHours || t('projects.detail.valueNone')}</span>{t('projects.cards.rangeSeparator')}<span data-testid="project-card-value-settlementMaxHours">{data.values.settlementMaxHours || t('projects.detail.valueNone')}</span>{t('projects.cards.hours')}</>) : key === "developmentPhases" && Array.isArray(data.values[key]) && data.values[key].length ? <span className="flex flex-wrap gap-2">{(data.values[key] as readonly string[]).map(value => <Badge key={value}>{options[key]?.find(option => option.value === value)?.label ?? value}</Badge>)}</span> : display(key)}
                   </span>
+                  {key === 'copySummary' ? <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => setSummaryExpanded(!summaryExpanded)}>{t(summaryExpanded ? 'projects.cards.summary.hide' : 'projects.cards.summary.show')}</Button><ProjectDetailCopyAction text={display(key)} inline /></div> : null}
                 </div>
               )}</div>,
             )}</div>
@@ -705,17 +689,17 @@ export function ProjectCardEditor({
         <div className="px-4 pb-2 pt-4">
           <h2 className="m-0 text-lg font-semibold">{title(id)}</h2>
         </div>
-        <div className="px-4 pb-4">{children}</div>
+        <div className={cn("px-4 pb-6", PROJECT_DETAIL_CONTENT_WIDTH_CLASS)}>{children}</div>
       </section>
     );
   }
   function definitionRows(rows: readonly (readonly [string, string])[]) {
     return (
-      <dl className="m-0 flex flex-col divide-y divide-border text-body">
+      <dl className="m-0 grid gap-x-6 gap-y-3 text-body md:grid-cols-2">
         {rows.map(([key, value]) => (
-          <div key={key} className="grid min-w-0 grid-cols-1 gap-1 py-2 sm:grid-cols-5">
+          <div key={key} className="grid min-w-0 grid-cols-1 gap-1 sm:grid-cols-[10rem_1fr]">
             <dt className="text-xs text-fg-muted">{label(key)}</dt>
-            <dd className="m-0 min-w-0 break-words sm:col-span-4">{value}</dd>
+            <dd className="m-0 flex min-w-0 items-center gap-2"><span className={cn("min-w-0", key === "id" ? "truncate" : "break-words")} title={key === "id" ? value : undefined}>{value}</span>{key === "id" ? <ProjectIdCopy text={value} /> : null}</dd>
           </div>
         ))}
       </dl>
@@ -723,21 +707,14 @@ export function ProjectCardEditor({
   }
   // ✅ 2026-11-02: どのタブでも見える主要条件。保存後のクライアントの値（data）から描くので、保存すると即座に変わる。
   const none = t("projects.detail.valueNone");
-  const summaryItems: readonly { key: string; icon: IconName; value: string }[] = [
-    { key: "unitPrice", icon: "yen", value: display("unitPrice") },
-    { key: "internalUnitPrice", icon: "yen", value: display("internalUnitPrice") },
-    { key: "remoteMode", icon: "briefcase", value: display("remoteMode") },
-    {
-      key: "location",
-      icon: "map-pin",
-      value:
-        [display("prefecture"), String(data.values.locationDetail ?? "")]
-          .filter((part) => part && part !== none)
-          .join(" ") || none,
-    },
-    { key: "startDate", icon: "calendar-clock", value: display("startDate") },
-    { key: "endDate", icon: "calendar-clock", value: display("endDate") },
-    { key: "headcount", icon: "users", value: display("headcount") },
+  const summaryItems = [
+    { key: "unitPrice", value: display("unitPrice") },
+    { key: "location", value: [display("prefecture"), String(data.values.locationDetail ?? "")].filter((part) => part && part !== none).join(" ") || none },
+    { key: "remoteMode", value: display("remoteMode") },
+    { key: "startDate", value: display("startDate") },
+    { key: "internalUnitPrice", value: display("internalUnitPrice") },
+    { key: "endDate", value: display("endDate") },
+    { key: "headcount", value: display("headcount") },
   ];
   const panel = (children: ReactNode) => (
     <div className="min-w-0 overflow-hidden rounded-md border border-border bg-bg">{children}</div>
@@ -767,14 +744,18 @@ export function ProjectCardEditor({
       <>
         {staticSection(
           "related",
-          <div className="flex flex-col gap-3 text-body">
-            <div className="flex flex-wrap gap-4">
-              <Button variant="ghost" size="sm" onClick={() => requestTab("overview")} data-testid="project-detail-related-visibility">
-                {t("projects.cards.visibility")}
-              </Button>
-              <a href={`/projects/${data.id}/candidates`}>{t("projects.detail.candidates.open")}</a>
-            </div>
-            {proposals ?? null}
+          <div className="flex flex-col text-body">
+            <Button variant="ghost" size="sm" className="justify-between" onClick={() => requestTab("overview")} data-testid="project-detail-related-visibility">
+              <span>{t("projects.cards.visibility")}</span><span>{t("projects.cards.related.published")} {publishedToCount}{t("projects.cards.related.count")} / {t("projects.cards.related.publishRequests")} {data.relatedCounts.publishRequests}{t("projects.cards.related.count")} →</span>
+            </Button>
+            <a className="flex justify-between border-b border-border py-3 text-brand" href={`/proposals?projectId=${data.id}`} data-testid="project-detail-proposals-empty">
+              <span>{t("projects.cards.related.proposals")}</span><span>{data.relatedCounts.proposals}{t("projects.cards.related.count")} →</span>
+            </a>
+            <a className="flex justify-between border-b border-border py-3 text-brand" href="/proposal-requests" data-testid="project-detail-proposals-coming-soon">
+              <span>{t("projects.cards.related.requests")}</span><span>{data.relatedCounts.requests}{t("projects.cards.related.count")} →</span>
+            </a>
+            {(["contracts", "assignments"] as const).map(key => <div key={key} className="flex justify-between border-b border-border py-3"><span>{t(`projects.cards.related.${key}`)}</span><span>{t("projects.cards.related.unavailable")}</span></div>)}
+            <a className="py-3 text-brand" href={`/projects/${data.id}/candidates`}>{t("projects.detail.candidates.open")}</a>
           </div>,
         )}
         {card("notes")}
@@ -823,30 +804,18 @@ export function ProjectCardEditor({
           {notice}
         </p>
       ) : null}
-      <dl
-        className="m-0 grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 rounded-md border border-border bg-bg px-4 py-3 sm:grid-cols-4 xl:grid-cols-7"
-        aria-label={t("projects.cards.summary.label")}
-        data-testid="project-detail-summary-strip"
-      >
-        {summaryItems.map((item) => (
-          <div key={item.key} className="flex min-w-0 items-start gap-2">
-            <Icon name={item.icon} size="sm" className="mt-1 shrink-0 text-brand" />
-            <div className="min-w-0">
-              <dt className="text-xs text-fg-muted">
-                {item.key === "location" ? t("projects.cards.summary.location") : label(item.key)}
-              </dt>
-              <dd
-                className="m-0 truncate font-semibold tabular-nums text-fg"
-                title={item.value}
-                data-testid={`project-detail-summary-${item.key}`}
-              >
-                {item.value}
-              </dd>
-            </div>
-          </div>
+      <div className="rounded-md border border-border bg-bg px-4 py-3" data-testid="project-detail-summary-strip" aria-label={t("projects.cards.summary.label")}>
+        {[summaryItems.slice(0, 4), summaryItems.slice(4)].map((group, index) => (
+          <dl key={index} className={cn("m-0 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2", index === 0 ? "lg:grid-cols-4" : "mt-3 border-t border-border pt-3 lg:grid-cols-4")}>
+            {group.map(item => <div key={item.key} className="min-w-0">
+              <dt className="text-xs text-fg-muted">{item.key === "location" ? t("projects.cards.summary.location") : label(item.key)}</dt>
+              <dd className={cn("m-0 break-words text-fg", index === 0 ? "text-lg font-semibold" : "text-cell font-medium")} data-testid={`project-detail-summary-${item.key}`}>{item.value === none ? t("projects.cards.summary.unset") : item.value}</dd>
+            </div>)}
+          </dl>
         ))}
-      </dl>
+      </div>
       <Tabs
+        scrollable
         label={t("projects.cards.tab.label")}
         value={tab}
         onValueChange={requestTab}
@@ -937,10 +906,16 @@ export function ProjectCardEditTrigger({
   );
 }
 
-export function ProjectDetailCopyAction({text}:{readonly text:string}) {
+export function ProjectDetailCopyAction({text, inline = false}:{readonly text:string; readonly inline?: boolean}) {
   const [result,setResult]=useState<{text:string;state:'copying'|'copied'|'failed'}|null>(null);
   const state=result?.text===text?result.state:'idle';
   const busy=useRef(false);
   async function copy(){if(busy.current)return;busy.current=true;setResult({text,state:'copying'});try{await navigator.clipboard.writeText(text);setResult({text,state:'copied'});}catch{setResult({text,state:'failed'});}finally{busy.current=false;}}
-  return <div className="flex items-center gap-2"><TooltipIconButton iconName="copy" label={t('projects.list.panel.copy.action')} variant="secondary" aria-busy={state==='copying'} onClick={()=>void copy()} data-testid="project-detail-copy-summary"/>{state==='copied'||state==='failed'?<span role={state==='failed'?'alert':'status'} className="text-xs text-fg-muted">{t(state==='copied'?'projects.list.panel.copy.copied':'projects.list.panel.copy.failed')}</span>:null}</div>;
+  return <div className="flex items-center gap-2"><TooltipIconButton iconName="copy" label={t('projects.list.panel.copy.action')} variant="secondary" aria-busy={state==='copying'} onClick={()=>void copy()} data-testid={inline ? "project-detail-copy-summary-inline" : "project-detail-copy-summary"}/>{state==='copied'||state==='failed'?<span role={state==='failed'?'alert':'status'} className="text-xs text-fg-muted">{t(state==='copied'?'projects.list.panel.copy.copied':'projects.list.panel.copy.failed')}</span>:null}</div>;
+}
+
+function ProjectIdCopy({ text }: { readonly text: string }) {
+  const [result, setResult] = useState<"copied" | "failed" | null>(null);
+  async function copy() { try { await navigator.clipboard.writeText(text); setResult("copied"); } catch { setResult("failed"); } }
+  return <div className="flex items-center gap-2"><Tooltip content={t("projects.cards.copyId")}><IconButton variant="ghost" size="sm" icon={<Icon name="copy" />} aria-label={t("projects.cards.copyId")} onClick={() => void copy()} data-testid="project-detail-copy-id" /></Tooltip>{result ? <span role={result === "failed" ? "alert" : "status"} className="text-xs text-fg-muted">{t(result === "copied" ? "projects.list.panel.copy.copied" : "projects.list.panel.copy.failed")}</span> : null}</div>;
 }
