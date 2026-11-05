@@ -217,7 +217,7 @@ import { Dialog, Tabs, Tooltip } from '@ses/ui/client';           // 状態を�
 | **ホーム** | `PageGreeting` `KpiCard` `KpiCardRow` `SectionHeader` `RailCard` `Timeline` `RankedList` | 🔴 **`KpiCard` はホーム 2 画面のみ**（一覧画面に置くと CI が落ちる） |
 | **その他** | `Icon` `Avatar` `GlobalSearchBox` `EnvironmentBanner` | |
 
-印だけの補助操作は `@ses/ui/client` の `TooltipIconButton` を使う。ツールチップと読み上げ名は同じ `label` を渡す。操作対象、成功・失敗・通知の寿命は各画面の既存仕様と情報境界に従う。
+単独の印だけの補助操作は `@ses/ui/client` の `TooltipIconButton` を使う。別の重なり部品の引き金になる場合は、フォーカスと ref の連携を保てる既存の組み合わせを使う。ツールチップと読み上げ名は同じ `label` を渡す。操作対象、成功・失敗・通知の寿命は各画面の既存仕様と情報境界に従う。
 
 ### 6.2.0 複数選択リスト（2026-11-01・人間の指示）
 
