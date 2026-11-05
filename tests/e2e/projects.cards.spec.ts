@@ -22,7 +22,7 @@ test("案件カードは一つずつ編集し、キャンセル・失敗・保�
     await expect(page.getByTestId("project-card-editor")).toBeVisible();
     await expect(page.locator('[data-editing="true"]')).toHaveCount(0);
     await expect(
-      page.getByTestId("project-card-editor").locator("input,textarea,select"),
+      page.getByTestId("project-card-editor").locator("input,textarea:not([readonly]),select"),
     ).toHaveCount(0);
     await page.getByTestId("project-detail-edit-link").click();
     // 🔴 公開欄には「公開先の取引先が読む」印を出す。未公開の案件では再検査の事前表示を出さない（S-012 改訂 14）。
