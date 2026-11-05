@@ -828,7 +828,7 @@ export function ProjectCardEditor({
         </p>
       ) : null}
       <div
-        className="min-w-0 rounded-md border border-border bg-bg px-4 py-3"
+        className="min-w-0 rounded-md border border-border bg-bg px-6 py-4"
         role="group"
         aria-label={t("projects.cards.summary.label")}
         data-testid="project-detail-summary-strip"
