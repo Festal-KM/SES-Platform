@@ -18,7 +18,7 @@ mainの`CI`全体が成功すると`AWS開発環境へ反映`が起動する。P
 
 GitHub Actionsの実行概要に対象コミットとSSMコマンドIDが記録される。AWS VMで依存関係・共通パッケージ・Nextの本番用成果物を作り、migrationを適用してwebとworkerを起動する。`APP_ENV=development`は維持し、外部送信はモックを使う。DBと暗号鍵は保持する。VM内部と公開URLの`/signin`が正常応答すると成功になる。機能別の動作確認は別途行う。確認URLは **https://dev-es.bizorch.com/signin**。
 
-開発VMが停止中なら勝手に起動せず、「反映を省略」と実行概要に残す。`node scripts/aws-development.mjs start`で起動後、手動で反映する。起動だけでは停止中のmain更新は反映されない。
+開発VMが停止中の場合、自動ワークフローは起動せず「反映を省略」と記録する。通常の開発作業では、宮田の2026-11-05指示に従い、担当者が `node scripts/aws-development.mjs start` で起動し、mainのCI成功後に所定の手動ワークフローで反映する。起動だけでは停止中のmain更新は反映されない。
 
 GitHubの同時実行制御とVMの排他ロックでCI同士の上書きを防ぐ。✅ 2026-11-02: 手動の直接反映（`scripts/aws-sync-development.mjs`）も同じロック（`/var/lock/ses-development-deploy.lock`）を取り、自動反映の実行中は転送せずに失敗する（自動反映のビルド中に手動で上書きして新旧のソースが混ざり、配備が失敗した実例がある）。配備の途中ではキャンセルしない。手動ソース転送を行う担当者もActionsの配備実行中には転送しない。
 
