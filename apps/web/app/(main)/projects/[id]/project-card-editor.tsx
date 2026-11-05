@@ -8,7 +8,6 @@ import {
   Checkbox,
   Field,
   Icon,
-  IconButton,
   Input,
   Radio,
   SegmentedControl,
@@ -22,7 +21,7 @@ import {
   Textarea,
   cn,
 } from "@ses/ui";
-import { Dialog, Tabs, Tooltip } from "@ses/ui/client";
+import { TooltipIconButton, Dialog, Tabs } from "@ses/ui/client";
 import type { IconName } from "@ses/ui";
 import {
   PROJECT_CARD_FIELDS,
@@ -481,20 +480,18 @@ export function ProjectCardEditor({
                 </TableCell>
                 {editing ? (
                   <TableCell padding="compact">
-                    <Tooltip content={t("projects.cards.remove")}>
-                      <IconButton
-                        variant="ghost"
+                    <TooltipIconButton
+                    variant="ghost"
                         size="sm"
-                        icon={<Icon name="trash" />}
-                        aria-label={t("projects.cards.remove")}
+                        iconName="trash"
+                        label={t("projects.cards.remove")}
                         onClick={() =>
                           setRequirements((current) =>
                             current.filter((item) => item.key !== row.key),
                           )
                         }
                         data-testid={`project-card-requirement-remove-${row.key}`}
-                      />
-                    </Tooltip>
+                    />
                   </TableCell>
                 ) : null}
               </TableRow>
@@ -566,40 +563,35 @@ export function ProjectCardEditor({
               {canEdit ? (
                 editing ? (
                   <>
-                    <Tooltip content={t("projects.search.cancel")}>
-                      <IconButton
-                        variant="ghost"
+                    <TooltipIconButton
+                    variant="ghost"
                         size="sm"
-                        icon={<Icon name="x" />}
-                        aria-label={t("projects.search.cancel")}
+                        iconName="x"
+                        label={t("projects.search.cancel")}
                         disabled={saving}
                         onClick={() => {
                           setActive(null);
                           setError("");
                         }}
                         data-testid={`project-card-cancel-${id}`}
-                      />
-                    </Tooltip>
-                    <Tooltip content={t("projects.cards.save")}>
-                      <IconButton
-                        type="submit"
+                    />
+                    <TooltipIconButton
+                    type="submit"
                         variant="ghost"
                         size="sm"
-                        icon={<Icon name="save" />}
-                        aria-label={t("projects.cards.save")}
+                        iconName="save"
+                        label={t("projects.cards.save")}
                         disabled={saving}
                         aria-busy={saving}
                         data-testid={`project-card-save-${id}`}
-                      />
-                    </Tooltip>
+                    />
                   </>
                 ) : (
-                  <Tooltip content={t("projects.cards.edit")}>
-                    <IconButton
-                      variant="ghost"
+                  <TooltipIconButton
+                    variant="ghost"
                       size="sm"
-                      icon={<Icon name="pencil" />}
-                      aria-label={t("projects.cards.edit")}
+                      iconName="pencil"
+                      label={t("projects.cards.edit")}
                       disabled={saving || refreshing}
                       onClick={() => request(id)}
                       data-testid={
@@ -607,8 +599,7 @@ export function ProjectCardEditor({
                           ? "project-detail-edit-link"
                           : `project-card-edit-${id}`
                       }
-                    />
-                  </Tooltip>
+                  />
                 )
               ) : null}
             </div>
@@ -951,5 +942,5 @@ export function ProjectDetailCopyAction({text}:{readonly text:string}) {
   const state=result?.text===text?result.state:'idle';
   const busy=useRef(false);
   async function copy(){if(busy.current)return;busy.current=true;setResult({text,state:'copying'});try{await navigator.clipboard.writeText(text);setResult({text,state:'copied'});}catch{setResult({text,state:'failed'});}finally{busy.current=false;}}
-  return <div className="flex items-center gap-2"><Tooltip content={t('projects.list.panel.copy.action')}><IconButton variant="secondary" size="sm" icon={<Icon name="copy"/>} aria-label={t('projects.list.panel.copy.action')} aria-busy={state==='copying'} onClick={()=>void copy()} data-testid="project-detail-copy-summary"/></Tooltip>{state==='copied'||state==='failed'?<span role={state==='failed'?'alert':'status'} className="text-xs text-fg-muted">{t(state==='copied'?'projects.list.panel.copy.copied':'projects.list.panel.copy.failed')}</span>:null}</div>;
+  return <div className="flex items-center gap-2"><TooltipIconButton iconName="copy" label={t('projects.list.panel.copy.action')} variant="secondary" aria-busy={state==='copying'} onClick={()=>void copy()} data-testid="project-detail-copy-summary"/>{state==='copied'||state==='failed'?<span role={state==='failed'?'alert':'status'} className="text-xs text-fg-muted">{t(state==='copied'?'projects.list.panel.copy.copied':'projects.list.panel.copy.failed')}</span>:null}</div>;
 }

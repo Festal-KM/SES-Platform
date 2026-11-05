@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Icon, IconButton, Textarea } from '@ses/ui';
-import { Tooltip } from '@ses/ui/client';
+import { Textarea } from '@ses/ui';
+import { TooltipIconButton } from '@ses/ui/client';
 
 export type ProjectCopySummaryMessages = {
   readonly label: string;
@@ -34,11 +34,8 @@ export function ProjectCopySummary({ text, messages }: {
     <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-4" data-testid="project-list-panel-copy">
       <div className="flex items-center gap-2">
         <p className="m-0 flex-1 text-xs text-fg-muted">{messages.hint}</p>
-        <Tooltip content={messages.copy}>
-          <IconButton type="button" variant="ghost" size="sm" icon={<Icon name="copy" />}
-            aria-label={messages.copy} disabled={state === 'copying'}
-            onClick={() => void copy()} data-testid="project-list-panel-copy-button" />
-        </Tooltip>
+        <TooltipIconButton iconName="copy" label={messages.copy} variant="ghost" disabled={state === 'copying'}
+          onClick={() => void copy()} data-testid="project-list-panel-copy-button" />
       </div>
       <Textarea readOnly rows={14} value={text} aria-label={messages.label}
         data-testid="project-list-panel-copy-text" />
