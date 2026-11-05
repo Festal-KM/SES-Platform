@@ -339,6 +339,7 @@ describe('🔴 F-013 AC-1: 必須要件と尚可要件が別区分として保�
     const id = await createdIdOf(await postProject(ctx,{name:`${MARKER}カード境界`,internalUnitPrice:840000}));
     const result = await readHostProjectCards(ctx,id,{...META,now:NOW});
     expect(result.data.values.internalUnitPrice).toBe('840000');
+    expect(result.data.relatedCounts).toEqual({ proposals: 0, requests: 0, publishRequests: 0 });
     await expect(readHostProjectCards(await ctxOf(PARTNER_USER_1,'PARTNER_SALES'),id,{...META,now:NOW})).rejects.toBeInstanceOf(HostOnlyContextError);
     await expect(readHostProjectCards(await ctxOf(HOST_2,'SALES'),id,{...META,now:NOW})).rejects.toBeInstanceOf(NotFoundError);
   });
