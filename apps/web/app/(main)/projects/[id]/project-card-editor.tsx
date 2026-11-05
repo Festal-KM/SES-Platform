@@ -6,6 +6,7 @@ import { t, type MessageKey } from "@ses/i18n";
 import {
   Button,
   Badge,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES,
   PROJECT_DETAIL_CONTENT_WIDTH_CLASS,
   PROJECT_DETAIL_REQUIREMENTS_WIDTH_CLASS,
   Checkbox,
@@ -26,6 +27,7 @@ import {
   cn,
 } from "@ses/ui";
 import { Dialog, Tabs, Toast, Tooltip, TooltipIconButton } from "@ses/ui/client";
+import { ProjectCopySummary } from "../project-copy-summary";
 import {
   PROJECT_CARD_FIELDS,
   projectCardPatch,
@@ -811,6 +813,21 @@ export function ProjectCardEditor({
     setActive(null);
     setTab(target);
   }
+  const withCopySummary = (content: ReactNode) => (
+    <div className="flex min-w-0 flex-col items-start gap-4 lg:flex-row">
+      <div className="min-w-0 w-full flex-1">{content}</div>
+      <aside className={cn("min-w-0 rounded-md border border-border bg-bg", PAGE_BODY_ASIDE_WIDTH_CLASSES)} data-testid="project-detail-copy-panel">
+        <h2 className="m-0 px-4 pt-4 text-body font-semibold">{t("projects.cards.field.copySummary")}</h2>
+        <ProjectCopySummary text={String(data.values.copySummary || data.autoSummary)} messages={{
+          label: t("projects.cards.field.copySummary"),
+          hint: t("projects.list.panel.copy.hint"),
+          copy: t("projects.list.panel.copy.action"),
+          copied: t("projects.list.panel.copy.copied"),
+          failed: t("projects.list.panel.copy.failed"),
+        }} />
+      </aside>
+    </div>
+  );
   return (
     <div className="flex flex-col gap-4" data-testid="project-card-editor">
       {notice ? (
@@ -858,10 +875,10 @@ export function ProjectCardEditor({
         onValueChange={requestTab}
         data-testid="project-detail-tabs"
         items={[
-          { value: "overview", label: t("projects.cards.tab.overview"), content: sections.overview, testId: "project-detail-tab-overview" },
-          { value: "requirements", label: t("projects.cards.tab.requirements"), content: sections.requirements, testId: "project-detail-tab-requirements" },
-          { value: "working", label: t("projects.cards.tab.working"), content: sections.working, testId: "project-detail-tab-working" },
-          { value: "related", label: t("projects.cards.tab.related"), content: sections.related, testId: "project-detail-tab-related" },
+          { value: "overview", label: t("projects.cards.tab.overview"), content: withCopySummary(sections.overview), testId: "project-detail-tab-overview" },
+          { value: "requirements", label: t("projects.cards.tab.requirements"), content: withCopySummary(sections.requirements), testId: "project-detail-tab-requirements" },
+          { value: "working", label: t("projects.cards.tab.working"), content: withCopySummary(sections.working), testId: "project-detail-tab-working" },
+          { value: "related", label: t("projects.cards.tab.related"), content: withCopySummary(sections.related), testId: "project-detail-tab-related" },
         ]}
       />
       <Dialog

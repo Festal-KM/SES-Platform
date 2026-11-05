@@ -21,7 +21,8 @@ describe("案件詳細カードの初期表示", () => {
     const html = renderToStaticMarkup(
       createElement(ProjectCardEditor, { initial, options: {}, canEdit: true }),
     );
-    expect(html).not.toMatch(/<(input|textarea|select)\b/);
+    expect(html).not.toMatch(/<(input|select)\b/);
+    expect(html).toMatch(/<textarea[^>]*readonly/i);
     expect(html).not.toContain('data-editing="true"');
     // ✅ 2026-11-02: 4 タブ。最初は「概要」タブの 3 セクション（基本情報・業務概要・企業・担当）だけが描かれる。
     expect(html.match(/data-editing="false"/g)).toHaveLength(3);
@@ -83,6 +84,17 @@ describe("案件詳細カードの初期表示", () => {
     expect(html).toContain('4件');
     expect(html).toContain('1件');
     expect(html).toContain('data-testid="project-detail-copy-id"');
+  });
+  it("各タブの副カラムで手動サマリを優先し、未登録時は自動生成を表示する", () => {
+    for (const initialTab of ["overview", "requirements", "working", "related"] as const) {
+      const data = { ...initial, values: { ...initial.values, copySummary: "手動サマリ" } };
+      const html = renderToStaticMarkup(createElement(ProjectCardEditor, { initial: data, options: {}, canEdit: true, initialTab }));
+      expect(html).toContain('data-testid="project-detail-copy-panel"');
+      expect(html).toContain('data-testid="project-list-panel-copy-text"');
+      expect(html).toContain("手動サマリ");
+    }
+    const html = renderToStaticMarkup(createElement(ProjectCardEditor, { initial, options: {}, canEdit: true }));
+    expect(html).toContain("自動サマリ");
   });
   it("閲覧専用では編集操作を出さない", () => {
     const html = renderToStaticMarkup(
