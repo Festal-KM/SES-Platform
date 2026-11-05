@@ -33,6 +33,33 @@ describe("案件詳細カードの初期表示", () => {
     expect(html).toContain("project-detail-edit-link");
     expect(html).not.toContain("/edit");
   });
+  it("サマリーを主要4項目と補足3項目の順で整形する", () => {
+    const data: ProjectCardData = { ...initial, values: {
+      ...initial.values, unitPrice: "990000", internalUnitPrice: "900000",
+      prefecture: "13", locationDetail: "神田駅（徒歩5分）", remoteMode: "FULL_REMOTE",
+      startDate: "2026-11-18", endDate: "2027-03-01", headcount: "2",
+    } };
+    const html = renderToStaticMarkup(createElement(ProjectCardEditor, {
+      initial: data, canEdit: true,
+      options: { prefecture: [{ value: "13", label: "東京都" }], remoteMode: [{ value: "FULL_REMOTE", label: "フルリモート可" }] },
+    }));
+    const keys = ["unitPrice", "location", "remoteMode", "startDate", "internalUnitPrice", "endDate", "headcount"];
+    const positions = keys.map(key => html.indexOf(`data-testid="project-detail-summary-${key}"`));
+    expect(positions.every(position => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    for (const value of ["990,000円/月", "東京都 神田駅（徒歩5分）", "フルリモート可", "2026/11/18", "900,000円/月", "2027/03/01", "2名"]) {
+      expect(html).toContain(value);
+    }
+    expect(html).toContain("lg:grid-cols-4");
+    expect(html).toContain("lg:grid-cols-3");
+  });
+  it("サマリーの未登録を未設定とし、勤務地の登録済み部分だけを表示する", () => {
+    const data: ProjectCardData = { ...initial, values: { ...initial.values, locationDetail: "神田駅" } };
+    const html = renderToStaticMarkup(createElement(ProjectCardEditor, { initial: data, options: {}, canEdit: true }));
+    expect(html).toMatch(/data-testid="project-detail-summary-unitPrice"[^>]*>未設定</);
+    expect(html).toMatch(/data-testid="project-detail-summary-location"[^>]*>神田駅</);
+    expect(html).toMatch(/data-testid="project-detail-summary-startDate"[^>]*>未設定</);
+  });
   it("閲覧専用では編集操作を出さない", () => {
     const html = renderToStaticMarkup(
       createElement(ProjectCardEditor, {

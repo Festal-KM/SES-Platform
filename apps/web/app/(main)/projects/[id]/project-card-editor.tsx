@@ -22,7 +22,6 @@ import {
   cn,
 } from "@ses/ui";
 import { TooltipIconButton, Dialog, Tabs } from "@ses/ui/client";
-import type { IconName } from "@ses/ui";
 import {
   PROJECT_CARD_FIELDS,
   projectCardPatch,
@@ -723,21 +722,26 @@ export function ProjectCardEditor({
   }
   // ✅ 2026-11-02: どのタブでも見える主要条件。保存後のクライアントの値（data）から描くので、保存すると即座に変わる。
   const none = t("projects.detail.valueNone");
-  const summaryItems: readonly { key: string; icon: IconName; value: string }[] = [
-    { key: "unitPrice", icon: "yen", value: display("unitPrice") },
-    { key: "internalUnitPrice", icon: "yen", value: display("internalUnitPrice") },
-    { key: "remoteMode", icon: "briefcase", value: display("remoteMode") },
-    {
-      key: "location",
-      icon: "map-pin",
-      value:
-        [display("prefecture"), String(data.values.locationDetail ?? "")]
-          .filter((part) => part && part !== none)
-          .join(" ") || none,
-    },
-    { key: "startDate", icon: "calendar-clock", value: display("startDate") },
-    { key: "endDate", icon: "calendar-clock", value: display("endDate") },
-    { key: "headcount", icon: "users", value: display("headcount") },
+  // サマリーの未設定と日付表記だけを整え、編集欄と保存形式は変えない。
+  function summaryValue(key: string): string {
+    const value = data.values[key];
+    if (typeof value !== "string" || !value.trim()) return t("projects.cards.summary.unset");
+    return dates.has(key) ? display(key).replaceAll("-", "/") : display(key);
+  }
+  const location = ["prefecture", "locationDetail"]
+    .map(key => summaryValue(key))
+    .filter(value => value !== t("projects.cards.summary.unset") && value !== none)
+    .join(" ") || t("projects.cards.summary.unset");
+  const primarySummary = [
+    { key: "unitPrice", value: summaryValue("unitPrice") },
+    { key: "location", value: location },
+    { key: "remoteMode", value: summaryValue("remoteMode") },
+    { key: "startDate", value: summaryValue("startDate") },
+  ];
+  const secondarySummary = [
+    { key: "internalUnitPrice", value: summaryValue("internalUnitPrice") },
+    { key: "endDate", value: summaryValue("endDate") },
+    { key: "headcount", value: summaryValue("headcount") },
   ];
   const panel = (children: ReactNode) => (
     <div className="min-w-0 overflow-hidden rounded-md border border-border bg-bg">{children}</div>
@@ -823,29 +827,39 @@ export function ProjectCardEditor({
           {notice}
         </p>
       ) : null}
-      <dl
-        className="m-0 grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 rounded-md border border-border bg-bg px-4 py-3 sm:grid-cols-4 xl:grid-cols-7"
+      <div
+        className="min-w-0 rounded-md border border-border bg-bg px-4 py-3"
+        role="group"
         aria-label={t("projects.cards.summary.label")}
         data-testid="project-detail-summary-strip"
       >
-        {summaryItems.map((item) => (
-          <div key={item.key} className="flex min-w-0 items-start gap-2">
-            <Icon name={item.icon} size="sm" className="mt-1 shrink-0 text-brand" />
-            <div className="min-w-0">
-              <dt className="text-xs text-fg-muted">
-                {item.key === "location" ? t("projects.cards.summary.location") : label(item.key)}
-              </dt>
-              <dd
-                className="m-0 truncate font-semibold tabular-nums text-fg"
-                title={item.value}
-                data-testid={`project-detail-summary-${item.key}`}
+        {[primarySummary, secondarySummary].map((items, rowIndex) => (
+          <dl
+            key={rowIndex}
+            className={cn(
+              "m-0 grid min-w-0 grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2",
+              rowIndex === 0 ? "lg:grid-cols-4" : "mt-3 border-t border-border pt-3 lg:grid-cols-3",
+            )}
+          >
+            {items.map((item, index) => (
+              <div
+                key={item.key}
+                className={cn("min-w-0", index === 0 ? undefined : index === 2 ? "lg:border-l lg:border-border lg:pl-4" : "sm:border-l sm:border-border sm:pl-4")}
               >
-                {item.value}
-              </dd>
-            </div>
-          </div>
+                <dt className="text-xs text-fg-muted">
+                  {item.key === "location" ? t("projects.cards.summary.location") : label(item.key)}
+                </dt>
+                <dd
+                  className={cn("m-0 mt-1 break-words tabular-nums text-fg", rowIndex === 0 ? "text-lg font-semibold" : "text-body font-medium")}
+                  data-testid={`project-detail-summary-${item.key}`}
+                >
+                  {item.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
         ))}
-      </dl>
+      </div>
       <Tabs
         label={t("projects.cards.tab.label")}
         value={tab}

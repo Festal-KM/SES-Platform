@@ -106,6 +106,7 @@ const ja = {
   'projects.cards.tab.working': '稼働・契約',
   'projects.cards.tab.related': '関連・履歴',
   'projects.cards.summary.label': '主要条件',
+  'projects.cards.summary.unset': '未設定',
   'projects.cards.summary.location': '勤務地',
   'projects.cards.history.note': '項目ごとの変更履歴は、監査ログ（設定 > 監査ログ）で確認できます。',
   'projects.cards.tabDiscardBody': '編集中のセクションの変更を破棄して、タブを切り替えますか？',
