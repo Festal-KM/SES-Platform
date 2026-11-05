@@ -8,7 +8,6 @@ import {
   Checkbox,
   Field,
   Icon,
-  IconButton,
   Input,
   Radio,
   SegmentedControl,
@@ -22,7 +21,7 @@ import {
   Textarea,
   cn,
 } from "@ses/ui";
-import { Dialog, Tabs, Tooltip, Toast } from "@ses/ui/client";
+import { Dialog, Tabs, Toast, TooltipIconButton } from "@ses/ui/client";
 import type { IconName } from "@ses/ui";
 import {
   PROJECT_CARD_FIELDS,
@@ -483,20 +482,18 @@ export function ProjectCardEditor({
                 </TableCell>
                 {editing ? (
                   <TableCell padding="compact">
-                    <Tooltip content={t("projects.cards.remove")}>
-                      <IconButton
-                        variant="ghost"
-                        size="sm"
-                        icon={<Icon name="trash" />}
-                        aria-label={t("projects.cards.remove")}
-                        onClick={() =>
-                          setRequirements((current) =>
-                            current.filter((item) => item.key !== row.key),
-                          )
-                        }
-                        data-testid={`project-card-requirement-remove-${row.key}`}
-                      />
-                    </Tooltip>
+                    <TooltipIconButton
+                      variant="ghost"
+                      size="sm"
+                      iconName="trash"
+                      label={t("projects.cards.remove")}
+                      onClick={() =>
+                        setRequirements((current) =>
+                          current.filter((item) => item.key !== row.key),
+                        )
+                      }
+                      data-testid={`project-card-requirement-remove-${row.key}`}
+                    />
                   </TableCell>
                 ) : null}
               </TableRow>
@@ -568,49 +565,43 @@ export function ProjectCardEditor({
               {canEdit ? (
                 editing ? (
                   <>
-                    <Tooltip content={t("projects.search.cancel")}>
-                      <IconButton
-                        variant="ghost"
-                        size="sm"
-                        icon={<Icon name="x" />}
-                        aria-label={t("projects.search.cancel")}
-                        disabled={saving}
-                        onClick={() => {
-                          setActive(null);
-                          setError("");
-                        }}
-                        data-testid={`project-card-cancel-${id}`}
-                      />
-                    </Tooltip>
-                    <Tooltip content={t("projects.cards.save")}>
-                      <IconButton
-                        type="submit"
-                        variant="ghost"
-                        size="sm"
-                        icon={<Icon name="save" />}
-                        aria-label={t("projects.cards.save")}
-                        disabled={saving}
-                        aria-busy={saving}
-                        data-testid={`project-card-save-${id}`}
-                      />
-                    </Tooltip>
-                  </>
-                ) : (
-                  <Tooltip content={t("projects.cards.edit")}>
-                    <IconButton
+                    <TooltipIconButton
                       variant="ghost"
                       size="sm"
-                      icon={<Icon name="pencil" />}
-                      aria-label={t("projects.cards.edit")}
-                      disabled={saving || refreshing}
-                      onClick={() => request(id)}
-                      data-testid={
-                        id === "basic"
-                          ? "project-detail-edit-link"
-                          : `project-card-edit-${id}`
-                      }
+                      iconName="x"
+                      label={t("projects.search.cancel")}
+                      disabled={saving}
+                      onClick={() => {
+                        setActive(null);
+                        setError("");
+                      }}
+                      data-testid={`project-card-cancel-${id}`}
                     />
-                  </Tooltip>
+                    <TooltipIconButton
+                      type="submit"
+                      variant="ghost"
+                      size="sm"
+                      iconName="save"
+                      label={t("projects.cards.save")}
+                      disabled={saving}
+                      aria-busy={saving}
+                      data-testid={`project-card-save-${id}`}
+                    />
+                  </>
+                ) : (
+                  <TooltipIconButton
+                    variant="ghost"
+                    size="sm"
+                    iconName="pencil"
+                    label={t("projects.cards.edit")}
+                    disabled={saving || refreshing}
+                    onClick={() => request(id)}
+                    data-testid={
+                      id === "basic"
+                        ? "project-detail-edit-link"
+                        : `project-card-edit-${id}`
+                    }
+                  />
                 )
               ) : null}
             </div>
@@ -960,7 +951,7 @@ export function ProjectDetailCopyAction({ text, id }: { readonly text: string; r
     finally { busy.current = false; }
   }
   return <>
-    <Tooltip content={t("projects.list.panel.copy.action")}><IconButton variant="secondary" size="sm" icon={<Icon name="copy"/>} aria-label={t("projects.list.panel.copy.action")} onClick={() => void copy()} data-testid="project-detail-copy-summary" /></Tooltip>
+    <TooltipIconButton iconName="copy" label={t("projects.list.panel.copy.action")} variant="secondary" onClick={() => void copy()} data-testid="project-detail-copy-summary" />
     <Toast open={result === "copied"} kind="completed" kindLabel={t("projects.detail.copy.kind")} message={t("projects.detail.copy.done")} dismissLabel={t("projects.detail.copy.dismiss")} onDismiss={() => setResult(null)} subject={{ href: `/projects/${id}`, label: t("projects.detail.copy.subject") }} data-testid="project-detail-copy-toast" />
     {result === "failed" ? <div role="alert" className="fixed bottom-4 right-4 z-50 border border-danger-border bg-danger-bg p-4 text-body text-danger">{t("projects.list.panel.copy.failed")}</div> : null}
   </>;
