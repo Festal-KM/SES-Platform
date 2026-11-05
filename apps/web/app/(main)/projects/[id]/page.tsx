@@ -46,6 +46,7 @@ import {
   type ProjectCardOptions,
 } from "./project-card-editor";
 import { projectDetailScreenMessages } from "./detail-props";
+import { ProjectDetailSession } from "./project-detail-session";
 // 🔴 公開解除の告知は**別ファイル**である（検査 (k) の「1 画面 1 幅クラス」。
 //    理由は `not-shared-notice.tsx` 冒頭）。
 import { NotSharedNotice } from "./not-shared-notice";
@@ -168,6 +169,7 @@ export default async function ProjectDetailPage({
           canAct={isPageActionRole(outcome.ctx.role)}
           testId="project-detail-candidates"
         />
+        <ProjectDetailSession id={view.id} initialStatus={view.status}>
         <ProjectDetailScreen
           view={view}
           compactHeader={data && view.audience === 'HOST' ? {
@@ -175,7 +177,7 @@ export default async function ProjectDetailPage({
             category: options.category?.find(item=>item.value===data.values.category)?.label??t('projects.detail.valueNone'),
             sourceKind: options.sourceKind?.find(item=>item.value===data.values.sourceKind)?.label??t('projects.detail.valueNone'),
             updatedAt:data.updatedAt,assignee:data.assigneeName,copyText:String(data.values.copySummary||data.autoSummary),
-            updatedLabel:t('projects.cards.field.updatedAt'),assigneeLabel:t('projects.cards.field.assigneeUserId'),candidatesLabel:t('projects.detail.candidates.open'),
+            updatedLabel:t('projects.cards.field.updatedAt'),assigneeLabel:t('projects.cards.field.assigneeUserId'),candidatesLabel:t('projects.detail.candidates.open'),statusOptions:projectStatusOptions,
           }:undefined}
           cards={
             data && view.audience === "HOST" ? (
@@ -194,6 +196,7 @@ export default async function ProjectDetailPage({
           canEdit={isProjectEditorRole(outcome.ctx.role)}
           messages={projectDetailScreenMessages(view.audience)}
         />
+        </ProjectDetailSession>
       </PageBody>
     </main>
   );

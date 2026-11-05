@@ -32,6 +32,8 @@
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import type { ComponentType, ReactNode } from 'react';
 import { cn } from '../lib/cn.js';
+import { Icon } from '../icons.js';
+import { StatusBadge } from './badge.js';
 import {
   DROPDOWN_MENU_CONTENT_CLASSES,
   DROPDOWN_MENU_ITEM_CLASSES,
@@ -65,6 +67,9 @@ export type DropdownMenuActionItem = {
   readonly kind: 'action';
   readonly label: string;
   readonly onSelect: () => void;
+  /** 選択中の状態を語と印で示す。 */
+  readonly selected?: boolean;
+  readonly projectStatus?: 'OPEN' | 'CLOSED';
   /**
    * 一時的で自明な不能のときだけ立てる（§7.10）。
    * 🔴 **「権限が無い」「代理閲覧中」を `disabled` で表さない** —— その項目は
@@ -145,8 +150,10 @@ export function DropdownMenu({
                 className={DROPDOWN_MENU_ITEM_CLASSES}
                 disabled={item.disabled ?? false}
                 onSelect={item.onSelect}
+                aria-current={item.selected ? "true" : undefined}
               >
-                {item.label}
+                {item.projectStatus ? <StatusBadge entity="project" state={item.projectStatus} label={item.label} /> : item.label}
+                {item.selected ? <Icon name="check" size="sm" /> : null}
               </DropdownMenuPrimitive.Item>
             ),
           )}
