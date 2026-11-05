@@ -481,16 +481,16 @@ export function ProjectCardEditor({
                 {editing ? (
                   <TableCell padding="compact">
                     <TooltipIconButton
-                    variant="ghost"
-                        size="sm"
-                        iconName="trash"
-                        label={t("projects.cards.remove")}
-                        onClick={() =>
-                          setRequirements((current) =>
-                            current.filter((item) => item.key !== row.key),
-                          )
-                        }
-                        data-testid={`project-card-requirement-remove-${row.key}`}
+                      variant="ghost"
+                      size="sm"
+                      iconName="trash"
+                      label={t("projects.cards.remove")}
+                      onClick={() =>
+                        setRequirements((current) =>
+                          current.filter((item) => item.key !== row.key),
+                        )
+                      }
+                      data-testid={`project-card-requirement-remove-${row.key}`}
                     />
                   </TableCell>
                 ) : null}
@@ -564,41 +564,41 @@ export function ProjectCardEditor({
                 editing ? (
                   <>
                     <TooltipIconButton
-                    variant="ghost"
-                        size="sm"
-                        iconName="x"
-                        label={t("projects.search.cancel")}
-                        disabled={saving}
-                        onClick={() => {
-                          setActive(null);
-                          setError("");
-                        }}
-                        data-testid={`project-card-cancel-${id}`}
+                      variant="ghost"
+                      size="sm"
+                      iconName="x"
+                      label={t("projects.search.cancel")}
+                      disabled={saving}
+                      onClick={() => {
+                        setActive(null);
+                        setError("");
+                      }}
+                      data-testid={`project-card-cancel-${id}`}
                     />
                     <TooltipIconButton
-                    type="submit"
-                        variant="ghost"
-                        size="sm"
-                        iconName="save"
-                        label={t("projects.cards.save")}
-                        disabled={saving}
-                        aria-busy={saving}
-                        data-testid={`project-card-save-${id}`}
+                      type="submit"
+                      variant="ghost"
+                      size="sm"
+                      iconName="save"
+                      label={t("projects.cards.save")}
+                      disabled={saving}
+                      aria-busy={saving}
+                      data-testid={`project-card-save-${id}`}
                     />
                   </>
                 ) : (
                   <TooltipIconButton
                     variant="ghost"
-                      size="sm"
-                      iconName="pencil"
-                      label={t("projects.cards.edit")}
-                      disabled={saving || refreshing}
-                      onClick={() => request(id)}
-                      data-testid={
-                        id === "basic"
-                          ? "project-detail-edit-link"
-                          : `project-card-edit-${id}`
-                      }
+                    size="sm"
+                    iconName="pencil"
+                    label={t("projects.cards.edit")}
+                    disabled={saving || refreshing}
+                    onClick={() => request(id)}
+                    data-testid={
+                      id === "basic"
+                        ? "project-detail-edit-link"
+                        : `project-card-edit-${id}`
+                    }
                   />
                 )
               ) : null}
