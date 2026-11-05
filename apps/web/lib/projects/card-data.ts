@@ -139,7 +139,14 @@ export async function readHostProjectCards(
         assignee: row.assignee?.displayName ?? null,
       },
     });
+    // ホストに限定した後、同じテナントのRLS内で案件に紐づく件数を数える。
+    const [proposals, requests, publishRequests] = await Promise.all([
+      db.proposal.count({ where: { projectId: row.id } }),
+      db.proposalRequest.count({ where: { projectId: row.id } }),
+      db.projectPublishRequest.count({ where: { projectId: row.id, kind: "PUBLISH" } }),
+    ]);
     return {
+      relatedCounts: { proposals, requests, publishRequests },
       id: row.id,
       values,
       requirements,

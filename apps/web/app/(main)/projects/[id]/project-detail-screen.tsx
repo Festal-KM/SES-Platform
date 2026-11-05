@@ -21,6 +21,7 @@
 // 🔴 文言は props（`packages/i18n`）から受け取る。ここにベタ書きしない（`CLAUDE.md` §3.5）。
 import { cloneElement, isValidElement, type ReactNode } from "react";
 import Link from "next/link";
+import { t } from "@ses/i18n";
 // 🔴 型だけを import する（本ファイルはサーバコンポーネントだが、`@ses/db` の**値**を
 //    持ち込むと `*.render.test.tsx` が Prisma クライアントを読み込むことになる）。
 import type { RequirementKind } from "@ses/db";
@@ -418,7 +419,8 @@ function VisibilitySection({
           className="text-body text-fg-muted"
           data-testid="project-detail-visibility-empty"
         >
-          {messages.visibilityEmpty}
+          <strong className="block text-fg">{t("projects.cards.visibility.unpublished")}</strong>
+          <span className="text-xs">{t("projects.cards.visibility.unpublishedNote")}</span>
         </p>
       ) : (
         <Table data-testid="project-detail-visibility-table">
@@ -441,12 +443,7 @@ function VisibilitySection({
           </TableBody>
         </Table>
       )}
-      <p
-        className="mt-3 text-xs text-fg-muted"
-        data-testid="project-detail-visibility-proposal-count"
-      >
-        {messages.visibilityProposalCountComingSoon}
-      </p>
+      {view.visibilities.length > 0 ? <p className="mt-3 text-xs text-fg-muted" data-testid="project-detail-visibility-proposal-count">{messages.visibilityProposalCountComingSoon}</p> : null}
       {/* 🔴 T-12-10: 再検査の進行 / 保留はセクション 5 の中に置く（帯にしない）。 */}
       <PublishProgressNotice state={view.publishState} messages={messages} />
       {/* ✅ T-06-06: `S-013`（公開範囲の設定）への導線（`docs/04` §S-011 操作と結果）。
@@ -590,7 +587,6 @@ export function ProjectDetailScreen({
         isValidElement<{ visibility?: ReactNode; proposals?: ReactNode }>(cards) ? (
           cloneElement(cards, {
             visibility: <VisibilitySection view={view} canEdit={canEdit} messages={messages} flat />,
-            proposals: <ProposalsSection messages={messages} flat />,
           })
         ) : (
           cards
