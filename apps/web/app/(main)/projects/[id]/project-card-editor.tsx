@@ -11,7 +11,6 @@ import {
   Checkbox,
   Field,
   Icon,
-  IconButton,
   Input,
   Radio,
   SegmentedControl,
@@ -25,7 +24,7 @@ import {
   Textarea,
   cn,
 } from "@ses/ui";
-import { Dialog, Tabs, Tooltip } from "@ses/ui/client";
+import { Dialog, Tabs, Tooltip, TooltipIconButton } from "@ses/ui/client";
 import {
   PROJECT_CARD_FIELDS,
   projectCardPatch,
@@ -482,20 +481,18 @@ export function ProjectCardEditor({
                 </TableCell>
                 {editing ? (
                   <TableCell padding="compact">
-                    <Tooltip content={t("projects.cards.remove")}>
-                      <IconButton
-                        variant="ghost"
-                        size="sm"
-                        icon={<Icon name="trash" />}
-                        aria-label={t("projects.cards.remove")}
-                        onClick={() =>
-                          setRequirements((current) =>
-                            current.filter((item) => item.key !== row.key),
-                          )
-                        }
-                        data-testid={`project-card-requirement-remove-${row.key}`}
-                      />
-                    </Tooltip>
+                    <TooltipIconButton
+                      variant="ghost"
+                      size="sm"
+                      iconName="trash"
+                      label={t("projects.cards.remove")}
+                      onClick={() =>
+                        setRequirements((current) =>
+                          current.filter((item) => item.key !== row.key),
+                        )
+                      }
+                      data-testid={`project-card-requirement-remove-${row.key}`}
+                    />
                   </TableCell>
                 ) : null}
               </TableRow>
@@ -913,7 +910,7 @@ export function ProjectDetailCopyAction({text, inline = false}:{readonly text:st
   const state=result?.text===text?result.state:'idle';
   const busy=useRef(false);
   async function copy(){if(busy.current)return;busy.current=true;setResult({text,state:'copying'});try{await navigator.clipboard.writeText(text);setResult({text,state:'copied'});}catch{setResult({text,state:'failed'});}finally{busy.current=false;}}
-  return <div className="flex items-center gap-2"><Tooltip content={t('projects.list.panel.copy.action')}><IconButton variant="secondary" size="sm" icon={<Icon name="copy"/>} aria-label={t('projects.list.panel.copy.action')} aria-busy={state==='copying'} onClick={()=>void copy()} data-testid={inline ? "project-detail-copy-summary-inline" : "project-detail-copy-summary"}/></Tooltip>{state==='copied'||state==='failed'?<span role={state==='failed'?'alert':'status'} className="text-xs text-fg-muted">{t(state==='copied'?'projects.list.panel.copy.copied':'projects.list.panel.copy.failed')}</span>:null}</div>;
+  return <div className="flex items-center gap-2"><TooltipIconButton iconName="copy" label={t('projects.list.panel.copy.action')} variant="secondary" aria-busy={state==='copying'} onClick={()=>void copy()} data-testid={inline ? "project-detail-copy-summary-inline" : "project-detail-copy-summary"}/>{state==='copied'||state==='failed'?<span role={state==='failed'?'alert':'status'} className="text-xs text-fg-muted">{t(state==='copied'?'projects.list.panel.copy.copied':'projects.list.panel.copy.failed')}</span>:null}</div>;
 }
 
 function ProjectIdCopy({ text }: { readonly text: string }) {

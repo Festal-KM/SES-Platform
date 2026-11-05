@@ -87,6 +87,8 @@ export {
 export type { TabsItem, TabsItems, TabsProps } from './components/tabs.js';
 export { Toast } from './components/toast.js';
 export type { ToastKind, ToastProps, ToastSubject } from './components/toast.js';
+export { TooltipIconButton } from './components/tooltip-icon-button.js';
+export type { TooltipIconButtonProps } from './components/tooltip-icon-button.js';
 export { Tooltip } from './components/tooltip.js';
 export type { TooltipProps } from './components/tooltip.js';
 // 🔴 overlay の component 層のクラス定数（`docs/04` §7.9 の ③）。**画面から組み直さない** ——
