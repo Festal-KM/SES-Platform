@@ -496,7 +496,9 @@ describe('🔴 `DropdownMenu` は項目 7 つ以上にできない（docs/04 §5
         '`A-010` の停止は画面上の secondary + 確認。§7.6）。shadcn/ui の ' +
         '`DropdownMenuItem` は `variant="destructive"` を持ちますが、**取り込みません** ——' +
         '赤い項目を作れる口があると必ずそこに入ります。',
-    ).toEqual(['disabled', 'href', 'kind', 'label', 'onSelect'].sort());
+    ).toEqual(['disabled', 'href', 'kind', 'label', 'onSelect', 'projectStatus', 'selected'].sort());
+    // 案件の既存2状態だけを状態バッジで表示する。破壊的操作用の色は指定できない。
+    expect(typeMembers(source, 'DropdownMenuActionItem').find(member => member.name === 'projectStatus')?.typeText).toBe("'OPEN' | 'CLOSED'");
   });
 });
 
