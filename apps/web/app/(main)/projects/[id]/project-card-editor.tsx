@@ -837,14 +837,14 @@ export function ProjectCardEditor({
           <dl
             key={rowIndex}
             className={cn(
-              "m-0 grid min-w-0 grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2",
-              rowIndex === 0 ? "lg:grid-cols-4" : "mt-3 border-t border-border pt-3 lg:grid-cols-3",
+              "m-0 grid min-w-0 grid-cols-2 gap-x-4 gap-y-3",
+              rowIndex === 0 ? "lg:grid-cols-4" : "mt-2 border-t border-border pt-2 lg:grid-cols-3",
             )}
           >
             {items.map((item, index) => (
               <div
                 key={item.key}
-                className={cn("min-w-0", index === 0 ? undefined : index === 2 ? "lg:border-l lg:border-border lg:pl-4" : "sm:border-l sm:border-border sm:pl-4")}
+                className={cn("min-w-0", index === 0 ? undefined : index === 2 ? "lg:border-l lg:border-border lg:pl-4" : "border-l border-border pl-4")}
               >
                 <dt className="text-xs text-fg-muted">
                   {item.key === "location" ? t("projects.cards.summary.location") : label(item.key)}
