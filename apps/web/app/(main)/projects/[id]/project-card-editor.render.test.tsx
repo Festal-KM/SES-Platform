@@ -123,6 +123,12 @@ describe("案件詳細カードの初期表示", () => {
     expect(html).toContain("project-detail-card-management");
     expect(html).toContain("project-detail-card-related");
   });
+  it("稼働条件に並行提案可否を表示しない", () => {
+    const data = { ...initial, values: { ...initial.values, parallelOk: "1" } };
+    const html = renderToStaticMarkup(createElement(ProjectCardEditor, { initial: data, options: {}, canEdit: true }));
+    expect(html).not.toContain('data-testid="project-card-value-parallelOk"');
+    expect(html).not.toContain("並行提案可否");
+  });
   // 🔴 F-013 AC-2: 取引先に出ない項目のブロックには常に注記。凍結 testid の中身を金額の説明に入れ替えない。
   it("商流・企業・メモのカードに『取引先には表示されない』注記を常に出す", () => {
     const html = renderToStaticMarkup(
