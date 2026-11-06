@@ -8,7 +8,7 @@ import { assertAccount, stackOutputs, REGION } from './aws/common.mjs';
 
 try {
   const [port = '3000', ...rest] = process.argv.slice(2);
-  if (!['3000', '9000', '8025'].includes(port) || rest.length) throw new Error('使い方: node scripts/aws-connect-development.mjs [3000|9000|8025]');
+  if (!['3000', '3001', '9000', '8025'].includes(port) || rest.length) throw new Error('使い方: node scripts/aws-connect-development.mjs [3000|3001|9000|8025]');
   assertAccount();
   const { InstanceId } = stackOutputs('ses-platform-development-workspace');
   if (!/^i-[a-f0-9]+$/.test(InstanceId ?? '')) throw new Error('開発VMの識別子が不正です');
