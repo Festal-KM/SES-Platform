@@ -35,7 +35,7 @@ describe("案件詳細カードの初期表示", () => {
     expect(html).toContain("project-detail-edit-link");
     expect(html).not.toContain("/edit");
   });
-  it("サマリーを主要4項目と補足3項目の順で整形する", () => {
+  it("サマリーを指定順に整形する", () => {
     const data: ProjectCardData = { ...initial, values: {
       ...initial.values, unitPrice: "990000", internalUnitPrice: "900000",
       prefecture: "13", locationDetail: "神田駅（徒歩5分）", remoteMode: "FULL_REMOTE",
@@ -45,15 +45,14 @@ describe("案件詳細カードの初期表示", () => {
       initial: data, canEdit: true,
       options: { prefecture: [{ value: "13", label: "東京都" }], remoteMode: [{ value: "FULL_REMOTE", label: "フルリモート可" }] },
     }));
-    const keys = ["unitPrice", "location", "remoteMode", "startDate", "internalUnitPrice", "endDate", "headcount"];
+    const keys = ["unitPrice", "internalUnitPrice", "location", "remoteMode", "startDate", "endDate", "headcount"];
     const positions = keys.map(key => html.indexOf(`data-testid="project-detail-summary-${key}"`));
     expect(positions.every(position => position >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
     for (const value of ["990,000円/月", "東京都 神田駅（徒歩5分）", "フルリモート可", "2026/11/18", "900,000円/月", "2027/03/01", "2名"]) {
       expect(html).toContain(value);
     }
-    expect(html).toContain("lg:grid-cols-4");
-    expect(html).toContain("lg:grid-cols-3");
+    expect(html).toContain("xl:grid-cols-7");
   });
   it("サマリーの未登録を未設定とし、勤務地の登録済み部分だけを表示する", () => {
     const data: ProjectCardData = { ...initial, values: { ...initial.values, locationDetail: "神田駅" } };
@@ -64,7 +63,7 @@ describe("案件詳細カードの初期表示", () => {
   });
   it("主要条件と補足条件を順に表示し、空の要件に表を出さない", () => {
     const overview = renderToStaticMarkup(createElement(ProjectCardEditor, { initial, options: {}, canEdit: true }));
-    const keys = ["unitPrice", "location", "remoteMode", "startDate", "internalUnitPrice", "endDate", "headcount"];
+    const keys = ["unitPrice", "internalUnitPrice", "location", "remoteMode", "startDate", "endDate", "headcount"];
     const positions = keys.map(key => overview.indexOf(`data-testid="project-detail-summary-${key}"`));
     expect(positions.every(position => position >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
