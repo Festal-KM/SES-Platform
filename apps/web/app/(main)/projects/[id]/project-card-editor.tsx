@@ -42,8 +42,7 @@ import { patchProject, useProjectDetailSession } from "./project-detail-session"
 
 type Option = { value: string; label: string };
 // ✅ 2026-11-02（人間の指示「4タブ＋上部共通サマリー＋1カラム＋セクション単位編集」）。
-const PROJECT_DETAIL_TABS = ["overview", "requirements", "working", "related"] as const;
-type ProjectDetailTab = (typeof PROJECT_DETAIL_TABS)[number];
+type ProjectDetailTab = "overview" | "requirements" | "working" | "related";
 export type ProjectCardOptions = Record<string, readonly Option[]>;
 const label = (key: string) => t(`projects.cards.field.${key}` as MessageKey);
 const title = (card: string) => t((['basic', 'content', 'commercial', 'notes'].includes(card) ? `projects.cards.section.${card}` : `projects.cards.title.${card}`) as MessageKey);
