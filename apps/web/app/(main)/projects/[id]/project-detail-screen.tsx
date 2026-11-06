@@ -500,6 +500,7 @@ export function ProjectDetailScreen({
       {/* 🔴 折りたたみの外（`CLAUDE.md` §13.3）。移動中の判断に要る 3 値。 */}
       {compactHeader ? <dl className="mb-4 flex flex-wrap items-center gap-3 text-xs text-fg-muted" data-testid="project-detail-headline">
         <div><dt className="sr-only">{headline[0]?.label}</dt><dd className="m-0" data-testid="project-detail-headline-status"><ProjectDetailStatus status={view.status} label={headline[0]?.value??''} options={compactHeader.statusOptions} canEdit={canEdit && view.audience === "HOST"}/></dd></div>
+        {view.audience === "HOST" ? <div><dt className="sr-only">{messages.sectionVisibility}</dt><dd className="m-0"><Badge variant="outline"><span data-testid={view.publishState.state === "UNPUBLISHED" ? "project-detail-visibility-warning" : undefined}>{view.publishState.state === "UNPUBLISHED" ? t("projects.cards.visibility.unpublished") : view.publishState.state === "AUTO_REVOKED" ? t("projects.list.visibility.autoRevoked") : `${view.publishState.visibleToCount}${t("projects.list.visibility.publishedTo")}`}</span></Badge></dd></div> : null}
         <div><dt className="sr-only">{compactHeader.categoryLabel}</dt><dd className="m-0"><Badge variant="outline">{compactHeader.category}</Badge></dd></div>
         <div><dt className="sr-only">{compactHeader.sourceKindLabel}</dt><dd className="m-0"><Badge variant="outline">{compactHeader.sourceKind}</Badge></dd></div>
         {/* ✅ 2026-11-02: 募集人数・開始時期などの主要条件は、タブの上の共通サマリー（ProjectCardEditor）に集約した。ここには出さない（重複させない）。 */}
@@ -539,7 +540,7 @@ export function ProjectDetailScreen({
           🔴 **T-12-10: 自動解除の帯が出ている間はこの警告を出さない**（`docs/04` 改訂 14 §S-011）——
           どちらも公開先 0 社だが**原因が違う**（設定し忘れ / 検査で落ちた）。帯は 1 本だけにし、
           自動解除を優先する。条件は「公開先 0 社」ではなく**公開の状態の 4 値**で書く。 */}
-      {view.audience === "HOST" && view.publishState.state === "UNPUBLISHED" ? (
+      {!compactHeader && view.audience === "HOST" && view.publishState.state === "UNPUBLISHED" ? (
         // 🔴 **無彩色 / 枠線**（`docs/04` 改訂 14 §S-011 の 4 値表の「未公開」の行）。
         //    ⚠️ SP-22 段④ の記録: 旧実装は `amber-300 / amber-50`（橙）で、自動解除の
         //    `amber-400 / amber-100` と**濃さだけで**区別していた。semantic トークンに寄せると
@@ -564,7 +565,7 @@ export function ProjectDetailScreen({
         </p>
       ) : null}
 
-      <div className="mb-3 flex flex-wrap items-center gap-4">
+      <div className={cn("flex flex-wrap items-center gap-4", canEdit && !cards && "mb-3")}>
         {canEdit && !cards ? (
           <Link
             className={SECONDARY_LINK_CLASSES}
@@ -575,7 +576,7 @@ export function ProjectDetailScreen({
           </Link>
         ) : null}
         <p
-          className="text-xs text-fg-muted"
+          className="sr-only"
           data-testid="project-detail-view-recorded"
         >
           {messages.viewRecorded}
