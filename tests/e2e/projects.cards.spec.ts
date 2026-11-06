@@ -29,15 +29,7 @@ test("案件カードは一つずつ編集し、キャンセル・失敗・保�
     await expect(page.getByTestId("project-card-public-field-name")).toBeVisible();
     await expect(page.getByTestId("project-card-recheck-notice")).toHaveCount(0);
     await page.getByTestId("project-card-input-name").fill("未保存の名前");
-    // ✅ 2026-11-02: 4 タブ。未保存のままタブを切り替えようとすると確認が出て、「続ける」で編集に戻る。
-    await page.getByTestId("project-detail-tab-requirements").click();
-    await expect(page.getByTestId("project-card-tab-discard-dialog")).toBeVisible();
-    await page
-      .getByTestId("project-card-tab-discard-dialog")
-      .getByRole("button", { name: t("projects.cards.continue"), exact: true })
-      .click();
-    await expect(page.getByTestId("project-card-input-name")).toHaveValue("未保存の名前");
-    // 同じタブの別セクションを開こうとしたときも確認が出る。
+    // 未保存のまま別セクションを開こうとしたときは確認が出る。
     await page.getByTestId("project-card-edit-company").click();
     await expect(page.getByTestId("project-card-discard-dialog")).toBeVisible();
     await page
@@ -47,10 +39,8 @@ test("案件カードは一つずつ編集し、キャンセル・失敗・保�
     await expect(page.getByTestId("project-card-input-name")).toHaveValue(
       "未保存の名前",
     );
-    await page.getByTestId("project-detail-tab-requirements").click();
-    await page.getByTestId("project-card-tab-discard-confirm").click();
-    await expect(page.locator('[data-editing="true"]')).toHaveCount(0);
     await page.getByTestId("project-card-edit-development").click();
+    await page.getByTestId("project-card-discard-confirm").click();
     await expect(page.locator('[data-editing="true"]')).toHaveCount(1);
     await expect(
       page.getByTestId("project-card-input-utilizationRate"),
@@ -75,11 +65,9 @@ test("案件カードは一つずつ編集し、キャンセル・失敗・保�
       page.getByTestId("project-card-value-utilizationRate"),
     ).toHaveText("75%");
     await page.reload();
-    await page.getByTestId("project-detail-tab-requirements").click();
     await expect(
       page.getByTestId("project-card-value-utilizationRate"),
     ).toHaveText("75%");
-    await page.getByTestId("project-detail-tab-related").click();
     await page.getByTestId("project-card-edit-notes").click();
     await page
       .getByTestId("project-card-input-copySummary")
@@ -102,14 +90,12 @@ test("案件カードは一つずつ編集し、キャンセル・失敗・保�
     await page.getByTestId("project-card-save-notes").click();
     await expect(page.locator('[data-editing="true"]')).toHaveCount(0);
     await page.reload();
-    await page.getByTestId("project-detail-tab-related").click();
-    await expect(page.getByTestId("project-card-value-copySummary")).toHaveText(
+    await expect(page.getByTestId("project-list-panel-copy-text")).toHaveValue(
       "取引先向けの手動サマリ",
     );
     await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async(text:string)=>{(window as Window & {copiedProjectText?:string}).copiedProjectText=text;}}}));
     await page.getByTestId('project-detail-copy-summary').click();
     await expect.poll(()=>page.evaluate(()=>(window as Window & {copiedProjectText?:string}).copiedProjectText)).toBe('取引先向けの手動サマリ');
-    await page.getByTestId("project-detail-tab-requirements").click();
     await page.getByTestId("project-card-edit-content").click();
     await page.getByTestId("project-card-requirement-add-MUST").click();
     await expect(page.getByTestId("project-card-public-field-requirements")).toBeVisible();
@@ -134,16 +120,15 @@ test("案件サマリーは保存後も主要条件を表示し、狭い幅で�
     expect(created.status).toBe(201);
     const { id } = JSON.parse(created.text) as { id: string };
     await page.goto(`/projects/${id}`);
-    await expect(page.getByTestId("project-detail-summary-startDate")).toHaveText("未設定");
-    await page.getByTestId("project-detail-tab-working").click();
+    await expect(page.getByTestId("project-detail-summary-startDate")).toHaveText("—");
     await page.getByTestId("project-card-edit-working").click();
     await page.getByTestId("project-card-input-locationDetail").fill("神田駅（徒歩5分）");
     await page.getByTestId("project-card-input-startDate").fill("2026-11-18");
     await page.getByTestId("project-card-save-working").click();
-    await expect(page.getByTestId("project-detail-summary-location")).toHaveText("神田駅（徒歩5分）");
+    await expect(page.getByTestId("project-card-value-locationDetail")).toHaveText("神田駅（徒歩5分）");
     await expect(page.getByTestId("project-detail-summary-startDate")).toHaveText("2026/11/18");
     await page.reload();
-    await expect(page.getByTestId("project-detail-summary-location")).toHaveText("神田駅（徒歩5分）");
+    await expect(page.getByTestId("project-card-value-locationDetail")).toHaveText("神田駅（徒歩5分）");
     await expect(page.getByTestId("project-detail-summary-startDate")).toHaveText("2026/11/18");
     await page.setViewportSize({ width: 375, height: 812 });
     await expectNoHorizontalOverflow("案件サマリー", page);

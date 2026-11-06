@@ -33,8 +33,12 @@ describe("カードの差分保存", () => {
     ).toEqual({ name: "更新案件" }));
   it("未変更のカードは空の差分になる", () =>
     expect(patch("commercial", {})).toEqual({}));
+  it("単価情報と商流はそれぞれの変更だけを保存する", () => {
+    expect(patch("price", { unitPrice: "960000", distribution: "変更" })).toEqual({ unitPriceMin: 960000, unitPriceMax: 960000 });
+    expect(patch("commercial", { unitPrice: "960000", distribution: "変更" })).toEqual({ distribution: "変更" });
+  });
   it("卸単価の変更時だけ上下限を同じ円額にする", () =>
-    expect(patch("commercial", { unitPrice: "960000" })).toEqual({
+    expect(patch("price", { unitPrice: "960000" })).toEqual({
       unitPriceMin: 960000,
       unitPriceMax: 960000,
     }));
@@ -56,7 +60,7 @@ describe("カードの差分保存", () => {
       "endDate",
     ));
   it("精算幅の逆転を拒否する", () =>
-    expect(() => patch("commercial", { settlementMinHours: "190" })).toThrow(
+    expect(() => patch("price", { settlementMinHours: "190" })).toThrow(
       "settlementMaxHours",
     ));
   it("空サマリはnullにして自動生成に戻す", () =>

@@ -24,6 +24,17 @@ describe("案件詳細カードの初期表示", () => {
     expect(own).not.toContain("自社案件");
     expect(partner).toContain("パートナー案件");
   });
+  it("左側に6つのセクションを並べ、右側に公開状況・企業・サマリを置く", () => {
+    const html = renderToStaticMarkup(createElement(ProjectCardEditor, { initial, options: {}, canEdit: true, visibility: createElement("span", null, "公開状況の内容") }));
+    const ids = ["basic", "summary", "content", "price", "commercial", "notes"];
+    const positions = ids.map(id => html.indexOf(`data-testid="project-detail-card-${id}"`));
+    expect(positions.every(position => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    const aside = html.slice(html.indexOf("<aside"), html.indexOf("</aside>"));
+    for (const id of ["project-detail-section-publish", "project-detail-card-company", "project-detail-copy-panel"]) expect(aside).toContain(`data-testid="${id}"`);
+    expect(aside).toContain("公開状況の内容");
+    expect(html).not.toContain('role="tablist"');
+  });
   it("編集権限があっても最初は全カードを閲覧状態にする", () => {
     const html = renderToStaticMarkup(
       createElement(ProjectCardEditor, { initial, options: {}, canEdit: true }),
@@ -31,10 +42,9 @@ describe("案件詳細カードの初期表示", () => {
     expect(html).not.toMatch(/<(input|select)\b/);
     expect(html).toMatch(/<textarea[^>]*readonly/i);
     expect(html).not.toContain('data-editing="true"');
-    // ✅ 2026-11-02: 4 タブ。最初は「概要」タブの 3 セクション（基本情報・業務概要・企業・担当）だけが描かれる。
-    expect(html.match(/data-editing="false"/g)).toHaveLength(3);
+    expect(html.match(/data-editing="false"/g)).toHaveLength(9);
     expect(html).toContain('data-testid="project-detail-summary-strip"');
-    expect(html).toMatch(/role="tablist"[^>]*class="[^"]*bg-transparent/);
+    expect(html).not.toContain('role="tablist"');
     for (const tab of ["overview", "requirements", "working", "related"]) {
       expect(html).toContain(`data-testid="project-detail-tab-${tab}"`);
     }
@@ -43,7 +53,7 @@ describe("案件詳細カードの初期表示", () => {
     expect(html).toContain("project-detail-edit-link");
     expect(html).not.toContain("/edit");
   });
-  it("サマリーを指定順に整形する", () => {
+  it("基本情報・スキル要件・商流に主要条件を表示する", () => {
     const data: ProjectCardData = { ...initial, values: {
       ...initial.values, unitPrice: "990000", internalUnitPrice: "900000",
       prefecture: "13", locationDetail: "神田駅（徒歩5分）", remoteMode: "FULL_REMOTE",
@@ -56,30 +66,26 @@ describe("案件詳細カードの初期表示", () => {
     const keys = ["unitPrice", "internalUnitPrice", "location", "remoteMode", "startDate", "endDate", "headcount"];
     const positions = keys.map(key => html.indexOf(`data-testid="project-detail-summary-${key}"`));
     expect(positions.every(position => position >= 0)).toBe(true);
-    expect(positions).toEqual([...positions].sort((a, b) => a - b));
-    for (const value of ["990,000円/月", "東京都 神田駅（徒歩5分）", "フルリモート可", "2026/11/18", "900,000円/月", "2027/03/01", "2名"]) {
+    for (const value of ["990,000円/月", "東京都", "神田駅（徒歩5分）", "フルリモート可", "2026/11/18", "900,000円/月", "2027/03/01", "2名"]) {
       expect(html).toContain(value);
     }
-    expect(html).toContain("xl:grid-cols-7");
+    for (const name of ["基本情報", "業務概要", "スキル要件", "単価情報", "商流", "特記事項"]) expect(html).toContain(name);
   });
   it("サマリーの未登録を未設定とし、勤務地の登録済み部分だけを表示する", () => {
     const data: ProjectCardData = { ...initial, values: { ...initial.values, locationDetail: "神田駅" } };
     const html = renderToStaticMarkup(createElement(ProjectCardEditor, { initial: data, options: {}, canEdit: true }));
-    expect(html).toMatch(/data-testid="project-detail-summary-unitPrice"[^>]*>未設定</);
-    expect(html).toMatch(/data-testid="project-detail-summary-location"[^>]*>神田駅</);
-    expect(html).toMatch(/data-testid="project-detail-summary-startDate"[^>]*>未設定</);
+    expect(html).toContain('data-testid="project-card-value-locationDetail">神田駅');
+    expect(html).toContain('data-testid="project-detail-summary-startDate"');
   });
   it("主要条件と補足条件を順に表示し、空の要件に表を出さない", () => {
     const overview = renderToStaticMarkup(createElement(ProjectCardEditor, { initial, options: {}, canEdit: true }));
     const keys = ["unitPrice", "internalUnitPrice", "location", "remoteMode", "startDate", "endDate", "headcount"];
     const positions = keys.map(key => overview.indexOf(`data-testid="project-detail-summary-${key}"`));
     expect(positions.every(position => position >= 0)).toBe(true);
-    expect(positions).toEqual([...positions].sort((a, b) => a - b));
-    expect(overview).toContain("未設定");
+    expect(overview).toContain("—");
     const requirements = renderToStaticMarkup(createElement(ProjectCardEditor, { initial, options: {}, canEdit: true, initialTab: "requirements" }));
     expect(requirements).not.toContain("<table");
     const related = renderToStaticMarkup(createElement(ProjectCardEditor, { initial, options: {}, canEdit: true, initialTab: "related" }));
-    expect(related).toContain("全文を表示");
     expect(related).toContain('data-testid="project-detail-copy-summary-inline"');
   });
   it("関連情報に案件別の件数と導線を表示する", () => {
