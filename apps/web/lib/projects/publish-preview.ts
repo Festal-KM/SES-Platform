@@ -77,8 +77,9 @@ export function findCommerceLeakWarnings(input: {
   readonly texts: readonly PublishedText[];
   readonly endClientName: string | null;
   readonly internalUnitPrice: number | null;
+  readonly wholesalePriceMax?: number | null;
 }): readonly CommerceLeakWarning[] {
-  const priceTerms = unitPriceTerms(input.internalUnitPrice);
+  const priceTerms = [...new Set([...unitPriceTerms(input.internalUnitPrice), ...unitPriceTerms(input.wholesalePriceMax ?? null)])];
   const warnings: CommerceLeakWarning[] = [];
 
   for (const field of PUBLISHED_FIELDS) {

@@ -265,7 +265,7 @@ export async function readProjectPublishGateHashInput(
 ): Promise<ProjectPublishGateHashInput | null> {
   const project = await db.project.findUnique({
     where: { id: projectId },
-    select: { name: true, publicSummary: true, publicMemo: true, locationDetail: true, endClientName: true, internalUnitPrice: true },
+    select: { name: true, publicSummary: true, publicMemo: true, locationDetail: true, endClientName: true, internalUnitPrice: true, unitPriceMin: true, unitPriceMax: true },
   });
   if (project === null) return null;
 
@@ -284,6 +284,8 @@ export async function readProjectPublishGateHashInput(
     publicSummary: projectPublicContent(project),
     endClientName: project.endClientName,
     internalUnitPrice: decimal(project.internalUnitPrice),
+    wholesalePriceMin: decimal(project.unitPriceMin),
+    wholesalePriceMax: decimal(project.unitPriceMax),
     // 🔴 「すでに公開済み ∪ これから公開する」の和。重複は畳む（同じ相手を 2 回数えない）。
     audiencePartnerCompanyIds: [
       ...new Set([...published.map((row) => row.partnerCompanyId), ...requestedPartnerCompanyIds]),

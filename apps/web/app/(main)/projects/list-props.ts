@@ -164,7 +164,7 @@ export function projectListScreenMessages(params: {
     columnName: t('projects.list.column.name'),
     columnStatus: t('projects.list.column.status'),
     columnMustRequirements: t('projects.list.column.mustRequirements'),
-    columnUnitPrice: t('projects.list.column.wholesaleUnitPrice'),
+    columnUnitPrice: t(isPartner ? 'projects.list.column.purchaseUnitPrice' : 'projects.list.column.wholesaleUnitPrice'),
     columnPurchaseUnitPrice: t('projects.list.column.purchaseUnitPrice'),
     columnStartDate: t('projects.list.column.startDate'),
     columnLocation: t('projects.list.column.location'),

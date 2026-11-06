@@ -787,7 +787,8 @@ describe('🔴 F-013 AC-2: 商流情報の射影（取得時に分ける）', ()
     // 🔴 値も 1 文字も現れない（別のキー名に紛れ込んでいないことの確認）。
     const serialized = JSON.stringify(body);
     expect(serialized).not.toContain(ISOLATION_FORBIDDEN_MARKERS.endClientName);
-    expect(serialized).not.toContain(String(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice));
+    expect(body['unitPriceMin']).toBe(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice);
+    expect(body['unitPriceMax']).toBe(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice);
   });
 
   it('🔴 取引先にも判断材料（要件・外部公開用のレンジ・公開用の記載）は届く', async () => {
@@ -803,12 +804,32 @@ describe('🔴 F-013 AC-2: 商流情報の射影（取得時に分ける）', ()
     expect(requirements[0]?.['freeText']).toBe('TypeScript 3 年');
   });
 
-  it('🔴 取引先向けの `select` に商流情報の列が 1 つも無い（SQL としても取得していない）', () => {
+  it('🔴 取引先の射影は仕入単価だけを読み、卸単価を取得しない', () => {
     expect(PROJECT_DETAIL_SELECT_KEYS.partner).not.toContain('endClientName');
-    expect(PROJECT_DETAIL_SELECT_KEYS.partner).not.toContain('internalUnitPrice');
+    expect(PROJECT_DETAIL_SELECT_KEYS.partner).toContain('internalUnitPrice');
+    expect(PROJECT_DETAIL_SELECT_KEYS.partner).not.toContain('unitPriceMin');
+    expect(PROJECT_DETAIL_SELECT_KEYS.partner).not.toContain('unitPriceMax');
     // 対照: ホスト側は読んでいる（＝ 列の存在ではなく **読む／読まない** で分かれている）。
     expect(PROJECT_DETAIL_SELECT_KEYS.host).toContain('endClientName');
     expect(PROJECT_DETAIL_SELECT_KEYS.host).toContain('internalUnitPrice');
+  });
+  it('取引先の一覧と詳細に仕入単価だけを出し、卸単価では検索できない', async () => {
+    const id = TENANT_1.publishedProjectId;
+    const original = await admin.project.findUniqueOrThrow({ where: { id }, select: { unitPriceMin: true, unitPriceMax: true, internalUnitPrice: true } });
+    try {
+      await admin.project.update({ where: { id }, data: { unitPriceMin: 987654, unitPriceMax: 987654, internalUnitPrice: 765432 } });
+      const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+      const detail = await detailBodyOf(await getProject(ctx, id));
+      expect(detail['unitPriceMin']).toBe(765432);
+      expect(detail['unitPriceMax']).toBe(765432);
+      expect(JSON.stringify(detail)).not.toContain('987654');
+      const listing = await listBodyOf(await getProjects(ctx));
+      const item = listing.items.find(row => row['id'] === id);
+      expect(item?.['unitPriceMin']).toBe(765432);
+      expect(JSON.stringify(item)).not.toContain('987654');
+    } finally {
+      await admin.project.update({ where: { id }, data: original });
+    }
   });
 });
 
@@ -1141,7 +1162,7 @@ describe('🔴 F-013 AC-2: 一覧にも商流情報が現れない', () => {
     const raw = await (await getProjects(ctx)).text();
 
     expect(raw).not.toContain(ISOLATION_FORBIDDEN_MARKERS.endClientName);
-    expect(raw).not.toContain(String(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice));
+    expect(raw).toContain(String(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice));
     expect(raw).not.toContain('endClientName');
     expect(raw).not.toContain('internalUnitPrice');
   });

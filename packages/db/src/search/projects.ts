@@ -60,6 +60,8 @@ export type ProjectWhereFragment = {
    */
   unitPriceMin?: null | { lte: number };
   unitPriceMax?: null | { gte: number };
+  /** 取引先向けの仕入単価。指定元は認証コンテキストだけ。 */
+  internalUnitPrice?: null | { lte?: number; gte?: number };
   /**
    * ✅✅ **2026-10-16（人間の明示指示「スキル（リストから複数選択できる、or 検索）」）。**
    *
@@ -103,6 +105,8 @@ export type ProjectSearchCriteria = {
   readonly keywordGroups?: string;
   /** 認証文脈からだけ指定する。リクエストから受け取らない。 */
   readonly searchInternalRemarks?: boolean;
+  /** 単価検索の対象を取引先向けの仕入単価にする。 */
+  readonly searchPurchasePrice?: boolean;
   readonly status?: ProjectStatus;
   /** 開始日が**この日以降**（`YYYY-MM-DD`）。 */
   readonly startFrom?: string;
@@ -287,7 +291,10 @@ export function projectSearchWhere(criteria: ProjectSearchCriteria): ProjectWher
   const and: ProjectWhereFragment[] = [
     // ✅ 2026-10-15: 単価レンジ。🔴 **述語の定義は `unit-price-range.ts` の 1 本**であり、
     //    人材検索（`#15`）と同じものを通る（T-06-03 の申し送りの決着）。
-    ...unitPriceOverlapConditions(criteria),
+    ...(criteria.searchPurchasePrice ? [
+      ...(criteria.priceMax === undefined ? [] : [{ OR: [{ internalUnitPrice: null }, { internalUnitPrice: { lte: criteria.priceMax } }] }]),
+      ...(criteria.priceMin === undefined ? [] : [{ OR: [{ internalUnitPrice: null }, { internalUnitPrice: { gte: criteria.priceMin } }] }]),
+    ] : unitPriceOverlapConditions(criteria)),
   ];
   const keywordCondition = (term: string): ProjectWhereFragment => ({ OR: [
     { name: freeWordFilter(term) }, { publicSummary: freeWordFilter(term) },

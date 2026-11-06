@@ -613,7 +613,7 @@ export function ProjectCardEditor({
                         </span>
                       ) : null}
                     </span>
-                    <div className={cn("min-w-0", "sm:col-span-4")}>{key === "settlementMinHours" ? <div className="flex min-w-0 items-center gap-2">{control(key)}<span>{t('projects.cards.rangeSeparator')}</span>{control('settlementMaxHours')}<span className="shrink-0 text-xs">{t('projects.cards.hours')}</span></div> : control(key)}{publicFields.has(key) ? <p className="m-0 mt-1 text-xs text-brand" data-testid={`project-card-public-field-${key}`}>{t("projects.publicField.notice")}</p> : null}{key === "unitPrice" ? <p className="m-0 mt-1 text-xs text-brand" data-testid="project-card-unit-price-shared">{t("projects.cards.unitPriceShared")}</p> : null}</div>
+                    <div className={cn("min-w-0", "sm:col-span-4")}>{key === "settlementMinHours" ? <div className="flex min-w-0 items-center gap-2">{control(key)}<span>{t('projects.cards.rangeSeparator')}</span>{control('settlementMaxHours')}<span className="shrink-0 text-xs">{t('projects.cards.hours')}</span></div> : control(key)}{publicFields.has(key) ? <p className="m-0 mt-1 text-xs text-brand" data-testid={`project-card-public-field-${key}`}>{t("projects.publicField.notice")}</p> : null}{key === "internalUnitPrice" ? <p className="m-0 mt-1 text-xs text-brand" data-testid="project-card-unit-price-shared">{t("projects.cards.unitPriceShared")}</p> : null}</div>
                   </div>
                 </Field>
               ) : (

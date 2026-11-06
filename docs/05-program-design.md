@@ -892,6 +892,8 @@ model SkillSheetExtraction {
 
 ### 3.5 案件・公開範囲・マッチング・匿名共有
 
+**2026-11-06 宮田の訂正**: 既存値の意味を維持し、`Project.internalUnitPrice` は仕入単価、`unitPriceMin` / `unitPriceMax` は上位会社向けの卸単価とする。取引先の読み取りは仕入単価だけを公開用の単価として投影し、卸単価の取得・検索・件数からの推測を防ぐ。NULL は NULL のままとし、代わりに卸単価を使わない。公開文の商流検査は卸単価を保護する。提案先が上位会社の場合の検査は別の情報境界として維持する。既存行を単純に入れ替える移行は行わない。
+
 **2026-10-26 人間の追加指示**：projectsにnullableのlocation_detail、public_memo、remarksを追加（migration 20261026000000_project_basic_info）。location_detailとpublic_memoは公開用、remarksはホスト内部用。公開本文グループはprojectPublicContentでpublicSummary→locationDetail→publicMemoの順にまとめ、内容ハッシュ・検査対象・PATCH前後の差分判定を一致させる。internalUnitPriceは画面上の想定仕入単価、卸単価は既存unitPriceMin／unitPriceMaxへ同額を保存する。旧レンジの情報は備考に保持。S-010の基本情報は選択された1件の専用射影から読み、商流・備考・担当者はホスト枝だけで取得し、project.view監査を記録する。
 
 ```prisma

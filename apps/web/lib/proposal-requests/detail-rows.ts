@@ -91,7 +91,7 @@ export function proposalRequestDetailRows(view: PartnerProposalRequestDetailView
           id: view.project.id,
           name: view.project.name,
           headline: projectHeadlineRows(view.project),
-          conditions: projectConditionRows(view.project),
+          conditions: projectConditionRows(view.project, true),
           mustRequirements: projectRequirementRows(view.project.requirements, 'MUST'),
           niceRequirements: projectRequirementRows(view.project.requirements, 'NICE'),
           publicSummary: view.project.publicSummary,

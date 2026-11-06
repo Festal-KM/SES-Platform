@@ -217,6 +217,8 @@ describe('gateHashSource（PROJECT_PUBLISH）', () => {
     publicSummary: '大手金融の基幹刷新。React / TypeScript。',
     endClientName: '株式会社エンド',
     internalUnitPrice: '900000.00',
+    wholesalePriceMin: null,
+    wholesalePriceMax: null,
     audiencePartnerCompanyIds: ['partner-b', 'partner-a'],
     partnerCompanies: [
       { partnerCompanyId: 'partner-b', name: 'ビー商事' },
@@ -269,6 +271,8 @@ describe('gateHashSource（PROJECT_PUBLISH）', () => {
     ['公開文', { publicSummary: '大手金融の基幹刷新。React / TypeScript' }],
     ['エンド企業名', { endClientName: '株式会社エンド２' }],
     ['内部単価', { internalUnitPrice: '900001.00' }],
+    ['卸単価の下限', { wholesalePriceMin: '990000.00' }],
+    ['卸単価の上限', { wholesalePriceMax: '1000000.00' }],
     // 🔴 T-07-09 の是正（docs/05 §11.11 ⑧）: 案件名と要件のフリーテキストも公開先が読む欄であり、
     //    材料に入っていないと「案件名だけ直して再要求」が FAIL のキャッシュを引く（またはその逆）。
     ['案件名', { name: '基幹システム刷新（第 2 期）' }],

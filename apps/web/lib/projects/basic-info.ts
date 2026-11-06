@@ -54,7 +54,7 @@ export function projectBasicInfoFields(info: ProjectBasicInfo): readonly Project
     field('category', info.category === null ? none : t(PROJECT_CATEGORY_MESSAGE_KEYS[info.category])),
     field('businessOverview', text(info.publicSummary)),
     field('remoteMode', text(info.remoteMode)),
-    field('unitPrice', price(info.unitPriceMin ?? info.unitPriceMax)),
+    field(host === null ? 'purchaseUnitPrice' : 'unitPrice', price(info.unitPriceMin ?? info.unitPriceMax)),
     ...(host === null ? [] : [field('purchaseUnitPrice', price(host.internalUnitPrice))]),
     field('location', info.location),
     field('startDate', text(info.startDate)),
@@ -72,15 +72,16 @@ export function projectBasicInfoFields(info: ProjectBasicInfo): readonly Project
 
 const SHARED_SELECT = {
   id: true, category: true, publicSummary: true, remoteMode: true,
-  unitPriceMin: true, unitPriceMax: true, prefecture: true, locationDetail: true,
+  prefecture: true, locationDetail: true,
   startDate: true, endDate: true, headcount: true, distributionLimit: true,
   publicMemo: true, updatedAt: true,
 } as const;
 const HOST_SELECT = {
-  ...SHARED_SELECT, endClientName: true, upperCompanyName: true,
+  ...SHARED_SELECT, unitPriceMin: true, unitPriceMax: true, endClientName: true, upperCompanyName: true,
   internalUnitPrice: true, remarks: true,
   assignee: { select: { displayName: true } },
 } as const;
+const PARTNER_SELECT = { ...SHARED_SELECT, internalUnitPrice: true } as const;
 
 /** 選択された1件だけを読み、商流を含む閲覧は既存の監査経路へ記録する。 */
 export async function readProjectBasicInfo(
@@ -89,7 +90,7 @@ export async function readProjectBasicInfo(
   return withTenant(ctx, async (db) => {
     const result = ctx.partnerCompanyId === null
       ? { audience: 'HOST' as const, row: await db.project.findFirst({ where: { id }, select: HOST_SELECT }) }
-      : { audience: 'PARTNER' as const, row: await db.project.findFirst({ where: { id }, select: SHARED_SELECT }) };
+      : { audience: 'PARTNER' as const, row: await db.project.findFirst({ where: { id }, select: PARTNER_SELECT }) };
     const row = result.row;
     if (row === null) throw new NotFoundError();
     await recordProjectView(db, ctx, id, PROJECT_VIEW_VIA.detail, meta);
@@ -110,7 +111,8 @@ export async function readProjectBasicInfo(
       category: row.category as ProjectCategory | null,
       publicSummary: row.publicSummary,
       remoteMode: formatProjectRemoteMode(row.remoteMode as Parameters<typeof formatProjectRemoteMode>[0]),
-      unitPriceMin: decimalToNumber(row.unitPriceMin), unitPriceMax: decimalToNumber(row.unitPriceMax),
+      unitPriceMin: result.audience === 'HOST' ? decimalToNumber(result.row?.unitPriceMin ?? null) : decimalToNumber(row.internalUnitPrice),
+      unitPriceMax: result.audience === 'HOST' ? decimalToNumber(result.row?.unitPriceMax ?? null) : decimalToNumber(row.internalUnitPrice),
       location: [row.prefecture === null ? null : formatProjectLocation(row.prefecture as Parameters<typeof formatProjectLocation>[0]), row.locationDetail].filter(Boolean).join(' / ') || t('projects.detail.valueNone'),
       startDate: toDateOnlyString(row.startDate), endDate: toDateOnlyString(row.endDate),
       headcount: row.headcount, distributionLimit: row.distributionLimit,

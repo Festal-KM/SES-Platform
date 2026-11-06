@@ -72,8 +72,8 @@ const ja = {
   'projects.cards.required': '必須要件',
   'projects.cards.preferred': '尚可要件',
   'projects.cards.moneyHint': '金額は円単位の月額です。卸単価は固定額で登録します。',
-  'projects.cards.summaryHint': '手動で保存したサマリを優先します。空欄で保存すると基本情報から生成します。取引先に貼る文面なので、エンド企業名・想定仕入単価・備考は書かないでください。',
-  'projects.cards.unitPriceShared': '卸単価は公開先の取引先にも表示されます。',
+  'projects.cards.summaryHint': '手動で保存したサマリを優先します。空欄で保存すると基本情報から生成します。取引先に貼る文面なので、エンド企業名・卸単価・備考は書かないでください。',
+  'projects.cards.unitPriceShared': '想定仕入単価は公開先の取引先にも表示されます。',
   'projects.cards.requirementPublicNotice': '要件の自由記述は公開先の取引先が読みます。',
   'projects.cards.notesHostOnly': '備考とコピー用サマリは取引先の画面に表示されません（公開メモだけが公開先に表示されます）。',
   'projects.cards.visibility': '公開先・公開申請',
@@ -2973,7 +2973,7 @@ const ja = {
 
   // 🔴 `F-013 AC-2` / `docs/04` §S-012: 商流情報ブロックに常時添える 1 行。
   'projects.commerce.notice':
-    'この情報は公開範囲の相手には表示されません。案件を公開しても、エンド企業名と自社単価は取引先の画面・通知・エクスポートのいずれにも出ません。',
+    'エンド企業名と卸単価は公開範囲の相手には表示されません。',
   'projects.endClientName.label': 'エンド企業名',
   'projects.internalUnitPrice.label': '自社単価（月額）',
 
