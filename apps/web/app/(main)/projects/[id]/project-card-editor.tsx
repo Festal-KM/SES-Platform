@@ -42,8 +42,7 @@ import { patchProject, useProjectDetailSession } from "./project-detail-session"
 
 type Option = { value: string; label: string };
 // ✅ 2026-11-02（人間の指示「4タブ＋上部共通サマリー＋1カラム＋セクション単位編集」）。
-const PROJECT_DETAIL_TABS = ["overview", "requirements", "working", "related"] as const;
-type ProjectDetailTab = (typeof PROJECT_DETAIL_TABS)[number];
+type ProjectDetailTab = "overview" | "requirements" | "working" | "related";
 export type ProjectCardOptions = Record<string, readonly Option[]>;
 const label = (key: string) => t(`projects.cards.field.${key}` as MessageKey);
 const title = (card: string) => t((['basic', 'content', 'commercial', 'notes'].includes(card) ? `projects.cards.section.${card}` : `projects.cards.title.${card}`) as MessageKey);
@@ -725,22 +724,6 @@ export function ProjectCardEditor({
     related: panel(
       <>
         {staticSection(
-          "related",
-          <div className="flex flex-col text-body">
-            <Button variant="ghost" size="sm" className="justify-between" onClick={() => requestTab("overview")} data-testid="project-detail-related-visibility">
-              <span>{t("projects.cards.visibility")}</span><span>{t("projects.cards.related.published")} {publishedToCount}{t("projects.cards.related.count")} / {t("projects.cards.related.publishRequests")} {data.relatedCounts.publishRequests}{t("projects.cards.related.count")} →</span>
-            </Button>
-            <a className="flex justify-between border-b border-border py-3 text-brand" href={`/proposals?projectId=${data.id}`} data-testid="project-detail-proposals-empty">
-              <span>{t("projects.cards.related.proposals")}</span><span>{data.relatedCounts.proposals}{t("projects.cards.related.count")} →</span>
-            </a>
-            <a className="flex justify-between border-b border-border py-3 text-brand" href="/proposal-requests" data-testid="project-detail-proposals-coming-soon">
-              <span>{t("projects.cards.related.requests")}</span><span>{data.relatedCounts.requests}{t("projects.cards.related.count")} →</span>
-            </a>
-            {(["contracts", "assignments"] as const).map(key => <div key={key} className="flex justify-between border-b border-border py-3"><span>{t(`projects.cards.related.${key}`)}</span><span>{t("projects.cards.related.unavailable")}</span></div>)}
-            <a className="py-3 text-brand" href={`/projects/${data.id}/candidates`}>{t("projects.detail.candidates.open")}</a>
-          </div>,
-        )}
-        {staticSection(
           "management",
           definitionRows([
             ["id", data.id],
@@ -768,17 +751,6 @@ export function ProjectCardEditor({
       </>,
     ),
   };
-  function requestTab(value: string): void {
-    const target = PROJECT_DETAIL_TABS.find((item) => item === value);
-    if (!target) return;
-    if (active && dirty) {
-      setNextTab(target);
-      return;
-    }
-    setActive(null);
-    setTab(target);
-    document.getElementById("project-detail-section-publish")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
   const copySummary = (
       <div className="min-w-0 rounded-md border border-border bg-bg" data-testid="project-detail-copy-panel">
         <h2 className="m-0 px-4 pt-4 text-body font-semibold">{t("projects.cards.field.copySummary")}</h2>
@@ -810,7 +782,7 @@ export function ProjectCardEditor({
           {copySummary}
         </aside>
       </div>
-      <div data-testid="project-detail-tab-related">{sections.related}</div>
+      <div data-testid="project-detail-tab-related" />
       <Dialog
         open={nextTab !== null}
         onOpenChange={(open) => {

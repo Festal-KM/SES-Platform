@@ -88,15 +88,13 @@ describe("案件詳細カードの初期表示", () => {
     const related = renderToStaticMarkup(createElement(ProjectCardEditor, { initial, options: {}, canEdit: true, initialTab: "related" }));
     expect(related).toContain('data-testid="project-detail-copy-summary-inline"');
   });
-  it("関連情報に案件別の件数と導線を表示する", () => {
+  it("関連情報・管理情報・変更履歴を表示しない", () => {
     const data = { ...initial, relatedCounts: { proposals: 3, requests: 2, publishRequests: 1 } };
     const html = renderToStaticMarkup(createElement(ProjectCardEditor, { initial: data, options: {}, canEdit: true, initialTab: "related", publishedToCount: 4 }));
-    expect(html).toContain('/proposals?projectId=own-project');
-    expect(html).toContain('3件');
-    expect(html).toContain('2件');
-    expect(html).toContain('4件');
-    expect(html).toContain('1件');
-    expect(html).toContain('data-testid="project-detail-copy-id"');
+    expect(html).not.toContain('data-testid="project-detail-card-related"');
+    expect(html).not.toContain('/proposals?projectId=own-project');
+    expect(html).not.toContain('data-testid="project-detail-card-management"');
+    expect(html).not.toContain('data-testid="project-detail-card-history"');
   });
   it("各タブの副カラムで手動サマリを優先し、未登録時は自動生成を表示する", () => {
     for (const initialTab of ["overview", "requirements", "working", "related"] as const) {
@@ -120,8 +118,8 @@ describe("案件詳細カードの初期表示", () => {
     );
     expect(html).not.toContain("project-detail-edit-link");
     expect(html).not.toContain("project-card-edit-");
-    expect(html).toContain("project-detail-card-management");
-    expect(html).toContain("project-detail-card-related");
+    expect(html).not.toContain('data-testid="project-detail-card-management"');
+    expect(html).not.toContain('data-testid="project-detail-card-related"');
   });
   // 🔴 F-013 AC-2: 取引先に出ない項目のブロックには常に注記。凍結 testid の中身を金額の説明に入れ替えない。
   it("商流・企業・メモのカードに『取引先には表示されない』注記を常に出す", () => {
