@@ -450,5 +450,12 @@ describe('添付に合わせたコンパクトなホスト見出し',()=>{
     for(const id of ['project-detail-headline-headcount','project-detail-headline-startDate'])expect(html).not.toContain(`data-testid="${id}"`);
     expect(html).toContain('サンプル担当者');
     expect(html).toContain('バックエンド');
+    expect(html).toContain('2社に公開中');
+    expect(html).toMatch(/class="sr-only" data-testid="project-detail-view-recorded"/);
+  });
+  it('未公開の表示を見出し内にまとめる',()=>{
+    const html=renderToStaticMarkup(createElement(ProjectDetailScreen,{view:hostView({visibilities:[],publishState:{state:'UNPUBLISHED',visibleToCount:0,latestGate:null}}),requirementKinds:REQUIREMENT_KINDS,canEdit:true,messages,compactHeader:{categoryLabel:'カテゴリ',sourceKindLabel:'案件区分',category:'バックエンド',sourceKind:'自社案件',updatedAt:'2026-10-31',assignee:null,copyText:'提出用サマリ',updatedLabel:'更新日時',assigneeLabel:'担当者',candidatesLabel:'候補を探す',statusOptions:[]}}));
+    expect(html).toMatch(/data-testid="project-detail-visibility-warning">未公開</);
+    expect(html).not.toContain(messages.visibilityEmpty);
   });
 });

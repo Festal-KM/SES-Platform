@@ -600,7 +600,9 @@ export function ProjectCardEditor({
                 <p className="m-0 mt-1">{t("projects.recheckNotice.willNotRun")}</p>
               </section>
             ) : null}
-            <div className={cn("grid min-w-0 grid-cols-1 gap-x-6 gap-y-3", !editing && (id === "working" || id === "commercial" || id === "notes") && "md:grid-cols-2")}>{PROJECT_CARD_FIELDS[id].filter(key=>key!=="settlementMaxHours").map((key) =>
+            <div className={cn("grid min-w-0 grid-cols-1 gap-x-6 gap-y-3", !editing && (id === "working" || id === "commercial" || id === "notes") && "md:grid-cols-2")}>{PROJECT_CARD_FIELDS[id].filter((key) =>
+              key !== "settlementMaxHours" && (editing || key !== "sourceKind" || data.values.sourceKind !== "OWN"),
+            ).map((key) =>
               <div key={key} className={cn("min-w-0", !editing && id === "notes" && key === "copySummary" && "md:col-span-2")}>{editing ? (
                 <Field key={key} as="div">
                   <div className={cn("grid min-w-0 grid-cols-1 items-start gap-2", "sm:grid-cols-5")}>
@@ -860,6 +862,7 @@ export function ProjectCardEditor({
       </div>
       <Tabs
         scrollable
+        transparent
         label={t("projects.cards.tab.label")}
         value={tab}
         onValueChange={requestTab}

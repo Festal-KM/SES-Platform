@@ -17,6 +17,13 @@ const initial: ProjectCardData = {
   publishedToCount: 0,
 };
 describe("案件詳細カードの初期表示", () => {
+  it("自社案件の区分は閲覧時に省き、パートナー案件は表示する", () => {
+    const options = { sourceKind: [{ value: "OWN", label: "自社案件" }, { value: "PARTNER", label: "パートナー案件" }] };
+    const own = renderToStaticMarkup(createElement(ProjectCardEditor, { initial: { ...initial, values: { ...initial.values, sourceKind: "OWN" } }, options, canEdit: true }));
+    const partner = renderToStaticMarkup(createElement(ProjectCardEditor, { initial: { ...initial, values: { ...initial.values, sourceKind: "PARTNER" } }, options, canEdit: true }));
+    expect(own).not.toContain("自社案件");
+    expect(partner).toContain("パートナー案件");
+  });
   it("編集権限があっても最初は全カードを閲覧状態にする", () => {
     const html = renderToStaticMarkup(
       createElement(ProjectCardEditor, { initial, options: {}, canEdit: true }),
@@ -27,6 +34,7 @@ describe("案件詳細カードの初期表示", () => {
     // ✅ 2026-11-02: 4 タブ。最初は「概要」タブの 3 セクション（基本情報・業務概要・企業・担当）だけが描かれる。
     expect(html.match(/data-editing="false"/g)).toHaveLength(3);
     expect(html).toContain('data-testid="project-detail-summary-strip"');
+    expect(html).toMatch(/role="tablist"[^>]*class="[^"]*bg-transparent/);
     for (const tab of ["overview", "requirements", "working", "related"]) {
       expect(html).toContain(`data-testid="project-detail-tab-${tab}"`);
     }
