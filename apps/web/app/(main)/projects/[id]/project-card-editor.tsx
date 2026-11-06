@@ -26,7 +26,7 @@ import {
   Textarea,
   cn,
 } from "@ses/ui";
-import { Dialog, Tabs, Toast, Tooltip, TooltipIconButton } from "@ses/ui/client";
+import { Dialog, Toast, Tooltip, TooltipIconButton } from "@ses/ui/client";
 import { ProjectCopySummary } from "../project-copy-summary";
 import {
   PROJECT_CARD_FIELDS,
@@ -46,7 +46,7 @@ const PROJECT_DETAIL_TABS = ["overview", "requirements", "working", "related"] a
 type ProjectDetailTab = (typeof PROJECT_DETAIL_TABS)[number];
 export type ProjectCardOptions = Record<string, readonly Option[]>;
 const label = (key: string) => t(`projects.cards.field.${key}` as MessageKey);
-const title = (card: string) => t(`projects.cards.title.${card}` as MessageKey);
+const title = (card: string) => t((['basic', 'content', 'commercial', 'notes'].includes(card) ? `projects.cards.section.${card}` : `projects.cards.title.${card}`) as MessageKey);
 const numeric = new Set([
   "unitPrice",
   "internalUnitPrice",
@@ -113,9 +113,8 @@ export function ProjectCardEditor({
   const [rateBand, setRateBand] = useState(projectUtilizationBand(String(initial.values.utilizationRate ?? '')));
   const [nextCard, setNextCard] = useState<ProjectCardId | null>(null);
   // ✅ 2026-11-02: 4 タブ。未保存の変更があるときの切り替えは確認ダイアログを挟む。
-  const [tab, setTab] = useState<ProjectDetailTab>(initialTab);
+  const [, setTab] = useState<ProjectDetailTab>(initialTab);
   const [nextTab, setNextTab] = useState<ProjectDetailTab | null>(null);
-  const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
@@ -600,14 +599,14 @@ export function ProjectCardEditor({
                 <p className="m-0 mt-1">{t("projects.recheckNotice.willNotRun")}</p>
               </section>
             ) : null}
-            <div className={cn("grid min-w-0 grid-cols-1 gap-x-6 gap-y-3", !editing && (id === "working" || id === "commercial" || id === "notes") && "md:grid-cols-2")}>{PROJECT_CARD_FIELDS[id].filter((key) =>
-              key !== "settlementMaxHours" && (editing || key !== "sourceKind" || data.values.sourceKind !== "OWN"),
+            <div className={cn("grid min-w-0 grid-cols-1 gap-x-6 gap-y-3", !editing && (id === "working" || id === "price" || id === "commercial" || id === "notes") && "md:grid-cols-2")}>{PROJECT_CARD_FIELDS[id].filter((key) =>
+              key !== "settlementMaxHours" && (editing || key !== "sourceKind" || data.values.sourceKind !== "OWN") && (editing || key !== "copySummary"),
             ).map((key) =>
               <div key={key} className={cn("min-w-0", !editing && id === "notes" && key === "copySummary" && "md:col-span-2")}>{editing ? (
                 <Field key={key} as="div">
                   <div className={cn("grid min-w-0 grid-cols-1 items-start gap-2", "sm:grid-cols-5")}>
                     <span className="pt-2 text-xs text-fg-muted">
-                      {label(key === "settlementMinHours" ? "settlementHours" : key)}
+                      {label(key === "settlementMinHours" ? "settlementHours" : key === "remarks" ? "internalMemo" : key)}
                       {required.has(key) ? (
                         <span className="text-danger" aria-hidden="true">
                           {t("projects.cards.requiredMark")}
@@ -622,18 +621,17 @@ export function ProjectCardEditor({
                   key={key}
                   className={cn("grid min-w-0 grid-cols-1 gap-1 text-body", id !== "notes" && "border-b border-border-row py-1 sm:grid-cols-[10rem_1fr]")}
                 >
-                  <span className="text-xs text-fg-muted">{label(key === "settlementMinHours" ? "settlementHours" : key)}</span>
+                  <span className="text-xs text-fg-muted">{label(key === "settlementMinHours" ? "settlementHours" : key === "remarks" ? "internalMemo" : key)}</span>
                   <span
-                    className={cn("min-w-0 whitespace-pre-wrap break-words font-medium", key === "copySummary" && !summaryExpanded && "line-clamp-4")}
+                    className="min-w-0 whitespace-pre-wrap break-words font-medium"
                     data-testid={
                       key === "publicSummary"
                         ? "project-detail-public-summary"
                         : key === "settlementMinHours" ? "project-card-value-settlementHours" : `project-card-value-${key}`
                     }
                   >
-                    {key === "settlementMinHours" ? (!data.values.settlementMinHours && !data.values.settlementMaxHours ? t('projects.detail.valueNone') : <><span data-testid="project-card-value-settlementMinHours">{data.values.settlementMinHours || t('projects.detail.valueNone')}</span>{t('projects.cards.rangeSeparator')}<span data-testid="project-card-value-settlementMaxHours">{data.values.settlementMaxHours || t('projects.detail.valueNone')}</span>{t('projects.cards.hours')}</>) : key === "developmentPhases" && Array.isArray(data.values[key]) && data.values[key].length ? <span className="flex flex-wrap gap-2">{(data.values[key] as readonly string[]).map(value => <Badge key={value}>{options[key]?.find(option => option.value === value)?.label ?? value}</Badge>)}</span> : display(key)}
+                    {key === "settlementMinHours" ? (!data.values.settlementMinHours && !data.values.settlementMaxHours ? t('projects.detail.valueNone') : <><span data-testid="project-card-value-settlementMinHours">{data.values.settlementMinHours || t('projects.detail.valueNone')}</span>{t('projects.cards.rangeSeparator')}<span data-testid="project-card-value-settlementMaxHours">{data.values.settlementMaxHours || t('projects.detail.valueNone')}</span>{t('projects.cards.hours')}</>) : key === "developmentPhases" && Array.isArray(data.values[key]) && data.values[key].length ? <span className="flex flex-wrap gap-2">{(data.values[key] as readonly string[]).map(value => <Badge key={value}>{options[key]?.find(option => option.value === value)?.label ?? value}</Badge>)}</span> : ["unitPrice", "internalUnitPrice", "prefecture", "remoteMode", "startDate", "endDate", "headcount"].includes(key) ? <span data-testid={`project-detail-summary-${key === "prefecture" ? "location" : key}`}>{display(key)}</span> : display(key)}
                   </span>
-                  {key === 'copySummary' ? <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => setSummaryExpanded(!summaryExpanded)}>{t(summaryExpanded ? 'projects.cards.summary.hide' : 'projects.cards.summary.show')}</Button><ProjectInlineCopyAction text={display(key)} /></div> : null}
                 </div>
               )}</div>,
             )}</div>
@@ -653,7 +651,7 @@ export function ProjectCardEditor({
                 {t(id === "notes" ? "projects.cards.notesHostOnly" : "projects.commerce.notice")}
               </p>
             ) : null}
-            {id === "commercial" ? (
+            {id === "price" ? (
               <p className="m-0 text-xs text-fg-muted" data-testid="project-card-money-hint">
                 {t("projects.cards.moneyHint")}
               </p>
@@ -681,6 +679,7 @@ export function ProjectCardEditor({
   function staticSection(id: "publish" | "related" | "management" | "history", children: ReactNode) {
     return (
       <section
+        id={`project-detail-section-${id}`}
         className="min-w-0 border-b border-border last:border-b-0"
         data-testid={
           id === "publish"
@@ -711,51 +710,18 @@ export function ProjectCardEditor({
       </dl>
     );
   }
-  // ✅ 2026-11-02: どのタブでも見える主要条件。保存後のクライアントの値（data）から描くので、保存すると即座に変わる。
-  const none = t("projects.detail.valueNone");
-  // サマリーの未設定と日付表記だけを整え、編集欄と保存形式は変えない。
-  function summaryValue(key: string): string {
-    const value = data.values[key];
-    if (typeof value !== "string" || !value.trim()) return t("projects.cards.summary.unset");
-    return dates.has(key) ? display(key).replaceAll("-", "/") : display(key);
-  }
-  const location = ["prefecture", "locationDetail"]
-    .map(key => summaryValue(key))
-    .filter(value => value !== t("projects.cards.summary.unset") && value !== none)
-    .join(" ") || t("projects.cards.summary.unset");
-  const summary = [
-    { key: "unitPrice", value: summaryValue("unitPrice") },
-    { key: "internalUnitPrice", value: summaryValue("internalUnitPrice") },
-    { key: "location", value: location },
-    { key: "remoteMode", value: summaryValue("remoteMode") },
-    { key: "startDate", value: summaryValue("startDate") },
-    { key: "endDate", value: summaryValue("endDate") },
-    { key: "headcount", value: summaryValue("headcount") },
-  ];
   const panel = (children: ReactNode) => (
     <div className="min-w-0 overflow-hidden rounded-md border border-border bg-bg">{children}</div>
   );
   const sections: Record<ProjectDetailTab, ReactNode> = {
-    overview: panel(
-      <>
-        {card("basic")}
-        {card("summary")}
-        {card("company")}
-        {staticSection("publish", visibility ?? null)}
-      </>,
-    ),
+    overview: <div className="flex flex-col gap-3">{panel(<div data-testid="project-detail-summary-strip">{card("basic")}{card("working")}</div>)}{panel(card("summary"))}</div>,
     requirements: panel(
       <>
         {card("content")}
         {card("development")}
       </>,
     ),
-    working: panel(
-      <>
-        {card("working")}
-        {card("commercial")}
-      </>,
-    ),
+    working: <div className="flex flex-col gap-3">{panel(card("price"))}{panel(card("commercial"))}{panel(card("notes"))}</div>,
     related: panel(
       <>
         {staticSection(
@@ -774,7 +740,6 @@ export function ProjectCardEditor({
             <a className="py-3 text-brand" href={`/projects/${data.id}/candidates`}>{t("projects.detail.candidates.open")}</a>
           </div>,
         )}
-        {card("notes")}
         {staticSection(
           "management",
           definitionRows([
@@ -805,28 +770,26 @@ export function ProjectCardEditor({
   };
   function requestTab(value: string): void {
     const target = PROJECT_DETAIL_TABS.find((item) => item === value);
-    if (!target || target === tab) return;
+    if (!target) return;
     if (active && dirty) {
       setNextTab(target);
       return;
     }
     setActive(null);
     setTab(target);
+    document.getElementById("project-detail-section-publish")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
-  const withCopySummary = (content: ReactNode) => (
-    <div className="flex min-w-0 flex-col items-start gap-4 lg:flex-row">
-      <div className="min-w-0 w-full flex-1">{content}</div>
-      <aside className={cn("min-w-0 rounded-md border border-border bg-bg", PAGE_BODY_ASIDE_WIDTH_CLASSES)} data-testid="project-detail-copy-panel">
+  const copySummary = (
+      <div className="min-w-0 rounded-md border border-border bg-bg" data-testid="project-detail-copy-panel">
         <h2 className="m-0 px-4 pt-4 text-body font-semibold">{t("projects.cards.field.copySummary")}</h2>
-        <ProjectCopySummary text={String(data.values.copySummary || data.autoSummary)} messages={{
+        <div data-testid="project-card-value-copySummary"><div data-testid="project-detail-copy-summary-inline"><ProjectCopySummary text={String(data.values.copySummary || data.autoSummary)} messages={{
           label: t("projects.cards.field.copySummary"),
           hint: t("projects.list.panel.copy.hint"),
           copy: t("projects.list.panel.copy.action"),
           copied: t("projects.list.panel.copy.copied"),
           failed: t("projects.list.panel.copy.failed"),
-        }} />
-      </aside>
-    </div>
+        }} /></div></div>
+      </div>
   );
   return (
     <div className="flex flex-col gap-4" data-testid="project-card-editor">
@@ -835,52 +798,26 @@ export function ProjectCardEditor({
           {notice}
         </p>
       ) : null}
-      <div
-        className="min-w-0 rounded-md border border-border bg-bg px-6 py-4"
-        role="group"
-        aria-label={t("projects.cards.summary.label")}
-        data-testid="project-detail-summary-strip"
-      >
-          <dl className="m-0 grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-4 xl:grid-cols-7">
-            {summary.map((item, index) => (
-              <div
-                key={item.key}
-                className={cn("min-w-0", index > 0 && "xl:border-l xl:border-border xl:pl-4")}
-              >
-                <dt className="text-xs text-fg-muted">
-                  {item.key === "location" ? t("projects.cards.summary.location") : label(item.key)}
-                </dt>
-                <dd
-                  className="m-0 mt-1 break-words text-body font-medium tabular-nums text-fg"
-                  data-testid={`project-detail-summary-${item.key}`}
-                >
-                  {item.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
+      <div className="flex min-w-0 flex-col items-start gap-4 lg:flex-row" data-testid="project-detail-tabs">
+        <div className="flex min-w-0 w-full flex-1 flex-col gap-3">
+          <div data-testid="project-detail-tab-overview">{sections.overview}</div>
+          <div data-testid="project-detail-tab-requirements">{sections.requirements}</div>
+          <div data-testid="project-detail-tab-working">{sections.working}</div>
+        </div>
+        <aside className={cn("flex min-w-0 w-full flex-col gap-3", PAGE_BODY_ASIDE_WIDTH_CLASSES)}>
+          {panel(staticSection("publish", visibility ?? null))}
+          {panel(card("company"))}
+          {copySummary}
+        </aside>
       </div>
-      <Tabs
-        scrollable
-        transparent
-        label={t("projects.cards.tab.label")}
-        value={tab}
-        onValueChange={requestTab}
-        data-testid="project-detail-tabs"
-        items={[
-          { value: "overview", label: t("projects.cards.tab.overview"), content: withCopySummary(sections.overview), testId: "project-detail-tab-overview" },
-          { value: "requirements", label: t("projects.cards.tab.requirements"), content: withCopySummary(sections.requirements), testId: "project-detail-tab-requirements" },
-          { value: "working", label: t("projects.cards.tab.working"), content: withCopySummary(sections.working), testId: "project-detail-tab-working" },
-          { value: "related", label: t("projects.cards.tab.related"), content: withCopySummary(sections.related), testId: "project-detail-tab-related" },
-        ]}
-      />
+      <div data-testid="project-detail-tab-related">{sections.related}</div>
       <Dialog
         open={nextTab !== null}
         onOpenChange={(open) => {
           if (!open) setNextTab(null);
         }}
         title={t("projects.cards.discardTitle")}
-        body={t("projects.cards.tabDiscardBody")}
+        body={t("projects.cards.visibilityDiscardBody")}
         cancelLabel={t("projects.cards.continue")}
         data-testid="project-card-tab-discard-dialog"
         confirm={
@@ -891,6 +828,7 @@ export function ProjectCardEditor({
                 setActive(null);
                 setError("");
                 setTab(nextTab);
+                document.getElementById("project-detail-section-publish")?.scrollIntoView({ behavior: "smooth", block: "start" });
               }
               setNextTab(null);
             }}
@@ -971,13 +909,6 @@ export function ProjectDetailCopyAction({ text, id }: { readonly text: string; r
   </>;
 }
 
-function ProjectInlineCopyAction({text}:{readonly text:string}) {
-  const [result,setResult]=useState<{text:string;state:'copying'|'copied'|'failed'}|null>(null);
-  const state=result?.text===text?result.state:'idle';
-  const busy=useRef(false);
-  async function copy(){if(busy.current)return;busy.current=true;setResult({text,state:'copying'});try{await navigator.clipboard.writeText(text);setResult({text,state:'copied'});}catch{setResult({text,state:'failed'});}finally{busy.current=false;}}
-  return <div className="flex items-center gap-2"><TooltipIconButton iconName="copy" label={t('projects.list.panel.copy.action')} variant="secondary" aria-busy={state==='copying'} onClick={()=>void copy()} data-testid="project-detail-copy-summary-inline"/>{state==='copied'||state==='failed'?<span role={state==='failed'?'alert':'status'} className="text-xs text-fg-muted">{t(state==='copied'?'projects.list.panel.copy.copied':'projects.list.panel.copy.failed')}</span>:null}</div>;
-}
 
 function ProjectIdCopy({ text }: { readonly text: string }) {
   const [result, setResult] = useState<"copied" | "failed" | null>(null);

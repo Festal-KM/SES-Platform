@@ -14,15 +14,14 @@ export const PROJECT_CARD_FIELDS = {
     "headcount",
     "parallelOk",
   ],
-  commercial: [
+  price: [
     "unitPrice",
     "internalUnitPrice",
     "settlementMinHours",
     "settlementMaxHours",
     "paymentSiteDays",
-    "distribution",
-    "distributionLimit",
   ],
+  commercial: ["distribution", "distributionLimit"],
   company: ["endClientName", "upperCompanyName", "assigneeUserId"],
   notes: ["publicMemo", "remarks", "copySummary"],
 } as const;
@@ -109,7 +108,7 @@ export function projectCardPatch(
   if (card === "working" && start && end && end < start)
     throw new Error("endDate");
   if (
-    card === "commercial" &&
+    card === "price" &&
     after.settlementMinHours &&
     after.settlementMaxHours &&
     Number(after.settlementMinHours) > Number(after.settlementMaxHours)
