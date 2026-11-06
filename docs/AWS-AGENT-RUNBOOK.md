@@ -11,7 +11,9 @@ mainから開発への自動反映・停止中の扱い・手動再実行・復�
 
 アカウントは `117425831827`、リージョンは `ap-northeast-1`。development / demo / productionを分ける。ドメイン `bizorch.com` はCloudflare管理。
 
-開発画面は **https://dev-es.bizorch.com/signin** を直接開く。PCでアプリ・DB・Dockerを起動せず、画面確認にlocalhostやSSM転送を使わない。AWS上でビルドした成果物を開発データ・送信モックで動かす。公開URLへの切替後の実機確認結果はHANDOFFを参照し、デモ・本番移行や自動配備の完了とは混同しない。
+開発画面は **https://dev-es.bizorch.com/signin** を直接開く。PCでアプリ・DB・Dockerを起動しない。AWS上でビルドした成果物を開発データ・送信モックで動かす。公開URLへの切替後の実機確認結果はHANDOFFを参照し、デモ・本番移行や自動配備の完了とは混同しない。
+
+2026-11-06、宮田の承認により、画面調整の専用プレビューだけは SSM 転送を使える。正式な開発画面とは別であり、使用方法と制約は [画面プレビュー](./AWS-UI-PREVIEW.md) を参照する。
 
 ## 新しいPCの準備
 
