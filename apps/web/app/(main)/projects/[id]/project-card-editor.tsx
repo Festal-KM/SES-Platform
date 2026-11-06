@@ -782,7 +782,7 @@ export function ProjectCardEditor({
           {copySummary}
         </aside>
       </div>
-      <div data-testid="project-detail-tab-related">{sections.related}</div>
+      <div data-testid="project-detail-tab-related" />
       <Dialog
         open={nextTab !== null}
         onOpenChange={(open) => {
