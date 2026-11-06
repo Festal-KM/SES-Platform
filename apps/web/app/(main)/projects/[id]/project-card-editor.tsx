@@ -721,14 +721,12 @@ export function ProjectCardEditor({
     .map(key => summaryValue(key))
     .filter(value => value !== t("projects.cards.summary.unset") && value !== none)
     .join(" ") || t("projects.cards.summary.unset");
-  const primarySummary = [
+  const summary = [
     { key: "unitPrice", value: summaryValue("unitPrice") },
+    { key: "internalUnitPrice", value: summaryValue("internalUnitPrice") },
     { key: "location", value: location },
     { key: "remoteMode", value: summaryValue("remoteMode") },
     { key: "startDate", value: summaryValue("startDate") },
-  ];
-  const secondarySummary = [
-    { key: "internalUnitPrice", value: summaryValue("internalUnitPrice") },
     { key: "endDate", value: summaryValue("endDate") },
     { key: "headcount", value: summaryValue("headcount") },
   ];
@@ -841,24 +839,17 @@ export function ProjectCardEditor({
         aria-label={t("projects.cards.summary.label")}
         data-testid="project-detail-summary-strip"
       >
-        {[primarySummary, secondarySummary].map((items, rowIndex) => (
-          <dl
-            key={rowIndex}
-            className={cn(
-              "m-0 grid min-w-0 grid-cols-2 gap-x-4 gap-y-3",
-              rowIndex === 0 ? "lg:grid-cols-4" : "mt-2 border-t border-border pt-2 lg:grid-cols-3",
-            )}
-          >
-            {items.map((item, index) => (
+          <dl className="m-0 grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-4 xl:grid-cols-7">
+            {summary.map((item, index) => (
               <div
                 key={item.key}
-                className={cn("min-w-0", index === 0 ? undefined : index === 2 ? "lg:border-l lg:border-border lg:pl-4" : "border-l border-border pl-4")}
+                className={cn("min-w-0", index > 0 && "xl:border-l xl:border-border xl:pl-4")}
               >
                 <dt className="text-xs text-fg-muted">
                   {item.key === "location" ? t("projects.cards.summary.location") : label(item.key)}
                 </dt>
                 <dd
-                  className={cn("m-0 mt-1 break-words tabular-nums text-fg", rowIndex === 0 ? "text-lg font-semibold" : "text-body font-medium")}
+                  className="m-0 mt-1 break-words text-body font-medium tabular-nums text-fg"
                   data-testid={`project-detail-summary-${item.key}`}
                 >
                   {item.value}
@@ -866,7 +857,6 @@ export function ProjectCardEditor({
               </div>
             ))}
           </dl>
-        ))}
       </div>
       <Tabs
         scrollable
