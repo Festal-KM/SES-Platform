@@ -495,7 +495,7 @@ export function ProjectDetailScreen({
         >
           {view.name}
         </h1>
-        {compactHeader?<div className="flex flex-wrap items-center gap-2"><ProjectDetailCopyAction text={compactHeader.copyText} id={view.id}/><ProjectAiCandidates projectId={view.id}/></div>:null}
+        {compactHeader?<div className="flex flex-wrap items-center gap-2"><ProjectDetailCopyAction text={compactHeader.copyText} id={view.id}/>{canEdit ? <ProjectAiCandidates projectId={view.id}/> : null}</div>:null}
       </div>
 
       {/* 🔴 折りたたみの外（`CLAUDE.md` §13.3）。移動中の判断に要る 3 値。 */}
