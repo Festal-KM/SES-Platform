@@ -4829,6 +4829,7 @@ const ja = {
   'retention.schedule.kind.email_dispatches': 'メール送信記録の宛先・失敗本文',
   'retention.schedule.kind.send_attempts': '送信試行の失敗詳細',
   'retention.schedule.kind.data_export_requests': '返却データ（生成済みの CSV 一式）',
+  'retention.schedule.kind.project_candidate_ai_runs': 'AI候補検索の一時データ',
   'retention.section.export': 'データの返却（CSV）',
   'retention.export.lead':
     'エンジニア台帳・案件・提案履歴・稼働を CSV 一式（ZIP）で返却します。取引先が持ち込んだ人材のうち、提案として開示されていないものは含まれません。',
