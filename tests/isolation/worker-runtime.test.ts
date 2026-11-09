@@ -24,6 +24,7 @@ import { DEMO_MOCK_ANTHROPIC_SCRIPT, MockAnthropicScriptNotApplicableError } fro
 import {
   EXPORT_GENERATE_JOB,
   GATE_RUN_JOB,
+  MATCH_CANDIDATES_JOB,
   MockEmailScriptNotApplicableError,
   SEND_PROPOSAL_JOB,
   TENANT_PURGE_JOB,
@@ -74,6 +75,7 @@ describe('🔴 受け入れ基準 ①: development でワーカーが起動し g
   it('配線したキューの一覧に gate.run / send.proposal と宣言済み 16 本がすべて含まれる', () => {
     expect(runtime.queues).toEqual([
       GATE_RUN_JOB,
+      MATCH_CANDIDATES_JOB,
       SEND_PROPOSAL_JOB,
       TENANT_PURGE_JOB,
       EXPORT_GENERATE_JOB,
@@ -86,7 +88,7 @@ describe('🔴 受け入れ基準 ①: development でワーカーが起動し g
     // 🔴 T-10-12 で `tenant.closing-notify`（削除予告。毎日 02:08 JST。母集団 CLOSING。docs/05 §9.7）が加わった。
     // 🔴 T-10-09 で `tenant.purge-scan`（スケジュール）/ `tenant.purge`（イベント起動）/ `export.generate`
     //    （イベント起動）の 3 本が加わった（docs/05 §9.7）。
-    expect(runtime.queues).toHaveLength(18);
+    expect(runtime.queues).toHaveLength(19);
   });
 
   it('🔴 enqueue した gate.run が実際に消費される（対象が無い提案は TARGET_NOT_FOUND で完了する）', async () => {
