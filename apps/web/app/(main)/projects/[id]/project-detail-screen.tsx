@@ -29,7 +29,6 @@ import type { ProjectPublicField, ProjectPublishStateView } from "@ses/domain";
 import {
   cn,
   Badge,
-  PRIMARY_LINK_CLASSES,
   Card,
   NameCell,
   SECONDARY_LINK_CLASSES,
