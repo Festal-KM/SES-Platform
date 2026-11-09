@@ -11,6 +11,15 @@ export type AiCandidateInput = {
   readonly candidates: readonly AiCandidateFacts[];
 };
 
+/** 会話文そのものは送らず、登録済みのスキルだけを追加条件として抽出する。 */
+export function findRequestedSkills(message: string, allowedSkills: readonly string[]): readonly string[] {
+  const text = message.normalize('NFKC').toLocaleLowerCase('ja');
+  return [...new Set(allowedSkills.filter((skill) => {
+    const normalized = skill.normalize('NFKC').trim().toLocaleLowerCase('ja');
+    return normalized.length >= 2 && text.includes(normalized);
+  }))];
+}
+
 export function prepareCandidateFacts(
   candidates: readonly CandidateRowView[],
   createToken: () => string,

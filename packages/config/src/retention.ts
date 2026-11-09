@@ -71,6 +71,8 @@ export type PurgeRetainSpec = {
 
 export const PURGE_SPEC = {
   delete: [
+    // 候補検索の一時データには候補への参照が含まれるため、テナント削除時に行ごと削除する。
+    { table: 'project_candidate_ai_runs', rows: 'ALL' },
     // --- ① 集める（エンジニア台帳） ------------------------------------------------------------
     {
       table: 'engineers',

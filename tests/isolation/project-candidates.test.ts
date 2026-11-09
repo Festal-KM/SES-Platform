@@ -27,6 +27,11 @@ import {
   configureTenantDb,
   disconnectTenantDb,
   resolveTenantCtx,
+  systemTenantCtx,
+  createProjectCandidateAiRun,
+  readProjectCandidateAiRun,
+  claimProjectCandidateAiRun,
+  finishProjectCandidateAiRun,
   type AuthenticatedTenantCtx,
 } from '@ses/db';
 import { createUnextendedClient, type UnextendedClient } from '@ses/db/testing';
@@ -40,7 +45,9 @@ import {
   PROJECT_A_PUBLISHED,
   SHARE_A_P1,
   TENANT_A,
+  TENANT_B,
   USER_A_HOST,
+  USER_B_HOST,
   USER_A_PARTNER,
   USER_A_PARTNER2,
 } from './support/fixtures.js';
@@ -359,6 +366,34 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await admin.auditLog.deleteMany({ where: { action: 'project.view' } });
+});
+
+describe('AI 候補選出の一時データ', () => {
+  it('依頼者とテナントを分離し、同じ要求を一度だけ処理する', async () => {
+    const now = new Date();
+    const run = await createProjectCandidateAiRun(hostA, {
+      projectId: PROJECT_A_PUBLISHED,
+      payload: { candidates: [] },
+      expiresAt: new Date(now.getTime() + 60_000),
+    });
+    expect(run).not.toBeNull();
+    const id = run!.id;
+    const hostB = await resolveTenantCtx({
+      tenantId: TENANT_B, lifecycleState: 'ACTIVE', partnerCompanyId: null,
+      partnerSuspendedAt: null, twoFactor: 'NOT_ENROLLED', userId: USER_B_HOST, role: 'SALES',
+    }, { deviceKind: 'api' });
+    expect(await readProjectCandidateAiRun(hostB, { id, projectId: PROJECT_A_PUBLISHED, now })).toBeNull();
+    await expect(readProjectCandidateAiRun(partnerA1, { id, projectId: PROJECT_A_PUBLISHED, now })).rejects.toThrow();
+    const job = { queue: 'match.candidates', jobId: 'isolation-test' };
+    const systemA = systemTenantCtx(TENANT_A, job);
+    const systemB = systemTenantCtx(TENANT_B, job);
+    expect(await claimProjectCandidateAiRun(systemB, id, now)).toBeNull();
+    expect(await claimProjectCandidateAiRun(systemA, id, now)).not.toBeNull();
+    expect(await claimProjectCandidateAiRun(systemA, id, now)).toBeNull();
+    await finishProjectCandidateAiRun(systemA, { id, now, output: { rationales: [] } });
+    expect((await readProjectCandidateAiRun(hostA, { id, projectId: PROJECT_A_PUBLISHED, now }))?.status).toBe('COMPLETED');
+    expect(await readProjectCandidateAiRun(hostA, { id, projectId: PROJECT_A_PUBLISHED, now: new Date(now.getTime() + 120_000) })).toBeNull();
+  });
 });
 
 describe('🔴 F-017 AC-5: パートナーの応答に匿名候補が 1 件も含まれない', () => {

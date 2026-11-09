@@ -157,6 +157,7 @@ describe('🔴 運用メールのキュー（T-04-03。docs/05 §9.4 / §9.10）
 describe('🔴 gate.run のキューと冪等キー（T-07-06。docs/05 §9.1 / §9.3 / §17.2 #19）', () => {
   it('🔴 attempts: 1（LLM の再試行は runRole の内部で完結する。AiUsage を二重に積まない）', () => {
     expect(QUEUE_DEFINITIONS['gate.run'].defaultJobOptions.attempts).toBe(1);
+    expect(QUEUE_DEFINITIONS['match.candidates'].defaultJobOptions.attempts).toBe(1);
   });
 
   it('🔴 removeOnComplete: true（HELD 後の同 jobId 再 enqueue が捨てられないため）', () => {
