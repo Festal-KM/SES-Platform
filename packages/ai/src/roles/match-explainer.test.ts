@@ -12,6 +12,8 @@ describe('候補選出の AI ロール', () => {
     expect(prompt.user).toContain('<untrusted_document>');
     expect(prompt.user).toContain('Java');
     expect(prompt.system).toContain('推測');
+    expect(prompt.system).toContain('候補の選択と並びは決定済み');
+    expect(prompt.system).toContain('すべての候補');
     expect(matchExplainerSpec.promptVersion).toBe('match-explainer.v1');
   });
 
