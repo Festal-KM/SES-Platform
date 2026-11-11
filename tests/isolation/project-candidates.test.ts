@@ -397,6 +397,34 @@ describe('AI 候補選出の一時データ', () => {
 });
 
 describe('AI 候補の結果表示', () => {
+  it('自社候補の表示枠に収まらないスキルも AI 入力に含める', async () => {
+    const { configureMatchCandidatesQueue } = await import('../../apps/web/lib/jobs/match-candidates-queue');
+    const { startAiCandidates } = await import('../../apps/web/lib/candidates/ai-service');
+    const additional = [
+      { id: '01930000-0000-7000-8000-0000000009d1', name: '候補検証スキルA', category: 'LANGUAGE', sortKey: 11 },
+      { id: '01930000-0000-7000-8000-0000000009d2', name: '候補検証スキルB', category: 'LANGUAGE', sortKey: 12 },
+      { id: '01930000-0000-7000-8000-0000000009d3', name: '候補検証スキルC', category: 'LANGUAGE', sortKey: 13 },
+    ];
+    try {
+      await admin.skill.createMany({ data: additional });
+      await admin.engineerSkill.createMany({ data: additional.map((skill) => ({
+        tenantId: TENANT_A, engineerId: ENGINEER_A_HOST, skillId: skill.id,
+        yearsOfExperience: 1, source: 'MANUAL',
+      })) });
+      configureMatchCandidatesQueue({ enqueue: async () => undefined });
+      const { runId } = await startAiCandidates(hostA, PROJECT_A_PUBLISHED, '候補検証スキルC', null);
+      const run = await readProjectCandidateAiRun(hostA, { id: runId, projectId: PROJECT_A_PUBLISHED, now: new Date() });
+      const input = run!.input as { candidates: { token: string; skills: string[] }[]; refs: { token: string; key: string }[]; requestedSkills: string[] };
+      const host = input.refs.find((ref) => ref.key === ENGINEER_A_HOST);
+      expect(host).toBeDefined();
+      expect(input.candidates.find((candidate) => candidate.token === host!.token)?.skills).toContain('候補検証スキルC');
+      expect(input.requestedSkills).toContain('候補検証スキルC');
+    } finally {
+      await admin.engineerSkill.deleteMany({ where: { engineerId: ENGINEER_A_HOST, skillId: { in: additional.map((item) => item.id) } } });
+      await admin.skill.deleteMany({ where: { id: { in: additional.map((item) => item.id) } } });
+    }
+  });
+
   it('結果取得前に共有解除された候補を表示せず、残りの順序を保つ', async () => {
     const { configureMatchCandidatesQueue } = await import('../../apps/web/lib/jobs/match-candidates-queue');
     const { startAiCandidates, readAiCandidates } = await import('../../apps/web/lib/candidates/ai-service');

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   createProjectCandidateAiRun, failPendingProjectCandidateAiRun, readProjectCandidateAiRun,
-  requireHost, type AuthenticatedTenantCtx,
+  requireHost, withTenant, type AuthenticatedTenantCtx,
 } from '@ses/db';
 import { NotFoundError } from '../api/errors';
 import { candidateReference } from '../db/bootstrap';
@@ -39,11 +39,33 @@ async function readCandidates(ctx: AuthenticatedTenantCtx, projectId: string, ip
   return { rows, requiredSkills };
 }
 
+/** 自社候補の表示用3件より多いスキルも、辞書名だけを候補比較に使う。 */
+async function readOwnSkills(ctx: AuthenticatedTenantCtx, rows: readonly CandidateRowView[]) {
+  const ids = rows.flatMap((row) => row.kind === 'OWN' ? [row.id] : []);
+  if (ids.length === 0) return new Map<string, readonly string[]>();
+  return withTenant(ctx, async (db) => {
+    const skills = await db.engineerSkill.findMany({
+      where: { engineerId: { in: ids }, ownerPartnerCompanyId: null },
+      select: { engineerId: true, skill: { select: { name: true } } },
+      orderBy: [{ engineerId: 'asc' }, { skillId: 'asc' }],
+    });
+    const result = new Map<string, string[]>(ids.map((id) => [id, []]));
+    for (const skill of skills) {
+      const names = result.get(skill.engineerId) ?? [];
+      names.push(skill.skill.name);
+      result.set(skill.engineerId, names);
+    }
+    return result;
+  });
+}
+
 export async function startAiCandidates(ctx: AuthenticatedTenantCtx, projectId: string, message: string, ipAddress: string | null) {
   requireHost(ctx);
   const population = await readCandidates(ctx, projectId, ipAddress);
-  const allowed = [...population.requiredSkills, ...population.rows.flatMap((row) => row.kind === 'ANONYMOUS' ? row.allSkills : row.skills)];
-  const prepared = prepareCandidateFacts(selectCandidatesForExplanation(population.rows), randomUUID);
+  const selected = selectCandidatesForExplanation(population.rows);
+  const ownSkills = await readOwnSkills(ctx, selected);
+  const allowed = [...population.requiredSkills, ...selected.flatMap((row) => row.kind === 'ANONYMOUS' ? row.allSkills : (ownSkills.get(row.id) ?? row.skills))];
+  const prepared = prepareCandidateFacts(selected, randomUUID, ownSkills);
   const refs = [...prepared.byToken].map(([token, row]) => ({ token, key: row.key, kind: row.kind }));
   const run = await createProjectCandidateAiRun(ctx, {
     projectId, expiresAt: new Date(Date.now() + RUN_TTL_MS), payload: {

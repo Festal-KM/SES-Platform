@@ -34,6 +34,14 @@ describe('AI に渡す候補情報', () => {
     expect(resolveCandidateTokens(['一時2'], result.byToken)).toEqual([shared]);
   });
 
+  it('自社候補は表示用の先頭3件以外のスキルも使い、共有候補の範囲は広げない', () => {
+    const tokens = ['一時1', '一時2'];
+    const facts = prepareCandidateFacts([own, shared], () => tokens.shift() ?? '',
+      new Map([['private-id', ['Java', 'SQL', 'AWS', 'Python']], ['private-ref', ['非公開']]]));
+    expect(facts.input.candidates[0]?.skills).toEqual(['Java', 'SQL', 'AWS', 'Python']);
+    expect(facts.input.candidates[1]?.skills).toEqual(['AWS', 'Linux']);
+  });
+
   it('未知または重複した候補は受け付けない', () => {
     const result = prepareCandidateFacts([own], () => '一時1');
     expect(() => resolveCandidateTokens(['未知'], result.byToken)).toThrow();

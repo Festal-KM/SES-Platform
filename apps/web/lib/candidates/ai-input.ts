@@ -43,13 +43,14 @@ export function findRequestedSkills(message: string, allowedSkills: readonly str
 export function prepareCandidateFacts(
   candidates: readonly CandidateRowView[],
   createToken: () => string,
+  ownSkills: ReadonlyMap<string, readonly string[]> = new Map(),
 ): { readonly input: AiCandidateInput; readonly byToken: ReadonlyMap<string, CandidateRowView> } {
   const byToken = new Map<string, CandidateRowView>();
   const facts = candidates.map((candidate) => {
     const token = createToken();
     if (!token || byToken.has(token)) throw new Error('候補の一時識別子が不正です');
     byToken.set(token, candidate);
-    const skills = candidate.kind === 'ANONYMOUS' ? candidate.allSkills : candidate.skills;
+    const skills = candidate.kind === 'ANONYMOUS' ? candidate.allSkills : (ownSkills.get(candidate.id) ?? candidate.skills);
     return { token, skills: [...skills] };
   });
   return { input: { candidates: facts }, byToken };

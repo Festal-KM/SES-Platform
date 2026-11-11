@@ -21,6 +21,7 @@ test('候補パネルで検査済みの候補と理由を確認し、失敗を�
       } else {
         await route.fulfill({ json: { status: 'COMPLETED', candidates: [
           { candidate: { kind: 'ANONYMOUS', key: 'test-candidate', skills: ['Java'] }, reason: 'Java の経験' },
+          { candidate: { kind: 'OWN', key: 'test-own', id: '11111111-1111-4111-8111-111111111111', displayName: '候補 太郎', skills: ['Java'] }, reason: 'Java を使用' },
         ] } });
       }
     });
@@ -30,6 +31,7 @@ test('候補パネルで検査済みの候補と理由を確認し、失敗を�
     await expect(panel.getByText('Java の経験')).toBeVisible();
     await expect(panel.getByText(t('projects.aiCandidates.shared'))).toBeVisible();
     await expect(panel.getByRole('link', { name: t('projects.aiCandidates.openList') })).toHaveAttribute('href', `/projects/${id}/candidates`);
+    await expect(panel.getByRole('link', { name: '候補 太郎' })).toHaveAttribute('href', '/engineers/11111111-1111-4111-8111-111111111111');
     await expectNoHorizontalOverflow('案件候補パネル', page);
     await page.unroute(`**/api/projects/${id}/ai-candidates**`);
     await page.route(`**/api/projects/${id}/ai-candidates**`, (route) => route.fulfill({ status: 500 }));
