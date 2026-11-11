@@ -3063,6 +3063,17 @@ const ja = {
   'projects.detail.proposals.comingSoon': '提案の一覧は後続のリリースで表示されます。',
   // ✅ T-08-05: `S-016` へ接続した（それまでは `projects.detail.candidates.comingSoon` の注記だった）。
   'projects.detail.candidates.open': '候補を探す',
+  'projects.aiCandidates.open': 'AIで候補を探す',
+  'projects.aiCandidates.openList': '候補一覧を開く',
+  'projects.aiCandidates.title': 'AI候補検索',
+  'projects.aiCandidates.close': '閉じる',
+  'projects.aiCandidates.prompt': '重視するスキルを入力',
+  'projects.aiCandidates.send': '探す',
+  'projects.aiCandidates.loading': '候補を探しています',
+  'projects.aiCandidates.empty': '該当する候補が見つかりませんでした',
+  'projects.aiCandidates.error': '候補を取得できませんでした。時間をおいて再度お試しください。',
+  'projects.aiCandidates.shared': '共有候補',
+  'projects.aiCandidates.hint': '案件の条件による候補一覧から先頭20件を表示し、AIがスキルの理由を説明します。入力したスキル名は理由の説明に使います。',
 
   // --- 🔴 T-12-10 公開の状態（`docs/04` 改訂 14 §S-011 の 4 値 / `F-014 AC-6`〜`AC-13` / `UC-26`）---
   // 🔴 **4 値はどれも別の語である**（`CLAUDE.md` §4.2「失敗と保留を混同しない」）。
@@ -4819,6 +4830,7 @@ const ja = {
   'retention.schedule.kind.email_dispatches': 'メール送信記録の宛先・失敗本文',
   'retention.schedule.kind.send_attempts': '送信試行の失敗詳細',
   'retention.schedule.kind.data_export_requests': '返却データ（生成済みの CSV 一式）',
+  'retention.schedule.kind.project_candidate_ai_runs': 'AI候補検索の一時データ',
   'retention.section.export': 'データの返却（CSV）',
   'retention.export.lead':
     'エンジニア台帳・案件・提案履歴・稼働を CSV 一式（ZIP）で返却します。取引先が持ち込んだ人材のうち、提案として開示されていないものは含まれません。',

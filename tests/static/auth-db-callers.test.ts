@@ -121,6 +121,7 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //    （`CLAUDE.md` §3.1 / `BR-03`）。許可先は `apps/worker` のジョブ実装だけである。
   //    docs/05 §9.2 の ⚠️「この関数を `apps/web` から呼べないよう制限する」の実装。
   systemTenantCtx: [
+    'apps/worker/src/jobs/match-candidates.ts',
     'apps/worker/src/jobs/usage-seat-snapshot.ts',
     // 🔴 T-04-03: 運用メールのジョブ（docs/05 §9.4）。どちらも payload の `tenantId` から
     //    ジョブ文脈を組み立てる。**`apps/web` 側には 1 つも無い**（下の it が固定する）。

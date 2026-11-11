@@ -863,6 +863,22 @@ model EngineerShare {
   @@map("engineer_shares")
 }
 
+/// 案件の AI 候補選出の一時的な要求と結果。
+model ProjectCandidateAiRun {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  projectId   String   @map("project_id") @db.Uuid
+  requestedBy String   @map("requested_by") @db.Uuid
+  status      String
+  input       Json
+  output      Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt   DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@index([tenantId, projectId, requestedBy])
+  @@map("project_candidate_ai_runs")
+}
+
 model MatchCandidate {
   id                     String   @id @default(uuid(7)) @db.Uuid
   tenantId               String   @map("tenant_id") @db.Uuid
