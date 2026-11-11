@@ -353,8 +353,8 @@ describe('🔴 PageBody の幅 3 クラス（docs/04 §7.1 / docs/05 §2.3.4）'
     expect(markup).toContain('flex-wrap');
     expect(markup).toContain('basis-250');
     expect(markup).toContain('max-w-97');
-    // 🔴 画面幅のバリアントが 1 つも出ない（これが出た瞬間に「幅で決める」に戻る）。
-    expect(markup).not.toMatch(/(?:^|["\s])(?:sm|md|lg|xl|2xl):/);
+    // 余白には画面幅を使うが、カラムの並置には使わない。
+    expect(markup).not.toMatch(/(?:^|["\s])(?:sm|md|lg|xl|2xl):(?:flex|basis|w-|max-w-)/);
     expect(markup).not.toContain('flex-col');
   });
 
