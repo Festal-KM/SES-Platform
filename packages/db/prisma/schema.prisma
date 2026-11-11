@@ -772,14 +772,14 @@ model ProjectVisibility {
   revokedReason       String?   @map("revoked_reason")
   /// 🔴 T-12-10: 'GATE_RECHECK' のとき NOT NULL（CHECK）。S-011 の帯「指摘を見る」の導線。
   revokedReviewGateId String?   @map("revoked_review_gate_id") @db.Uuid
-  reviewGateId     String    @map("review_gate_id") @db.Uuid // 公開時のゲート結果（F-014 処理②）
+  reviewGateId     String?   @map("review_gate_id") @db.Uuid // 過去の公開検査結果。即時公開では null。
 
   tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   // 🔴 Issue #33 / docs/05 §3.3.1（A-5）: 複合 FK。
   partnerCompany PartnerCompany @relation(fields: [tenantId, partnerCompanyId], references: [tenantId, id], onDelete: Restrict)
   // 🔴 T-02-03: T-02-02 では列のみだった review_gate_id の FK をここで解決する（前方参照の解決）。
-  reviewGate     ReviewGate     @relation(fields: [reviewGateId], references: [id], onDelete: Restrict)
+  reviewGate     ReviewGate?    @relation(fields: [reviewGateId], references: [id], onDelete: Restrict)
   // 🔴 T-12-10: 自動解除の根拠となったゲート結果（別リレーション。ON DELETE RESTRICT）。
   revokedReviewGate ReviewGate? @relation("ProjectVisibilityRevokedGate", fields: [revokedReviewGateId], references: [id], onDelete: Restrict)
 

@@ -2978,6 +2978,10 @@ const ja = {
   'projects.internalUnitPrice.label': '自社単価（月額）',
 
   // 🔴 `docs/04` §S-012: 外部公開用の記載には「商流層の観点」を注意書きで示す（合否は判定しない）。
+  'projects.publicSummary.companyWarning': '公開する内容に取引先名が含まれています。公開先を確認し、必要に応じて内容を修正してください。',
+  'projects.publicSummary.immediateNote': 'この欄の内容は取引先に公開されます。エンド企業名・自社単価・他社名が含まれていないか確認してください。',
+  'projects.recheckNotice.immediateChange': '保存した変更は公開先にも反映されます。',
+  'projects.recheckNotice.reviewContent': '公開する内容を確認してから保存してください。',
   'projects.publicSummary.label': '外部公開用の記載',
   'projects.publicSummary.note':
     '取引先に公開されるのはこの欄の内容です。エンド企業名・自社単価・他社名を書かないでください。公開時の検査（品質ゲート）で見つかった場合、公開できません。',

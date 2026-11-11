@@ -17,10 +17,7 @@
 //    立てずに同じ経路を実行できるようにするため（`engineers/service.ts` と同じ方針）。
 import {
   // 🔴 T-12-10: 未消費の `RECHECK` 要求の有無（`#26` の積み直し。docs/05 §11.11 ③ 5-②）。
-  hasPendingProjectRecheck,
-  projectPublicContent,
   // 🔴 T-12-10: 要件のフリーテキストの**唯一の読み取り順序**（ハッシュ側と同じ 1 実装）。
-  readProjectRequirementTexts,
   requireHost,
   withTenant,
   writeAuditLog,
@@ -32,9 +29,7 @@ import {
   type ProjectSourceKind,
 } from '@ses/db';
 import {
-  projectPublicFieldsChanged,
   type PrefectureCode,
-  type ProjectPublicFieldValues,
   type ProjectPublishStateView,
 } from '@ses/domain';
 import { NotFoundError, ProjectNotSharedError, ValidationError } from '../api/errors';
@@ -493,58 +488,18 @@ export async function createProject(
   });
 }
 
-/**
- * `PATCH /api/projects/{id}`（#26）。
- *
- * 🔴 `update` ではなく `updateMany` を使う（`updateEngineer` と同じ理由）。スコープは
- *    第 2 防御が注入した `where` と RLS（C2 の UPDATE）が決め、アプリは `id` 以外の条件を
- *    書かない。更新が 0 件なら 404（境界外と不存在を区別しない。docs/05 §4.8）。
- *
- * 🔴 **`data` に `originAssignmentId` を 1 度も載せない。** `F-045` の還流が作った後任募集を
- *    人が編集しても、生成元の記録が消えない（`schemas.ts` の注記の担保②）。
- *
- * 🔴 `requirements` を指定したときは**その集合で置き換える**（差分適用にしない）。`S-012` は
- *    必須 / 尚可の 2 ブロックを丸ごと編集する画面であり、差分にすると「画面から消した行が
- *    消えない」ずれが出る（`updateEngineer` の `skills` と同じ）。
- *
- * ============================================================================
- * 🔴 T-12-10: **公開中の案件で公開欄 3 欄が実際に変わった保存は、再検査の契機になる**
- * ============================================================================
- * （`F-014 AC-6`。[Issue #42](https://github.com/Festal-KM/SES-Platform/issues/42) = 回答②。
- *  docs/05 §11.11「T-12-10 の実装の決着」①③）
- *
- * 手順（業務トランザクションの内側 1〜5、コミット後に 6）:
- *   1. 更新の**前**に 3 欄の値を読む
- *   2. 更新を適用する（既存のとおり）
- *   3. 更新の**後**に同じ 3 欄を**読み直して**比較する（🔴 「保存した値」ではない ——
- *      要件は置き換えで `id` が振り直されるため、並び（`kind` → `id`）は書き込み後にしか
- *      確定しない。**ハッシュが覆う値と変更検知が見る値を同じ関数から取る**ことで、
- *      「検知は変わったと言うがハッシュは同じ」「その逆」を構造的に起こせなくする）
- *   4. 生きている公開範囲の行を数える。0 件なら `NOT_PUBLISHED`
- *   5. 3 欄が変わった **または** 未消費の `RECHECK` 要求が残っているなら、要求を置く
- *   6. コミット後に `gate.run` を積む（`enqueue` を**関数として返して順序を型で強制する**）
- *
- * 🔴 **`PROJECT_PUBLISH` の `contentHash` を契機にしない**（`projectPublicFieldsChanged`）。
- *    ハッシュは公開先の集合と取引先の社名まで含むので、**公開先を 1 社増やしただけで動く** ——
- *    それを契機にすると `AC-6`（3 欄が実際に変わったときに限る）に反し、AI 原価が無用に増える。
- * 🔴 **公開範囲の行はここで 1 行も動かさない。** 落とすのは `settleProjectPublish` だけである
- *    （`AC-13`。2 か所目を作ると、どちらか一方がゲート結果を見ない経路になる）。
- * 🔴 **`force` / `skipGate` / `keepPublished` に類する引数を持たない**（`BR-18` / `F-020 AC-2`。
- *    FAIL を「了解のうえ公開」できる操作・API・設定が存在しない）。
- */
+/** 案件を更新する。公開中の内容も保存時に反映する。 */
 export async function updateProject(
   ctx: AuthenticatedTenantCtx,
   id: string,
   patch: UpdateProjectBody,
-  // 🔴 既定値を持たない（`updateProjectVisibility` と同じ）。「実装が入るまで保留するスタブ」を
-  //    既定にすると、配線を忘れた経路が**静かに再検査を行わないまま成功を返す**
-  //    （`CLAUDE.md` §11.1 の壊れ方 ＝ T-12-10 が塞ごうとしている穴そのもの）。
-  deps: { readonly gate: ProjectPublishGate },
+  _deps?: { readonly gate: ProjectPublishGate },
 ): Promise<ProjectMutationView> {
+  void _deps;
   const requirements =
     patch.requirements === undefined ? undefined : normalizeRequirements(patch.requirements);
 
-  const { view, enqueue } = await withTenant(ctx, async (db) => {
+  const { view } = await withTenant(ctx, async (db) => {
     const current = await db.project.findFirst({
       where: { id },
       // 🔴 T-12-10: 3 欄のうち 2 欄（`name` / `publicSummary`）をここで読む（手順 1）。
@@ -568,11 +523,7 @@ export async function updateProject(
     if (current === null) throw new NotFoundError();
 
     // 🔴 手順 1 の残り。ハッシュ側（`readProjectPublishGateHashInput`）と**同じ 1 実装・同じ順序**。
-    const before: ProjectPublicFieldValues = {
-      name: current.name,
-      publicSummary: projectPublicContent(current),
-      requirementFreeTexts: await readProjectRequirementTexts(db, id),
-    };
+
 
     // 🔴 単価レンジは**更新後の値**で判定する（片方だけ更新できるため、既存値と合成する）。
     assertUnitPriceRange(
@@ -658,58 +609,15 @@ export async function updateProject(
       }
     }
 
-    // ------------------------------------------------------------------
-    // 🔴 T-12-10: 手順 3〜5（`F-014 AC-6`）。
-    // ------------------------------------------------------------------
-    const saved = await db.project.findFirst({
-      where: { id },
-      select: { name: true, publicSummary: true, publicMemo: true, locationDetail: true },
-    });
-    // 直前に更新した行が消えている（並行削除）＝ 不変条件違反。0 件を成功にしない。
-    if (saved === null) throw new NotFoundError();
-    const after: ProjectPublicFieldValues = {
-      name: saved.name,
-      publicSummary: projectPublicContent(saved),
-      requirementFreeTexts: await readProjectRequirementTexts(db, id),
+    // 公開中の編集も即時反映し、公開先を検査結果で自動解除しない。
+    const liveVisibilityCount = await db.projectVisibility.count({ where: { projectId: id, revokedAt: null } });
+    return {
+      view: { id, recheck: { queued: false, reason: liveVisibilityCount === 0 ? 'NOT_PUBLISHED' : 'NOT_REQUIRED' } } as const,
     };
 
-    // 🔴 手順 4。`revoked_at IS NULL` が「現在の公開先」の定義である（C4 の述語と鏡写し）。
-    const liveVisibilityCount = await db.projectVisibility.count({
-      where: { projectId: id, revokedAt: null },
-    });
-    if (liveVisibilityCount === 0) {
-      return { view: notPublishedRecheckView(id), enqueue: null };
-    }
-
-    // 🔴 手順 5-②「未消費の `RECHECK` 要求が残っている」を条件に入れる理由（docs/05 §11.11
-    //    「T-12-10 の実装の決着」③）: 手順 6 は commit の後なので、`BLOCKED_BY_FAILED_JOB` や
-    //    プロセス断で「**要求だけが残ってジョブが積まれない**」窓がある。そのとき再検査は
-    //    owed のまま公開が続く（＝ T-12-10 が塞ごうとしている穴が開いたまま）。この条件があれば、
-    //    利用者が**同じ内容でもう一度保存する**だけで積み直せる（`jobId` は同じなので二重実行に
-    //    ならず、内容が同じなら `DONE` 行のキャッシュを引くので `F-026` も増えない）。
-    const changed = projectPublicFieldsChanged(before, after);
-    if (!changed && !(await hasPendingProjectRecheck(db, id))) {
-      return {
-        view: { id, recheck: { queued: false, reason: 'PUBLIC_FIELDS_UNCHANGED' } } as const,
-        enqueue: null,
-      };
-    }
-
-    // 🔴 `RECHECK` の `audience` は**現在の公開先そのもの**である（追加する相手は 0 件）。
-    const gate = await deps.gate(db, ctx, { projectId: id, kind: 'RECHECK', partnerCompanyIds: [] });
-    return { view: { id, recheck: { queued: true } } as const, enqueue: gate.enqueue };
   });
 
-  // 🔴 手順 6。トランザクションを**抜けてから**積む（`#28` と同じ規律。docs/05 §11.11 ①）。
-  // 🔴 積めなかったら握り潰さず `InternalError`（500）にする（`createProjectPublishGate` が投げる）。
-  //    保存自体は commit 済みで失われず、復帰は手順 5-② である。
-  if (enqueue !== null) await enqueue();
   return view;
-}
-
-/** 🔴 公開中でない案件の `recheck`（`#26` の `POST` と、公開先 0 社の `PATCH`）。 */
-function notPublishedRecheckView(id: string): ProjectMutationView {
-  return { id, recheck: { queued: false, reason: 'NOT_PUBLISHED' } };
 }
 
 /**
@@ -859,6 +767,14 @@ export async function readProjectForEdit(
       }),
     };
   });
+}
+
+/** 入力中の公開文を見直すための取引先名。ホストだけが取得する。 */
+export async function projectPartnerNames(ctx: AuthenticatedTenantCtx) {
+  requireHost(ctx);
+  return withTenant(ctx, (db) => db.partnerCompany.findMany({
+    select: { id: true, name: true }, orderBy: [{ name: 'asc' }, { id: 'asc' }],
+  }));
 }
 
 /** 担当者の選択肢。ホスト社員だけを同じテナントのRLS内で読む。 */

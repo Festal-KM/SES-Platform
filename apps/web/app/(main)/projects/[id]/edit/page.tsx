@@ -14,7 +14,7 @@ import { PageBody } from '@ses/ui';
 import { NotFoundError } from '../../../../../lib/api/errors';
 import { readRequestMeta, resolveTenantCtxOutcome } from '../../../../../lib/auth/session';
 import { isProjectEditorRole } from '../../../../../lib/projects/policy';
-import { readProjectForEdit, projectAssigneeOptions } from '../../../../../lib/projects/service';
+import { readProjectForEdit, projectAssigneeOptions, projectPartnerNames } from '../../../../../lib/projects/service';
 import { listSkills } from '../../../../../lib/skills/service';
 import { ProjectForm } from '../../_form/project-form';
 // 🔴 `new/page.tsx` と同じ出所（`'use client'` のモジュールから値 import しない）。
@@ -75,6 +75,7 @@ export default async function EditProjectPage({
         projectId={view.id}
         initial={toProjectFormValues(view)}
         assigneeOptions={await projectAssigneeOptions(outcome.ctx)}
+        partnerNames={await projectPartnerNames(outcome.ctx)}
         skillDictionary={skillDictionary}
         statusOptions={projectStatusOptions}
         remoteModeOptions={projectRemoteModeOptions}

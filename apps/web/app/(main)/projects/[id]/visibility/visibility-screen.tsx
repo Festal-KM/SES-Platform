@@ -148,7 +148,7 @@ type Phase = 'idle' | 'confirmRevoke' | 'submitting' | 'error';
 /** `#28` の応答（docs/05 §6.4 #28）。 */
 type VisibilityResponse = {
   readonly reviewGateId: string | null;
-  readonly verdict: 'PENDING_GATE' | 'NO_PUBLISH_REQUESTED';
+  readonly verdict: 'PUBLISHED' | 'NO_PUBLISH_REQUESTED';
 };
 
 function sortedIds(values: Iterable<string>): readonly string[] {
@@ -514,7 +514,7 @@ export function ProjectVisibilityScreen({
           ) : null}
           {result === null ? null : (
             <p role="status" className="mb-2 text-body text-success" data-testid="project-visibility-result">
-              {result === 'PENDING_GATE' ? messages.resultPendingGate : messages.resultNoPublish}
+              {messages.resultNoPublish}
             </p>
           )}
 

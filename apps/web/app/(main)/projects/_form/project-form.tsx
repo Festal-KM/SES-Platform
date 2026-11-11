@@ -1,5 +1,6 @@
 'use client';
 import { t } from '@ses/i18n';
+import { findOtherPartnerNames } from '../../../../lib/projects/public-company-warning';
 import { PROJECT_DEVELOPMENT_PHASES, PROJECT_DEVELOPMENT_METHODS } from '@ses/domain';
 
 // apps/web/app/(main)/projects/_form/project-form.tsx
@@ -202,6 +203,7 @@ export type ProjectFormProps = {
   /** `EDIT` のときだけ非 null。`PATCH /api/projects/{id}` の対象。 */
   readonly projectId: string | null;
   readonly initial: ProjectFormValues;
+  readonly partnerNames?: readonly { readonly id: string; readonly name: string }[];
   readonly skillDictionary: readonly SkillDictionaryOption[];
   readonly statusOptions: readonly SelectOption[];
   readonly remoteModeOptions: readonly SelectOption[];
@@ -299,6 +301,7 @@ export function ProjectForm({
   projectId,
   initial,
   skillDictionary,
+  partnerNames = [],
   statusOptions,
   remoteModeOptions,
   categoryOptions,
@@ -315,6 +318,16 @@ export function ProjectForm({
 }: ProjectFormProps) {
   const [values, setValues] = useState<ProjectFormValues>(initial);
   const [dirty, setDirty] = useState(false);
+  const changedPublicTexts = [
+    values.name !== initial.name ? values.name : '',
+    values.publicSummary !== initial.publicSummary ? values.publicSummary : '',
+    values.publicMemo !== initial.publicMemo ? values.publicMemo : '',
+    values.locationDetail !== initial.locationDetail ? values.locationDetail : '',
+    ...values.requirements.filter((item) => !initial.requirements.some(
+      (original) => original.key === item.key && original.freeText === item.freeText,
+    )).map((item) => item.freeText),
+  ];
+  const companyWarning = dirty && findOtherPartnerNames(changedPublicTexts, partnerNames, []).length > 0;
   const [phase, setPhase] = useState<Phase>('idle');
   /**
    * 辞書の絞り込み語。🔴 **区分ごとに別々に持つ**（1 つにすると、必須ブロックで絞った語が
@@ -508,7 +521,10 @@ export function ProjectForm({
             disabled={phase === 'submitting'}
             data-testid="project-name"
           />
-          {/* 🔴 T-12-10: 「この欄は公開先が読む」印（`docs/04` 改訂 14 §S-012 / `F-014 AC-6`）。 */}
+          {companyWarning ? (
+          <p className="mb-2 text-body text-warning" role="status">{t('projects.publicSummary.companyWarning')}</p>
+        ) : null}
+        {/* 🔴 T-12-10: 「この欄は公開先が読む」印（`docs/04` 改訂 14 §S-012 / `F-014 AC-6`）。 */}
           <p className="mt-1 text-xs text-fg-muted" data-testid="project-public-field-notice-name">
             {messages.publicFieldNotice}
           </p>
