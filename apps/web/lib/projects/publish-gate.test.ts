@@ -52,6 +52,8 @@ function fakeDb(overrides: {
               publicSummary: overrides.publicSummary ?? '公開用の記載',
               endClientName: 'エンド企業',
               internalUnitPrice: null,
+              unitPriceMin: null,
+              unitPriceMax: null,
             },
     },
     projectRequirement: {

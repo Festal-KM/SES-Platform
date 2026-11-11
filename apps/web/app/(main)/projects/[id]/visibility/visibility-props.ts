@@ -74,13 +74,14 @@ export function projectPublishPreview(view: HostProjectDetailView): PublishPrevi
   const warnings = findCommerceLeakWarnings({
     texts: publishedTexts(view),
     endClientName: view.endClientName,
-    internalUnitPrice: view.internalUnitPrice,
+    internalUnitPrice: view.unitPriceMin,
+    wholesalePriceMax: view.unitPriceMax,
   });
 
   return {
     name: view.name,
     headline: projectHeadlineRows(view),
-    conditions: projectConditionRows(view),
+    conditions: projectConditionRows({ ...view, unitPriceMin: view.internalUnitPrice, unitPriceMax: view.internalUnitPrice }, true),
     requirements: REQUIREMENT_KINDS.map((kind) => ({
       kind,
       heading: t(REQUIREMENT_KIND_HEADING_KEYS[kind]),

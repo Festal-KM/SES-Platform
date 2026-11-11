@@ -119,6 +119,10 @@ describe('条件（`docs/04` §S-011 セクション 3）', () => {
     expect(rows[0]?.value).toBe(`600,000〜800,000 ${t('projects.unitPrice.unit')}`);
   });
 
+  it('取引先に仕入単価を表示するときの項目名は単価', () => {
+    expect(projectConditionRows(partnerView(), true)[0]?.label).toBe('単価');
+  });
+
   it('🔴 条件の行に商流情報の値が 1 文字も現れない', () => {
     const serialized = JSON.stringify(projectConditionRows(hostView()));
     expect(serialized).not.toContain('架空エンド株式会社');

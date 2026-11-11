@@ -129,7 +129,8 @@ describe("案件詳細カードの初期表示", () => {
       createElement(ProjectCardEditor, { initial, options: {}, canEdit: true, initialTab: "working" }),
     );
     const notice = /data-testid="project-detail-commerce-notice"[^>]*>([^<]*)</.exec(html)?.[1] ?? "";
-    expect(notice).toContain("公開範囲の相手には表示されません");
+    expect(notice).toContain("商流、エンド企業名、卸単価は表示されません");
+    expect(notice).toContain("商流制限は公開先の取引先に表示されます");
     expect(html).toContain('data-testid="project-card-money-hint"');
     // 企業・担当は「概要」、メモは「関連・履歴」のタブにある。
     const tabHtml = (initialTab: "overview" | "related") =>

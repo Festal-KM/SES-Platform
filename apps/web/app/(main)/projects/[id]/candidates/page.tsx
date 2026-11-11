@@ -185,7 +185,7 @@ export default async function ProjectCandidatesPage({
         projectId={view.project.id}
         projectName={view.project.name}
         headlineRows={projectHeadlineRows(view.project)}
-        conditionRows={projectConditionRows(view.project)}
+        conditionRows={projectConditionRows(view.project, true)}
         mustRows={projectRequirementRows(view.project.requirements, 'MUST')}
         niceRows={projectRequirementRows(view.project.requirements, 'NICE')}
         rows={candidateListRows(view.items)}

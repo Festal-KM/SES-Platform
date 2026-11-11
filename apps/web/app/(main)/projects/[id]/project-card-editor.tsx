@@ -72,7 +72,7 @@ const required = new Set(["name", "status", "sourceKind", "headcount"]);
 // 🔴 公開先の取引先が読む欄（保存で再検査の対象。`projects.recheckNotice.willRun` と同じ集合）。
 const publicFields = new Set(["name", "publicSummary", "locationDetail", "publicMemo"]);
 // 公開欄を含むカード（要件の自由記述は content カード）。
-const publicCards = new Set<ProjectCardId>(["basic", "summary", "content", "working", "notes"]);
+const publicCards = new Set<ProjectCardId>(["basic", "summary", "content", "working", "price", "notes"]);
 // 🔴 取引先に出ない項目を持つカード（F-013 AC-2 の注記を常に添える）。
 const hostOnlyCards = new Set<ProjectCardId>(["commercial", "company", "notes"]);
 
@@ -613,7 +613,7 @@ export function ProjectCardEditor({
                         </span>
                       ) : null}
                     </span>
-                    <div className={cn("min-w-0", "sm:col-span-4")}>{key === "settlementMinHours" ? <div className="flex min-w-0 items-center gap-2">{control(key)}<span>{t('projects.cards.rangeSeparator')}</span>{control('settlementMaxHours')}<span className="shrink-0 text-xs">{t('projects.cards.hours')}</span></div> : control(key)}{publicFields.has(key) ? <p className="m-0 mt-1 text-xs text-brand" data-testid={`project-card-public-field-${key}`}>{t("projects.publicField.notice")}</p> : null}{key === "unitPrice" ? <p className="m-0 mt-1 text-xs text-brand" data-testid="project-card-unit-price-shared">{t("projects.cards.unitPriceShared")}</p> : null}</div>
+                    <div className={cn("min-w-0", "sm:col-span-4")}>{key === "settlementMinHours" ? <div className="flex min-w-0 items-center gap-2">{control(key)}<span>{t('projects.cards.rangeSeparator')}</span>{control('settlementMaxHours')}<span className="shrink-0 text-xs">{t('projects.cards.hours')}</span></div> : control(key)}{publicFields.has(key) ? <p className="m-0 mt-1 text-xs text-brand" data-testid={`project-card-public-field-${key}`}>{t("projects.publicField.notice")}</p> : null}{key === "internalUnitPrice" ? <p className="m-0 mt-1 text-xs text-brand" data-testid="project-card-unit-price-shared">{t("projects.cards.unitPriceShared")}</p> : null}</div>
                   </div>
                 </Field>
               ) : (

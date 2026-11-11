@@ -164,6 +164,9 @@ export type ProjectPublishGateHashInput = {
   readonly endClientName: string | null;
   /** 十進の文字列（例: `800000.00`）。🔴 内部限定。 */
   readonly internalUnitPrice: string | null;
+  /** 公開先に出さない上位会社向け卸単価。旧レンジも両端を保持する。 */
+  readonly wholesalePriceMin: string | null;
+  readonly wholesalePriceMax: string | null;
   readonly audiencePartnerCompanyIds: readonly string[];
   /** テナントの取引先すべて（公開先かどうかを問わない）。 */
   readonly partnerCompanies: readonly GateHashPartner[];
@@ -297,6 +300,8 @@ export function gateHashSource(input: GateHashInput): string {
         ...input.requirementTexts.map((text, index) => field(`requirement[${index}]`, text)),
         field('endClientName', input.endClientName),
         field('internalUnitPrice', input.internalUnitPrice),
+        field('wholesalePriceMin', input.wholesalePriceMin),
+        field('wholesalePriceMax', input.wholesalePriceMax),
         field('audienceCount', String(audience.length)),
         ...audience.map((id, index) => field(`audience[${index}]`, id)),
         field('partnerCount', String(partners.length)),

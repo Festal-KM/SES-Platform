@@ -114,11 +114,11 @@ export function projectHeadlineRows(view: ProjectSummaryLike): readonly ProjectD
  * 🔴 取引先にも**そのまま**出す。ここに出るのは単価レンジ（**外部公開用**）・勤務地・リモート可否で
  *    あり、内部限定の 2 列（エンド企業名・自社単価）は `ProjectDetailShared` に存在しない。
  */
-export function projectConditionRows(view: ProjectSummaryLike): readonly ProjectDetailRow[] {
+export function projectConditionRows(view: ProjectSummaryLike, purchasePrice = false): readonly ProjectDetailRow[] {
   return [
     {
       key: 'unitPrice',
-      label: t('projects.basic.unitPrice'),
+      label: t(purchasePrice ? 'projects.partner.unitPrice' : 'projects.basic.unitPrice'),
       value: formatProjectUnitPriceRange(view.unitPriceMin, view.unitPriceMax),
     },
     {

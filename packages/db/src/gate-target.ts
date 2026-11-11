@@ -416,6 +416,8 @@ async function loadProjectPublishGateInput(
           locationDetail: true,
           endClientName: true,
           internalUnitPrice: true,
+          unitPriceMin: true,
+          unitPriceMax: true,
         },
       });
       if (project === null) return { kind: 'NOT_FOUND' };
@@ -460,7 +462,7 @@ async function loadProjectPublishGateInput(
           { field: 'requirement', text: requirementTexts.join('\n') },
         ],
         forbiddenTerms: {
-          unitPrices: unitPriceTerm(project.internalUnitPrice),
+          unitPrices: [...unitPriceTerm(project.unitPriceMin), ...unitPriceTerm(project.unitPriceMax)],
           endClientNames: nonEmpty([project.endClientName]),
           otherCompanyNames: nonEmpty(
             partners

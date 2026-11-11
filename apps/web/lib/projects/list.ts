@@ -175,18 +175,18 @@ export type ProjectListView = {
 /**
  * 共通の取得列。内部単価は含めず、ホストの分岐でのみ追加取得する。
  */
-const PROJECT_LIST_SELECT = {
+const PROJECT_LIST_BASE_SELECT = {
   id: true,
   name: true,
   status: true,
   headcount: true,
   startDate: true,
-  unitPriceMin: true,
-  unitPriceMax: true,
   prefecture: true,
   remoteMode: true,
   updatedAt: true,
 } as const;
+const PROJECT_LIST_SELECT = { ...PROJECT_LIST_BASE_SELECT, unitPriceMin: true, unitPriceMax: true } as const;
+const PARTNER_PROJECT_LIST_SELECT = { ...PROJECT_LIST_BASE_SELECT, internalUnitPrice: true } as const;
 
 /** 🔴 レビューが「増えていないこと」を数えられるように export する（`#27` と同じ）。 */
 export const PROJECT_LIST_SELECT_KEYS = Object.keys(PROJECT_LIST_SELECT);
@@ -371,7 +371,7 @@ export function withStartWindow(query: ProjectListQuery, now: Date): ProjectList
 
 export async function projectPageFromCursor(ctx: AuthenticatedTenantCtx, query: ProjectListQuery): Promise<number> {
   if (!query.cursor) return 1;
-  const where = projectSearchWhere({...withStartWindow(query,new Date()),searchInternalRemarks:ctx.partnerCompanyId === null});
+  const where = projectSearchWhere({...withStartWindow(query,new Date()),searchInternalRemarks:ctx.partnerCompanyId === null,partnerView:ctx.partnerCompanyId !== null});
   return withTenant(ctx, async db => {
     const row = await db.project.findFirst({where:{AND:[where,{id:query.cursor}]},select:{id:true,status:true,updatedAt:true,startDate:true}});
     if (!row) return 1;
@@ -397,12 +397,12 @@ export async function listProjects(
   //    日付の境目で件数と行がずれない（`resolveStartWindow` は純粋関数である）。
   // 🔴 `where` を 1 つの値にしておくのは、一覧と `COUNT` で書き分けられないようにするためである。
   //    🔴 述語の出所は `projectSearchWhere`（`@ses/db` の `search/projects.ts`）の 1 本だけである。
-  const where = projectSearchWhere({ ...withStartWindow(query, new Date()), searchInternalRemarks: ctx.partnerCompanyId === null });
+  const where = projectSearchWhere({ ...withStartWindow(query, new Date()), searchInternalRemarks: ctx.partnerCompanyId === null, partnerView: ctx.partnerCompanyId !== null });
   const isHost = ctx.partnerCompanyId === null;
 
   return withTenant(ctx, async (db) => {
     const [rows, total] = await Promise.all([
-      db.project.findMany({
+      (isHost ? db.project.findMany({
         where,
         select: PROJECT_LIST_SELECT,
         orderBy: [...PROJECT_LIST_ORDER_BY],
@@ -410,7 +410,14 @@ export async function listProjects(
         // 番号指定も同じwhere・RLS・決定的な並びの内側で適用する。
         ...(query.page !== undefined ? { skip: (query.page - 1) * query.limit }
           : query.cursor === undefined ? {} : { cursor: { id: query.cursor }, skip: 1 }),
-      }),
+      }) : db.project.findMany({
+        where,
+        select: PARTNER_PROJECT_LIST_SELECT,
+        orderBy: [...PROJECT_LIST_ORDER_BY],
+        take: takeForCursorPage(query.limit),
+        ...(query.page !== undefined ? { skip: (query.page - 1) * query.limit }
+          : query.cursor === undefined ? {} : { cursor: { id: query.cursor }, skip: 1 }),
+      }).then(items => items.map(row => ({ ...row, unitPriceMin: row.internalUnitPrice, unitPriceMax: row.internalUnitPrice })))),
       // 🔴 `where` は上と同一の値である（docs/05 §4.8 / `F-015 AC-1`）。
       db.project.count({ where }),
     ]);

@@ -216,7 +216,11 @@ async function runEnqueuedGate(
 async function prepareProject(id: string, publicSummary: string): Promise<void> {
   await admin.project.update({
     where: { id },
-    data: { publicSummary, endClientName: END_CLIENT, internalUnitPrice: INTERNAL_UNIT_PRICE },
+    data: {
+      publicSummary, endClientName: END_CLIENT,
+      unitPriceMin: INTERNAL_UNIT_PRICE, unitPriceMax: INTERNAL_UNIT_PRICE,
+      internalUnitPrice: 700000,
+    },
   });
 }
 
@@ -422,7 +426,7 @@ describe('🔴 F-014 AC-3: 内部限定の情報が公開文に出ていたら�
     expect(await visibleToPartner(PARTNER_USER_1, projectId)).toBe(false);
   });
 
-  it('🔴 要件のフリーテキストに内部単価が含まれていれば商流層 FAIL となり、公開されない', async () => {
+  it('🔴 要件のフリーテキストに卸単価が含まれていれば商流層 FAIL となり、公開されない', async () => {
     const { projectId, outcome } = await requestAndRunGate({
       name: '要件フリーテキスト',
       publicSummary: '清潔な公開用の記載です。',
@@ -441,7 +445,7 @@ describe('🔴 F-014 AC-3: 内部限定の情報が公開文に出ていたら�
     expect(await visibilityRows(projectId)).toHaveLength(0);
   });
 
-  it('内部単価が含まれていれば商流層 FAIL となり、公開されない', async () => {
+  it('卸単価が含まれていれば商流層 FAIL となり、公開されない', async () => {
     const { projectId, outcome } = await requestAndRunGate({
       name: '内部単価',
       publicSummary: `想定単価は ${INTERNAL_UNIT_PRICE} 円 / 月です。`,
@@ -451,6 +455,16 @@ describe('🔴 F-014 AC-3: 内部限定の情報が公開文に出ていたら�
     expect(outcome).toMatchObject({ overall: 'FAIL', publish: { kind: 'BLOCKED' } });
     expect(await visibilityRows(projectId)).toHaveLength(0);
     expect(await visibleToPartner(PARTNER_USER_1, projectId)).toBe(false);
+  });
+
+  it('公開対象の仕入単価は卸単価と区別し、公開文にあっても商流違反にしない', async () => {
+    const { projectId, outcome } = await requestAndRunGate({
+      name: '仕入単価',
+      publicSummary: '想定仕入単価は 700000 円 / 月です。',
+      to: [PARTNER_1.partnerCompanyId],
+    });
+    expect(outcome).toMatchObject({ overall: 'PASS', publish: { kind: 'PUBLISHED' } });
+    expect(await visibleToPartner(PARTNER_USER_1, projectId)).toBe(true);
   });
 
   it('🔴 公開先に含まれない取引先の社名が含まれていれば FAIL（パートナー間の相互参照 0 件）', async () => {
@@ -1059,14 +1073,29 @@ describe('🔴 T-12-10 (h): 走らない 3 ケース + 公開先の増減（AC-6
       startDate: '2026-11-01',
       status: 'CLOSED',
       endClientName: END_CLIENT,
-      internalUnitPrice: 900000,
-      unitPriceMin: 600000,
-      unitPriceMax: 800000,
     });
     expect(saved.body.recheck).toEqual({ queued: false, reason: 'PUBLIC_FIELDS_UNCHANGED' });
     expect(enqueued).toHaveLength(0);
     expect(await admin.aiUsage.count()).toBe(usageBefore);
     expect(await admin.projectPublishRequest.count({ where: { projectId } })).toBe(0);
+  });
+
+  it('単価を変更した公開中の案件は各欄で再検査を要求する', async () => {
+    const host = await ctxOf(HOST, 'SALES');
+    const cases = [
+      { internalUnitPrice: 800000 },
+      { unitPriceMin: 900000 },
+      { unitPriceMax: 1000000 },
+    ];
+    for (const [index, patch] of cases.entries()) {
+      const projectId = await publishedProject(`単価の再検査-${index}`);
+      enqueued.length = 0;
+      const saved = await patchProject(host, projectId, patch);
+      expect(saved.status).toBe(200);
+      expect(saved.body.recheck).toEqual({ queued: true });
+      expect(enqueued).toHaveLength(1);
+      expect(await admin.projectPublishRequest.count({ where: { projectId, kind: 'RECHECK' } })).toBe(1);
+    }
   });
 
   it('③3 欄を同じ値で再保存 → PUBLIC_FIELDS_UNCHANGED（F-026 も増えない）', async () => {

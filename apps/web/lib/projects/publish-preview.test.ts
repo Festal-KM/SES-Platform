@@ -8,6 +8,14 @@ import { findCommerceLeakWarnings, PUBLISHED_FIELDS } from './publish-preview';
 const END_CLIENT = '架空エンド株式会社';
 
 describe('🔴 docs/04 §S-013: 外部に出る欄に商流情報が混ざっていれば警告する', () => {
+  it('旧卸単価レンジの上限も公開文に混入すれば警告する', () => {
+    expect(findCommerceLeakWarnings({
+      texts: [{ field: 'publicSummary', value: '単価 1,010,000 円' }],
+      endClientName: null,
+      internalUnitPrice: 990000,
+      wholesalePriceMax: 1010000,
+    })).toEqual([{ field: 'publicSummary', kind: 'INTERNAL_UNIT_PRICE' }]);
+  });
   it('外部公開用の記載にエンド企業名が入っていれば、その欄が指摘される', () => {
     expect(
       findCommerceLeakWarnings({

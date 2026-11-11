@@ -23,11 +23,13 @@ describe('案件の基本情報', () => {
     expect(fields.find((field) => field.key === 'unitPrice')?.value).toBe('70 万円');
     expect(fields.find((field) => field.key === 'purchaseUnitPrice')?.value).toBe('60 万円');
   });
-  it('取引先には公開メモを出し、商流・想定仕入単価・内部備考・担当者を出さない', () => {
+  it('取引先には仕入単価と公開メモを出し、卸単価・内部備考・担当者を出さない', () => {
     const fields = projectBasicInfoFields({ ...info(), host: null });
     expect(fields.length).toBeGreaterThan(0);
     expect(fields.map((field) => field.key)).toContain('publicMemo');
-    for (const key of ['endClientName', 'upperCompanyName', 'purchaseUnitPrice', 'remarks', 'assignee']) {
+    expect(fields.map((field) => field.key)).toContain('purchaseUnitPrice');
+    expect(fields.find((field) => field.key === 'purchaseUnitPrice')?.label).toBe('単価');
+    for (const key of ['endClientName', 'upperCompanyName', 'unitPrice', 'remarks', 'assignee']) {
       expect(fields.map((field) => field.key)).not.toContain(key);
     }
     expect(JSON.stringify(fields)).not.toContain('架空エンド');

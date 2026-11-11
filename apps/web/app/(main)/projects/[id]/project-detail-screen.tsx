@@ -483,7 +483,7 @@ export function ProjectDetailScreen({
   readonly messages: ProjectDetailScreenMessages;
 }) {
   const headline = projectHeadlineRows(view);
-  const conditions = projectConditionRows(view);
+  const conditions = projectConditionRows(view, view.audience === "PARTNER");
 
   return (
     <div data-testid="project-detail-screen" data-audience={view.audience}>

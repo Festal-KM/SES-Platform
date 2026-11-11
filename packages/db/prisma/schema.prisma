@@ -664,13 +664,13 @@ model Project {
   utilizationRate Int? @map("utilization_rate")
   name               String
   endClientName      String?   @map("end_client_name") // 🔴 内部限定。公開表示・LLM・運営者に出さない
-  internalUnitPrice  Decimal?  @map("internal_unit_price") @db.Decimal(12, 2) // 🔴 内部限定（同上）
+  internalUnitPrice  Decimal?  @map("internal_unit_price") @db.Decimal(12, 2) // 想定仕入単価。公開先の取引先にも表示する
   publicSummary      String?   @map("public_summary") // 外部公開用の業務概要。勤務地の詳細・公開メモとともに検査する
   locationDetail     String?   @map("location_detail") // 勤務地・最寄駅（公開用）
   publicMemo         String?   @map("public_memo") // 公開メモ（公開検査の対象）
   remarks            String?   // 内部備考。単価の補足など。取引先には出さない
-  unitPriceMin       Decimal?  @map("unit_price_min") @db.Decimal(12, 2)
-  unitPriceMax       Decimal?  @map("unit_price_max") @db.Decimal(12, 2)
+  unitPriceMin       Decimal?  @map("unit_price_min") @db.Decimal(12, 2) // 上位会社向け卸単価。取引先には非公開
+  unitPriceMax       Decimal?  @map("unit_price_max") @db.Decimal(12, 2) // 旧レンジの上限。取引先には非公開
   startDate          DateTime? @map("start_date") @db.Date
   prefecture         String?
   /// RemoteMode（§3.4 冒頭参照。CHECK）

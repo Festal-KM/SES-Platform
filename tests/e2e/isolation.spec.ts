@@ -59,7 +59,7 @@
 //    偽陽性・偽陰性になる。
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Browser } from '@playwright/test';
-import { ISOLATION_SEED_PASSWORD, isolationSeedEmails } from '@ses/db/seed';
+import { ISOLATION_PROJECT_PURCHASE_PRICE, ISOLATION_SEED_PASSWORD, isolationSeedEmails } from '@ses/db/seed';
 import { t } from '../../packages/i18n/src/index';
 import { apiRequest, auditLogPeriodQuery, parseJson, type ApiResponse } from './support/api';
 import {
@@ -854,6 +854,8 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
 
       const item = list.items[0] ?? {};
       expect(item.audience).toBe('PARTNER');
+      expect(item.unitPriceMin).toBe(ISOLATION_PROJECT_PURCHASE_PRICE);
+      expect(item.unitPriceMax).toBe(ISOLATION_PROJECT_PURCHASE_PRICE);
       // 🔴 **キーごと存在しない**（`undefined` で返すのではない。`F-014 AC-4` / `F-013 AC-2`）。
       for (const forbiddenKey of ['visibleToCount', 'endClientName', 'internalUnitPrice']) {
         expect(Object.keys(item), `一覧の 1 件に ${forbiddenKey} が現れました`).not.toContain(
@@ -882,6 +884,8 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
       expectNoMarkers('パートナーの GET /api/projects/{id}', detailResponse.text, forbiddenInJson);
       const detail = parseJson(detailResponse) as Record<string, unknown>;
       expect(detail.audience).toBe('PARTNER');
+      expect(detail.unitPriceMin).toBe(ISOLATION_PROJECT_PURCHASE_PRICE);
+      expect(detail.unitPriceMax).toBe(ISOLATION_PROJECT_PURCHASE_PRICE);
       for (const forbiddenKey of [
         'endClientName',
         'internalUnitPrice',

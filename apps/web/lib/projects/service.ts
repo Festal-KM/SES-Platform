@@ -552,6 +552,7 @@ export async function updateProject(
         id: true,
         unitPriceMin: true,
         unitPriceMax: true,
+        internalUnitPrice: true,
         name: true,
         publicSummary: true,
         publicMemo: true,
@@ -687,7 +688,12 @@ export async function updateProject(
     //    owed のまま公開が続く（＝ T-12-10 が塞ごうとしている穴が開いたまま）。この条件があれば、
     //    利用者が**同じ内容でもう一度保存する**だけで積み直せる（`jobId` は同じなので二重実行に
     //    ならず、内容が同じなら `DONE` 行のキャッシュを引くので `F-026` も増えない）。
-    const changed = projectPublicFieldsChanged(before, after);
+    // 非公開の卸単価が変わると、公開本文に新しい卸単価が混ざっていないか再検査する。
+    const priceChanged =
+      (patch.unitPriceMin !== undefined && patch.unitPriceMin !== decimalToNumber(current.unitPriceMin)) ||
+      (patch.unitPriceMax !== undefined && patch.unitPriceMax !== decimalToNumber(current.unitPriceMax)) ||
+      (patch.internalUnitPrice !== undefined && patch.internalUnitPrice !== decimalToNumber(current.internalUnitPrice));
+    const changed = projectPublicFieldsChanged(before, after) || priceChanged;
     if (!changed && !(await hasPendingProjectRecheck(db, id))) {
       return {
         view: { id, recheck: { queued: false, reason: 'PUBLIC_FIELDS_UNCHANGED' } } as const,
@@ -880,8 +886,7 @@ export async function projectAssigneeOptions(ctx: AuthenticatedTenantCtx) {
 // 🔴 「取得後に隠す」実装にしない（`docs/02` 申し送り 13-④ / `docs/05` §4.9 の選択と同じ理由）:
 //    取得してからシリアライザで落とす形は、API 応答・ログ・エクスポート・将来の別経路の
 //    どこか 1 つで必ず漏れる。**読まない列は `select` に書かない。**
-// 🔴 したがって `select` の定数を 2 本に分け、パートナー側の定数には
-//    `endClientName` / `internalUnitPrice` という**識別子が 1 度も現れない**
+// 🔴 取引先が読むのは仕入単価であり、上位会社向けの卸単価とエンド企業名は取得しない。
 //    （T-05-03 の `SKILL_ALIAS_SELECT` が `proposedBy` / `decidedBy` を書かないのと同じ形）。
 //    実行時の担保は `tests/isolation/projects.test.ts`、型の担保は
 //    `apps/web/lib/projects/detail-view.types.test.ts` である。
@@ -893,8 +898,6 @@ const PROJECT_DETAIL_SHARED_SELECT = {
   status: true,
   headcount: true,
   startDate: true,
-  unitPriceMin: true,
-  unitPriceMax: true,
   prefecture: true,
   remoteMode: true,
   publicSummary: true,
@@ -916,11 +919,13 @@ const PROJECT_DETAIL_SHARED_SELECT = {
  * 🔴 **パートナー文脈が読む列の全部**。商流情報の 2 列がここに無いことが `F-013 AC-2` の担保である。
  *    ⚠️ この定数に列を足すことは、公開範囲の相手へ出す項目を増やすことと同義である。
  */
-const PARTNER_PROJECT_DETAIL_SELECT = PROJECT_DETAIL_SHARED_SELECT;
+const PARTNER_PROJECT_DETAIL_SELECT = { ...PROJECT_DETAIL_SHARED_SELECT, internalUnitPrice: true } as const;
 
 /** ホスト文脈が読む列（共通 + 商流情報の 2 列）。 */
 const HOST_PROJECT_DETAIL_SELECT = {
   ...PROJECT_DETAIL_SHARED_SELECT,
+  unitPriceMin: true,
+  unitPriceMax: true,
   endClientName: true,
   internalUnitPrice: true,
   // ✅✅ **2026-10-16: ホスト限定の 4 項目**（migration 20261016040000）。
@@ -1096,7 +1101,7 @@ export async function readProjectDetail(
     // 🔴 取引先の経路は `via` を受け取らない（`S-013` はホスト専用であり、ここには来ない）。
     await recordProjectView(db, ctx, row.id, PROJECT_VIEW_VIA.detail, meta);
 
-    return { ...toSharedDetail(row, requirements), audience: 'PARTNER' };
+    return { ...toSharedDetail({ ...row, unitPriceMin: row.internalUnitPrice, unitPriceMax: row.internalUnitPrice }, requirements), audience: 'PARTNER' };
   });
 }
 
@@ -1121,7 +1126,7 @@ export async function readProjectCandidateContext(
 ): Promise<ProjectDetailShared | null> {
   const row = await db.project.findFirst({ where: { id }, select: PARTNER_PROJECT_DETAIL_SELECT });
   if (row === null) return null;
-  return toSharedDetail(row, await readProjectRequirements(db, row.id));
+  return toSharedDetail({ ...row, unitPriceMin: row.internalUnitPrice, unitPriceMax: row.internalUnitPrice }, await readProjectRequirements(db, row.id));
 }
 
 /**
