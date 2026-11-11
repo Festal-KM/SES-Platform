@@ -52,8 +52,8 @@ export type PageWidthClass = 'full' | 'split' | 'prose';
  * 本体の左右 gutter（`docs/04` §7.9 の `--space-6` = 24px）。3 クラスに共通。
  * 🔴 クラスごとに gutter を変えない（画面を移動するたびに本文の左端が動く）。
  */
-// ✅ 2026-10-13: 本文の gutter は **左 28 / 右 16**（`docs/design-system.md` §2）。
-export const PAGE_BODY_GUTTER_CLASS = 'pl-7 pr-4';
+// スマートフォンは左 28 / 右 16、PC は左右 32（`docs/design-system.md` §2）。
+export const PAGE_BODY_GUTTER_CLASS = 'pl-7 pr-4 lg:px-8';
 
 /**
  * クラス C（読み幅）の上限 = **720px**。

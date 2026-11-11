@@ -30,7 +30,7 @@
 | Viewport 基準 | **1672 × 941** | — |
 | Sidebar 幅 | **208** | `w-52`（`SIDEBAR_WIDTH_PX`） |
 | Header 高さ | **56**（下枠 1px `border`） | `h-14`（`HEADER_HEIGHT_PX`） |
-| Content Padding | **上 20 / 左 28 / 右 16 / 下 20** | `CONTENT_PADDING_CLASSES` |
+| Content Padding | **上 20 / 下 20、左右はスマートフォンで左 28・右 16、PC で左右 32** | `CONTENT_PADDING_X_CLASSES` |
 | Main カラム幅 | **1018**（1672 のとき） | 残り幅（`flex-1`） |
 | Main ↔ Right gap | **16** | `gap-4`（`COLUMN_GAP_PX`） |
 | Right カラム幅 | **388** | `w-97`（`RAIL_WIDTH_PX`） |

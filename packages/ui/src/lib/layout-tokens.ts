@@ -63,12 +63,11 @@ export const HEADER_STICKY_CLASSES = 'md:sticky md:top-[var(--app-banner-h,0px)]
 export const HEADER_SEARCH_MAX_WIDTH_CLASS = 'max-w-181.5';
 
 /**
- * 本文の左右 gutter。🔴 **左 28 / 右 16 の非対称である**（デザインシステム v1.0 §2）——
- * 右には副カラムが来るため、右端の余白は副カラム自身の内側 padding（16）と二重に見える。
+ * 本文とヘッダーの左右余白。スマートフォンは左 28 / 右 16、PC は左右 32。
  */
 export const CONTENT_PADDING_LEFT_PX = 28;
 export const CONTENT_PADDING_RIGHT_PX = 16;
-export const CONTENT_PADDING_X_CLASSES = 'pl-7 pr-4';
+export const CONTENT_PADDING_X_CLASSES = 'pl-7 pr-4 lg:px-8';
 
 /** 本文の上下。 */
 export const CONTENT_PADDING_Y_PX = 20;
