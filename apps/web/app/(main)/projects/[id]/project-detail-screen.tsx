@@ -406,11 +406,13 @@ function VisibilitySection({
   canEdit,
   messages,
   flat = false,
+  visibilityControl,
 }: {
   readonly view: Extract<ProjectDetailView, { audience: "HOST" }>;
   readonly canEdit: boolean;
   readonly messages: ProjectDetailScreenMessages;
   readonly flat?: boolean;
+  readonly visibilityControl?: ReactNode;
 }) {
   return (
     <Section id="visibility" title={messages.sectionVisibility} flat={flat}>
@@ -449,7 +451,7 @@ function VisibilitySection({
       {/* ✅ T-06-06: `S-013`（公開範囲の設定）への導線（`docs/04` §S-011 操作と結果）。
                     🔴 `canEdit`（＝ `PROJECT_EDITOR_ROLES`）のときだけ出す —— `VIEWER` は
                     公開範囲を変更できない（`BR-31`）。取引先はこのセクション自体に到達しない。 */}
-      {canEdit ? (
+      {canEdit && visibilityControl ? visibilityControl : canEdit ? (
         <Link
           className={cn(SECONDARY_LINK_CLASSES, "mt-1")}
           href={`/projects/${view.id}/visibility`}
@@ -469,10 +471,12 @@ export function ProjectDetailScreen({
   messages,
   cards,
   compactHeader,
+  visibilityControl,
 }: {
   readonly view: ProjectDetailView;
   readonly requirementKinds: RequirementKindOrder;
   readonly cards?: ReactNode;
+  readonly visibilityControl?: ReactNode;
   readonly compactHeader?: {readonly categoryLabel:string;readonly sourceKindLabel:string;readonly category:string;readonly sourceKind:string;readonly updatedAt:string;readonly assignee:string|null;readonly copyText:string;readonly updatedLabel:string;readonly assigneeLabel:string;readonly candidatesLabel:string; readonly statusOptions: readonly {value:string;label:string}[]};
   /**
    * 🔴 `VIEWER` と取引先には `S-012` への導線を出さない（docs/04 §S-011 権限差分）。
@@ -587,7 +591,7 @@ export function ProjectDetailScreen({
         // ✅ 2026-11-02: 公開範囲と提案は、案件詳細のタブ（概要の「公開状況」/ 関連・履歴）の中に置く。
         isValidElement<{ visibility?: ReactNode; proposals?: ReactNode }>(cards) ? (
           cloneElement(cards, {
-            visibility: <VisibilitySection view={view} canEdit={canEdit} messages={messages} flat />,
+            visibility: <VisibilitySection view={view} canEdit={canEdit} messages={messages} visibilityControl={visibilityControl} flat />,
           })
         ) : (
           cards
@@ -646,6 +650,7 @@ export function ProjectDetailScreen({
                   view={view}
                   canEdit={canEdit}
                   messages={messages}
+                  visibilityControl={visibilityControl}
                 />
               </>
             ) : null}

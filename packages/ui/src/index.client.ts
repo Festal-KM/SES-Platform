@@ -96,6 +96,7 @@ export type { TooltipProps } from './components/tooltip.js';
 //    （`tests/static/design-tokens.test.ts`）がそれを固定している。
 export {
   DIALOG_PANEL_CLASSES,
+  DIALOG_PANEL_WIDE_CLASSES,
   DIALOG_VIEWPORT_CLASSES,
   DRAWER_PANEL_CLASSES,
   DROPDOWN_MENU_CONTENT_CLASSES,

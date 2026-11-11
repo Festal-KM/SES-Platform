@@ -27,6 +27,7 @@
 //    重複、要件の実体の有無）は `service.ts` 側で行う —— PATCH は既存値と合成しないと
 //    判定できないため、そもそも境界では判定しきれない。
 import { z } from 'zod';
+import { VISIBILITY_PARTNER_COMPANIES_MAX } from './visibility-limits';
 import {
   PROJECT_CATEGORIES,
   normalizeLegacyProjectCategory,
@@ -431,9 +432,6 @@ export type ProjectListQuery = z.infer<typeof projectListQuerySchema>;
 export type ProjectListQueryIsolationGuard = AssertNoIsolationKeys<ProjectListQuery>;
 
 assertNoIsolationKeys(Object.keys(projectListQuerySchema.shape), 'projectListQuerySchema');
-
-/** 1 案件の公開先の上限（1 リクエストの大きさを境界で抑える。取引先の実数は 1 テナント数十社）。 */
-const VISIBILITY_PARTNER_COMPANIES_MAX = 200;
 
 /**
  * `PUT /api/projects/{id}/visibility`（#28。`F-014` / `S-013`）の body。T-06-06。
