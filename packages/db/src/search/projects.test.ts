@@ -180,7 +180,7 @@ describe('検索条件 → 述語（`F-015` の入力）', () => {
 
   // ✅ 2026-10-15: 単価レンジ（`unitPriceOverlapConditions` を人材検索と共有する）。
   it('取引先の単価検索は仕入単価だけを使い、卸単価を検索しない', () => {
-    const where = projectSearchWhere({ priceMin: 700_000, priceMax: 800_000, searchPurchasePrice: true });
+    const where = projectSearchWhere({ priceMin: 700_000, priceMax: 800_000, partnerView: true });
     expect(where.AND).toEqual([
       { OR: [{ internalUnitPrice: null }, { internalUnitPrice: { lte: 800_000 } }] },
       { OR: [{ internalUnitPrice: null }, { internalUnitPrice: { gte: 700_000 } }] },

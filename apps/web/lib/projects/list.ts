@@ -371,7 +371,7 @@ export function withStartWindow(query: ProjectListQuery, now: Date): ProjectList
 
 export async function projectPageFromCursor(ctx: AuthenticatedTenantCtx, query: ProjectListQuery): Promise<number> {
   if (!query.cursor) return 1;
-  const where = projectSearchWhere({...withStartWindow(query,new Date()),searchInternalRemarks:ctx.partnerCompanyId === null,searchPurchasePrice:ctx.partnerCompanyId !== null});
+  const where = projectSearchWhere({...withStartWindow(query,new Date()),searchInternalRemarks:ctx.partnerCompanyId === null,partnerView:ctx.partnerCompanyId !== null});
   return withTenant(ctx, async db => {
     const row = await db.project.findFirst({where:{AND:[where,{id:query.cursor}]},select:{id:true,status:true,updatedAt:true,startDate:true}});
     if (!row) return 1;
@@ -397,7 +397,7 @@ export async function listProjects(
   //    日付の境目で件数と行がずれない（`resolveStartWindow` は純粋関数である）。
   // 🔴 `where` を 1 つの値にしておくのは、一覧と `COUNT` で書き分けられないようにするためである。
   //    🔴 述語の出所は `projectSearchWhere`（`@ses/db` の `search/projects.ts`）の 1 本だけである。
-  const where = projectSearchWhere({ ...withStartWindow(query, new Date()), searchInternalRemarks: ctx.partnerCompanyId === null, searchPurchasePrice: ctx.partnerCompanyId !== null });
+  const where = projectSearchWhere({ ...withStartWindow(query, new Date()), searchInternalRemarks: ctx.partnerCompanyId === null, partnerView: ctx.partnerCompanyId !== null });
   const isHost = ctx.partnerCompanyId === null;
 
   return withTenant(ctx, async (db) => {
