@@ -161,7 +161,7 @@ export default async function ProjectDetailPage({
              `VIEWER` も閲覧でき、絞り込みの本体は `#30` の RLS である（同§の 🔴）。 */}
         <PageHeading
           trail={PROJECT_DETAIL_TRAIL}
-          primaryAction={data ? null : {
+          primaryAction={data && isProjectEditorRole(outcome.ctx.role) ? null : {
             labelKey: "projects.detail.candidates.open",
             href: `/projects/${view.id}/candidates`,
             kind: "NAVIGATION",
