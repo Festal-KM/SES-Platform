@@ -72,7 +72,7 @@ const required = new Set(["name", "status", "sourceKind", "headcount"]);
 // 🔴 公開先の取引先が読む欄（保存で再検査の対象。`projects.recheckNotice.willRun` と同じ集合）。
 const publicFields = new Set(["name", "publicSummary", "locationDetail", "publicMemo"]);
 // 公開欄を含むカード（要件の自由記述は content カード）。
-const publicCards = new Set<ProjectCardId>(["basic", "summary", "content", "working", "notes"]);
+const publicCards = new Set<ProjectCardId>(["basic", "summary", "content", "working", "price", "notes"]);
 // 🔴 取引先に出ない項目を持つカード（F-013 AC-2 の注記を常に添える）。
 const hostOnlyCards = new Set<ProjectCardId>(["commercial", "company", "notes"]);
 

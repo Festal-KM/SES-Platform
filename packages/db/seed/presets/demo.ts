@@ -706,6 +706,7 @@ function publishContentHash(input: {
   readonly publicSummary: string | null;
   readonly endClientName: string | null;
   readonly internalUnitPrice: number | null;
+  readonly wholesalePrice: number | null;
   readonly audiencePartnerCompanyIds: readonly string[];
   readonly partnerCompanies: readonly { readonly partnerCompanyId: string; readonly name: string }[];
 }): string {
@@ -716,6 +717,8 @@ function publishContentHash(input: {
     publicSummary: input.publicSummary,
     endClientName: input.endClientName,
     internalUnitPrice: input.internalUnitPrice === null ? null : input.internalUnitPrice.toFixed(2),
+    wholesalePriceMin: input.wholesalePrice === null ? null : input.wholesalePrice.toFixed(2),
+    wholesalePriceMax: input.wholesalePrice === null ? null : input.wholesalePrice.toFixed(2),
     audiencePartnerCompanyIds: input.audiencePartnerCompanyIds,
     partnerCompanies: input.partnerCompanies,
   });
@@ -1021,6 +1024,7 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number, profile: Tenant
   const projectKeys = Object.keys(PROJECT_TEXTS) as (keyof DemoProjectIds)[];
   const projectEndClient = new Map<keyof DemoProjectIds, string>();
   const projectInternalPrice = new Map<keyof DemoProjectIds, number>();
+  const projectWholesalePrice = new Map<keyof DemoProjectIds, number>();
   const projectPublicContents = new Map<keyof DemoProjectIds, string | null>();
   await db.project.createMany({
     data: projectKeys.map((key, index) => {
@@ -1039,6 +1043,7 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number, profile: Tenant
       projectPublicContents.set(key, projectPublicContent({ publicSummary: PROJECT_TEXTS[key].publicSummary, locationDetail, publicMemo }));
       projectEndClient.set(key, client);
       projectInternalPrice.set(key, internalUnitPrice);
+      projectWholesalePrice.set(key, wholesaleUnitPrice);
       return {
         id: ids.projects[key],
         tenantId: ids.tenantId,
@@ -1122,6 +1127,7 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number, profile: Tenant
       publicSummary: projectPublicContents.get(publish.key) ?? null,
       endClientName: projectEndClient.get(publish.key) ?? null,
       internalUnitPrice: projectInternalPrice.get(publish.key) ?? null,
+      wholesalePrice: projectWholesalePrice.get(publish.key) ?? null,
       audiencePartnerCompanyIds: audienceIds,
       partnerCompanies,
     });

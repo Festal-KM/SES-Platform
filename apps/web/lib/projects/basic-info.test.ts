@@ -28,6 +28,7 @@ describe('案件の基本情報', () => {
     expect(fields.length).toBeGreaterThan(0);
     expect(fields.map((field) => field.key)).toContain('publicMemo');
     expect(fields.map((field) => field.key)).toContain('purchaseUnitPrice');
+    expect(fields.find((field) => field.key === 'purchaseUnitPrice')?.label).toBe('単価');
     for (const key of ['endClientName', 'upperCompanyName', 'unitPrice', 'remarks', 'assignee']) {
       expect(fields.map((field) => field.key)).not.toContain(key);
     }

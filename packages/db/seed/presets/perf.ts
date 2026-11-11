@@ -1104,6 +1104,8 @@ async function seedTenant(db: PrismaClient, now: Date, plan: PerfTenantPlan): Pr
       publicSummary: project.publicSummary,
       endClientName: project.endClientName,
       internalUnitPrice: project.internalUnitPrice.toFixed(2),
+      wholesalePriceMin: project.unitPriceMin.toFixed(2),
+      wholesalePriceMax: project.unitPriceMax.toFixed(2),
       audiencePartnerCompanyIds: project.audience.map((partnerIndex) => partnerOf(partnerIndex).partnerCompanyId),
       partnerCompanies,
     }),

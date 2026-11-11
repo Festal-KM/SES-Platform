@@ -54,7 +54,9 @@ export function projectBasicInfoFields(info: ProjectBasicInfo): readonly Project
     field('category', info.category === null ? none : t(PROJECT_CATEGORY_MESSAGE_KEYS[info.category])),
     field('businessOverview', text(info.publicSummary)),
     field('remoteMode', text(info.remoteMode)),
-    field(host === null ? 'purchaseUnitPrice' : 'unitPrice', price(info.unitPriceMin ?? info.unitPriceMax)),
+    host === null
+      ? { key: 'purchaseUnitPrice', label: t('projects.partner.unitPrice'), value: price(info.unitPriceMin ?? info.unitPriceMax) }
+      : field('unitPrice', price(info.unitPriceMin ?? info.unitPriceMax)),
     ...(host === null ? [] : [field('purchaseUnitPrice', price(host.internalUnitPrice))]),
     field('location', info.location),
     field('startDate', text(info.startDate)),

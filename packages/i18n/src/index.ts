@@ -97,7 +97,8 @@ const ja = {
   'projects.cards.field.endDate': '終了時期',
   'projects.cards.field.headcount': '募集人数',
   'projects.cards.field.parallelOk': '並行提案可否',
-  'projects.cards.field.unitPrice': '卸単価',
+  'projects.cards.field.unitPrice': '卸単価（非公開）',
+  'projects.partner.unitPrice': '単価',
   'projects.cards.field.internalUnitPrice': '想定仕入単価',
   'projects.cards.field.settlementMinHours': '精算時間下限',
   'projects.cards.field.settlementMaxHours': '精算時間上限',
@@ -2973,7 +2974,7 @@ const ja = {
 
   // 🔴 `F-013 AC-2` / `docs/04` §S-012: 商流情報ブロックに常時添える 1 行。
   'projects.commerce.notice':
-    'エンド企業名と卸単価は公開範囲の相手には表示されません。',
+    '商流制限は公開先の取引先に表示されます。商流、エンド企業名、卸単価は表示されません。',
   'projects.endClientName.label': 'エンド企業名',
   'projects.internalUnitPrice.label': '自社単価（月額）',
 
@@ -3007,11 +3008,11 @@ const ja = {
   'projects.recheckNotice.publishedToPrefix': 'この案件は ',
   'projects.recheckNotice.publishedToSuffix': ' 社に公開中です。',
   'projects.recheckNotice.willRun':
-    '案件名 / 業務概要 / 勤務地の詳細 / 公開メモ / 要件の自由記述 のいずれかを変更して保存すると、保存後に再検査が実行されます。検査で問題が見つかると、この案件の公開は解除され、取引先の画面から見えなくなります。',
+    '案件名・業務概要・勤務地の詳細・公開メモ・要件の自由記述・卸単価・想定仕入単価を変更して保存すると、保存後に再検査が実行されます。検査で問題が見つかると、この案件の公開は解除され、取引先の画面から見えなくなります。',
   // 🔴 **走らない条件も同じ帯に書く。** 書かないと「保存のたびに公開が消えるかもしれない」と
   //    読まれて編集が避けられ、台帳が更新されなくなる（`docs/01` 章 1.1-1 の再発）。
   'projects.recheckNotice.willNotRun':
-    '上記 3 欄以外の変更（募集人数・開始日・状態・商流情報・条件）と、同じ内容での再保存では再検査は実行されません。公開先の追加・削除も契機になりません（追加した公開先に対する検査は「公開範囲を設定」の公開の実行が行います）。',
+    '上記以外の変更（募集人数・開始日・状態・商流情報など）と、同じ内容での再保存では再検査は実行されません。公開先の追加・削除も契機になりません（追加した公開先に対する検査は公開の実行時に行います）。',
   // 🔴 保存の完了表示。**保存の成否と再検査の結果を 1 つの表示に混ぜない**（保存は同期で
   //    成功しており、再検査はこれからである。混ぜると「保存できなかった」と誤読される）。
   'projects.saved.recheckQueued': '保存しました。公開中の内容を再検査しています。',

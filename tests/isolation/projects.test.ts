@@ -827,6 +827,10 @@ describe('🔴 F-013 AC-2: 商流情報の射影（取得時に分ける）', ()
       const item = listing.items.find(row => row['id'] === id);
       expect(item?.['unitPriceMin']).toBe(765432);
       expect(JSON.stringify(item)).not.toContain('987654');
+      const wholesaleSearch = await listBodyOf(await getProjects(ctx, '?priceMin=987654&priceMax=987654'));
+      expect(wholesaleSearch.items.some(row => row['id'] === id)).toBe(false);
+      const purchaseSearch = await listBodyOf(await getProjects(ctx, '?priceMin=765432&priceMax=765432'));
+      expect(purchaseSearch.items.some(row => row['id'] === id)).toBe(true);
     } finally {
       await admin.project.update({ where: { id }, data: original });
     }
@@ -1155,8 +1159,8 @@ describe('🔴 F-014 AC-4 / BR-07: 一覧に他社の存在が 1 つも現れな
   });
 });
 
-describe('🔴 F-013 AC-2: 一覧にも商流情報が現れない', () => {
-  it('🔴 パートナーの応答にエンド企業名・内部単価が 1 バイトも無い', async () => {
+describe('🔴 F-013 AC-2: 一覧の取引先向け情報の境界', () => {
+  it('取引先には仕入単価を示し、エンド企業名と内部列名は返さない', async () => {
     const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
 
     const raw = await (await getProjects(ctx)).text();

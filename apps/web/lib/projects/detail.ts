@@ -118,7 +118,7 @@ export function projectConditionRows(view: ProjectSummaryLike, purchasePrice = f
   return [
     {
       key: 'unitPrice',
-      label: t(purchasePrice ? 'projects.basic.purchaseUnitPrice' : 'projects.basic.unitPrice'),
+      label: t(purchasePrice ? 'projects.partner.unitPrice' : 'projects.basic.unitPrice'),
       value: formatProjectUnitPriceRange(view.unitPriceMin, view.unitPriceMax),
     },
     {
