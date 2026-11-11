@@ -390,4 +390,3 @@ describe('🔴 分割レイアウト: 幅を広げると悪化する挙動が無
     expect(projectSource).not.toMatch(/className=[^\n]*2xl:flex-row/);
   });
 });
-
