@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button, Checkbox, PAGE_BODY_PROSE_MAX_WIDTH_CLASS, SECONDARY_LINK_CLASSES } from '@ses/ui';
@@ -20,7 +20,29 @@ export function ProjectVisibilityPopup({ projectId, choices, denialMessage }: {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
+  const [pending, setPending] = useState<readonly string[] | null>(null);
+  const [timedOut, setTimedOut] = useState(false);
   const dirty = saved.length !== selected.length || saved.some((id) => !selected.includes(id));
+
+  useEffect(() => {
+    if (pending === null) return;
+    const timer = window.setInterval(() => router.refresh(), 5000);
+    const timeout = window.setTimeout(() => {
+      setPending(null);
+      setTimedOut(true);
+      setNotice(t('projects.visibilitySettings.popup.pendingTimeout'));
+    }, 90000);
+    return () => { window.clearInterval(timer); window.clearTimeout(timeout); };
+  }, [pending, router]);
+
+  useEffect(() => {
+    if (pending === null) return;
+    const published = choices.filter((choice) => choice.publishedOn !== null).map((choice) => choice.partnerCompanyId);
+    if (published.length === pending.length && pending.every((id) => published.includes(id))) {
+      setPending(null);
+      setNotice(t('projects.visibilitySettings.result.noPublish'));
+    }
+  }, [choices, pending]);
 
   async function save(next: readonly string[]) {
     if (saving) return;
@@ -28,12 +50,16 @@ export function ProjectVisibilityPopup({ projectId, choices, denialMessage }: {
     if (next.length > VISIBILITY_PARTNER_COMPANIES_MAX) { setNotice(t('projects.visibilitySettings.popup.tooMany')); return; }
     if (saved.some((id) => !next.includes(id)) && !window.confirm(t('projects.visibilitySettings.revoke.confirm.lead'))) return;
     setSaving(true);
+    setPending(null);
+    setTimedOut(false);
+    setNotice('');
     try {
       const response = await fetch(`/api/projects/${projectId}/visibility`, {
         method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ partnerCompanyIds: next }),
       });
       if (!response.ok) throw new Error();
       const result = await response.json() as { verdict: 'PENDING_GATE' | 'NO_PUBLISH_REQUESTED' };
+      setPending(result.verdict === 'PENDING_GATE' ? next : null);
       setSelected(next);
       setNotice(t(result.verdict === 'PENDING_GATE' ? 'projects.visibilitySettings.result.pendingGate' : 'projects.visibilitySettings.result.noPublish'));
       setOpen(false);
@@ -58,9 +84,8 @@ export function ProjectVisibilityPopup({ projectId, choices, denialMessage }: {
         {t('projects.visibilitySettings.popup.private')}
       </Button> : null}
     </div>
-    <p className="mt-2 text-xs text-fg-muted">{t('projects.visibilitySettings.popup.allScope')}</p>
-    <Link className={SECONDARY_LINK_CLASSES} href={`/projects/${projectId}/visibility`} data-testid="project-detail-visibility-manage">{t('projects.visibilitySettings.popup.details')}</Link>
     {!open && notice ? <p role="status" className="mt-2 text-cell text-fg-muted" data-testid="project-visibility-popup-notice">{notice}</p> : null}
+    {timedOut ? <Link className={SECONDARY_LINK_CLASSES} href={`/projects/${projectId}/visibility#gate-results`}>{t('projects.visibilitySettings.popup.viewGate')}</Link> : null}
     <Dialog open={open} onOpenChange={(next) => {
       if (!next && dirty && !window.confirm(t('projects.visibilitySettings.leaveConfirm'))) return;
       setOpen(next);

@@ -48,6 +48,8 @@ const ja = {
   'projects.cards.related.assignments': '稼働情報',
   'projects.cards.related.count': '件',
   'projects.cards.visibility.unpublished': '未公開',
+  'projects.cards.visibility.published': '公開中',
+  'projects.cards.visibility.partial': '一部公開中',
   'projects.cards.visibility.unpublishedNote': '取引先には公開されていません。',
   'projects.cards.copyId': '案件IDをコピー',
   'projects.cards.summary.show': '全文を表示',
@@ -3058,6 +3060,8 @@ const ja = {
   'projects.visibilitySettings.popup.allScope': '画面を読み込んだ時点のパートナーを公開先に指定します。後から追加されたパートナーは別途指定してください。',
   'projects.visibilitySettings.popup.details': '公開状況の詳細を見る',
   'projects.visibilitySettings.popup.tooMany': '公開先は200社まで指定できます。',
+  'projects.visibilitySettings.popup.pendingTimeout': '公開の完了を確認できませんでした。検査結果を確認してください。',
+  'projects.visibilitySettings.popup.viewGate': '検査結果を見る',
   // 🔴 `docs/04` §S-011 取引先セクション 4「公開されている旨の説明」。
   'projects.detail.partner.published':
     'この案件は御社に公開されています。表示されているのは、公開範囲の相手に向けて用意された内容だけです。',

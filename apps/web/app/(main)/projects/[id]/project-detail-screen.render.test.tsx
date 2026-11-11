@@ -443,14 +443,22 @@ describe('🔴 T-12-10: 公開の状態の 4 値が別の語・別の見た目�
 });
 
 describe('添付に合わせたコンパクトなホスト見出し',()=>{
+  it('登録済みの取引先数と実際の公開先から状態を表示する', () => {
+    const full = renderToStaticMarkup(createElement(ProjectDetailScreen, { view: hostView(), visibilityPartnerCount: 2, requirementKinds: REQUIREMENT_KINDS, canEdit: true, messages }));
+    const partial = renderToStaticMarkup(createElement(ProjectDetailScreen, { view: hostView(), visibilityPartnerCount: 3, requirementKinds: REQUIREMENT_KINDS, canEdit: true, messages }));
+    const empty = renderToStaticMarkup(createElement(ProjectDetailScreen, { view: hostView({ visibilities: [], publishState: { state: 'UNPUBLISHED', visibleToCount: 0, latestGate: null } }), visibilityPartnerCount: 2, requirementKinds: REQUIREMENT_KINDS, canEdit: true, messages }));
+    expect(full).toContain('data-testid="project-visibility-current-status">公開中');
+    expect(partial).toContain('data-testid="project-visibility-current-status">一部公開中');
+    expect(empty).toContain('data-testid="project-visibility-current-status">未公開');
+  });
   it('状態と主要項目を残して候補検索・コピーをタイトル横に配置する',()=>{
-    const html=renderToStaticMarkup(createElement(ProjectDetailScreen,{view:hostView(),requirementKinds:REQUIREMENT_KINDS,canEdit:true,messages,compactHeader:{categoryLabel:'カテゴリ',sourceKindLabel:'案件区分',category:'バックエンド',sourceKind:'自社案件',updatedAt:'2026-10-31',assignee:'サンプル担当者',copyText:'提出用サマリ',updatedLabel:'更新日時',assigneeLabel:'担当者',candidatesLabel:'候補を探す',statusOptions:[{value:'OPEN',label:'募集中'},{value:'CLOSED',label:'終了'}]}}));
+    const html=renderToStaticMarkup(createElement(ProjectDetailScreen,{view:hostView(),visibilityPartnerCount:2,requirementKinds:REQUIREMENT_KINDS,canEdit:true,messages,compactHeader:{categoryLabel:'カテゴリ',sourceKindLabel:'案件区分',category:'バックエンド',sourceKind:'自社案件',updatedAt:'2026-10-31',assignee:'サンプル担当者',copyText:'提出用サマリ',updatedLabel:'更新日時',assigneeLabel:'担当者',candidatesLabel:'候補を探す',statusOptions:[{value:'OPEN',label:'募集中'},{value:'CLOSED',label:'終了'}]}}));
     for(const id of ['project-detail-headline','project-detail-headline-status','project-detail-candidates','project-detail-copy-summary'])expect(html).toContain(`data-testid="${id}"`);
     // ✅ 2026-11-02: 募集人数・開始時期はタブの上の共通サマリーへ移した（見出しには重複させない）。
     for(const id of ['project-detail-headline-headcount','project-detail-headline-startDate'])expect(html).not.toContain(`data-testid="${id}"`);
     expect(html).toContain('サンプル担当者');
     expect(html).toContain('バックエンド');
-    expect(html).toContain('2社に公開中');
+    expect(html).toContain('公開中');
     expect(html).toMatch(/class="sr-only" data-testid="project-detail-view-recorded"/);
   });
   it('未公開の表示を見出し内にまとめる',()=>{

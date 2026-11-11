@@ -7,14 +7,15 @@ import { ProjectVisibilityPopup } from './project-visibility-popup';
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 describe('公開先の選択', () => {
-  it('全体・一部の操作と対象範囲を表示し、未公開なら解除操作を出さない', () => {
+  it('全体・一部の操作を表示し、未公開なら解除操作を出さない', () => {
     const html = renderToStaticMarkup(createElement(ProjectVisibilityPopup, {
       projectId: 'project', denialMessage: null,
       choices: [{ partnerCompanyId: 'partner', name: '取引先', suspended: false, publishedOn: null }],
     }));
     expect(html).toContain(t('projects.visibilitySettings.popup.all'));
     expect(html).toContain(t('projects.visibilitySettings.popup.partial'));
-    expect(html).toContain(t('projects.visibilitySettings.popup.allScope'));
+    expect(html).not.toContain(t('projects.visibilitySettings.popup.allScope'));
+    expect(html).not.toContain(t('projects.visibilitySettings.popup.details'));
     expect(html).not.toContain('project-visibility-unpublish');
   });
 
