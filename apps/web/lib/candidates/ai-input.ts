@@ -11,6 +11,26 @@ export type AiCandidateInput = {
   readonly candidates: readonly AiCandidateFacts[];
 };
 
+/** 既存の候補一覧が決めた順序で対象を選び、AI に選択や並べ替えを委ねない。 */
+export function selectCandidatesForExplanation(candidates: readonly CandidateRowView[]): readonly CandidateRowView[] {
+  return candidates.slice(0, 20);
+}
+
+/** AI の応答順を使わず、対象の順序に理由を対応付ける。 */
+export function orderCandidateReasons(
+  tokens: readonly string[],
+  reasons: readonly { readonly token: string; readonly reason: string }[],
+): readonly { readonly token: string; readonly reason: string }[] {
+  const allowed = new Set(tokens);
+  const byToken = new Map<string, string>();
+  for (const item of reasons) {
+    if (!allowed.has(item.token) || byToken.has(item.token)) throw new Error('AI の候補応答が不正です');
+    byToken.set(item.token, item.reason);
+  }
+  if (byToken.size !== tokens.length) throw new Error('AI の候補応答が不正です');
+  return tokens.map((token) => ({ token, reason: byToken.get(token)! }));
+}
+
 /** 会話文そのものは送らず、登録済みのスキルだけを追加条件として抽出する。 */
 export function findRequestedSkills(message: string, allowedSkills: readonly string[]): readonly string[] {
   const text = message.normalize('NFKC').toLocaleLowerCase('ja');
