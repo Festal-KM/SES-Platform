@@ -1,0 +1,67 @@
+import { randomUUID } from 'node:crypto';
+import { expect, test } from '@playwright/test';
+import { t } from '../../packages/i18n/src/index';
+import { hostOwner, openTenantSession } from './support/sessions';
+import { partnerIds, tenantIds } from './support/population';
+import { expectNoHorizontalOverflow } from './support/assertions';
+import { apiRequest } from './support/api';
+
+test('公開先を行で選び、全選択も既存の公開要求に渡す', async ({ browser }) => {
+  const session = await openTenantSession(browser, hostOwner(1));
+  const page = session.page;
+  const projectId = tenantIds(1).publishedProjectId;
+  const partner1 = partnerIds(1, 1).partnerCompanyId;
+  const partner2 = partnerIds(1, 2).partnerCompanyId;
+  const submissions: string[][] = [];
+  try {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.route(`**/api/projects/${projectId}/visibility`, async (route) => {
+      if (route.request().method() !== 'PUT') return route.continue();
+      const body = route.request().postDataJSON() as { partnerCompanyIds: string[] };
+      submissions.push(body.partnerCompanyIds);
+      return route.fulfill({ json: { verdict: 'PENDING_GATE', reviewGateId: null } });
+    });
+    await page.goto(`/projects/${projectId}`);
+    await expect(page.getByTestId('project-visibility-current-status')).toHaveText(t('projects.cards.visibility.partial'));
+    await expect(page.getByText(t('projects.visibilitySettings.popup.allScope'))).toHaveCount(0);
+    await expect(page.getByText(t('projects.visibilitySettings.popup.details'))).toHaveCount(0);
+    await page.getByTestId('project-detail-visibility-settings').click();
+    const list = page.getByTestId('project-visibility-partner-list');
+    await expect(list).toBeVisible();
+    await list.getByTestId(`project-visibility-partner-${partner2}`).check();
+    await expectNoHorizontalOverflow('公開先の選択', page);
+    await page.getByRole('dialog').getByRole('button', { name: t('projects.visibilitySettings.submit') }).click();
+    await expect.poll(() => submissions.length).toBe(1);
+    expect([...submissions[0]!].sort()).toEqual([partner1, partner2].sort());
+    await expect(page.getByTestId('project-visibility-popup-notice')).toContainText(t('projects.visibilitySettings.result.pendingGate'));
+    await page.getByTestId('project-visibility-publish-all').click();
+    await expect.poll(() => submissions.length).toBe(2);
+    expect([...submissions[1]!].sort()).toEqual([partner1, partner2].sort());
+    await page.unroute(`**/api/projects/${projectId}/visibility`);
+    await page.route(`**/api/projects/${projectId}/visibility`, (route) => route.fulfill({ status: 500 }));
+    await page.getByTestId('project-visibility-publish-all').click();
+    await expect(page.getByTestId('project-visibility-popup-notice')).toHaveText(t('projects.visibilitySettings.error.save'));
+  } finally {
+    await session.close();
+  }
+});
+
+test('品質ゲート通過後、画面を再読み込みせず公開中に更新される', async ({ browser }) => {
+  test.setTimeout(180_000);
+  const session = await openTenantSession(browser, hostOwner(1));
+  const page = session.page;
+  try {
+    const created = await apiRequest(page, '/api/projects', {
+      method: 'POST', body: { name: `公開状態検証-${randomUUID()}` },
+    });
+    expect(created.status).toBe(201);
+    const { id } = JSON.parse(created.text) as { id: string };
+    await page.goto(`/projects/${id}`);
+    const status = page.getByTestId('project-visibility-current-status');
+    await expect(status).toHaveText(t('projects.cards.visibility.unpublished'));
+    await page.getByTestId('project-visibility-publish-all').click();
+    await expect(status).toHaveText(t('projects.cards.visibility.published'), { timeout: 90_000 });
+  } finally {
+    await session.close();
+  }
+});

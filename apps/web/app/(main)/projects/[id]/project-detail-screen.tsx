@@ -51,8 +51,15 @@ import {
 } from "../../../../lib/projects/detail";
 import { formatDateTimeJst } from "../../../../lib/format/datetime";
 import type { ProjectDetailView } from "../../../../lib/projects/service";
+import { projectVisibilityLabel } from "../../../../lib/projects/visibility-status";
 import { ProjectCardEditTrigger, ProjectDetailCopyAction } from "./project-card-editor";
 import { ProjectDetailStatus } from "./project-detail-status";
+
+const VISIBILITY_STATUS_KEYS = {
+  UNPUBLISHED: 'projects.cards.visibility.unpublished',
+  PUBLISHED: 'projects.cards.visibility.published',
+  PARTIAL: 'projects.cards.visibility.partial',
+} as const;
 
 export type ProjectDetailScreenMessages = {
   readonly sectionRequirements: string;
@@ -406,20 +413,26 @@ function VisibilitySection({
   canEdit,
   messages,
   flat = false,
+  visibilityControl,
+  visibilityPartnerCount,
 }: {
   readonly view: Extract<ProjectDetailView, { audience: "HOST" }>;
   readonly canEdit: boolean;
   readonly messages: ProjectDetailScreenMessages;
   readonly flat?: boolean;
+  readonly visibilityControl?: ReactNode;
+  readonly visibilityPartnerCount?: number;
 }) {
+  const status = projectVisibilityLabel(view.visibilities.length, visibilityPartnerCount ?? view.visibilities.length + 1);
+  const statusText = t(VISIBILITY_STATUS_KEYS[status]);
   return (
     <Section id="visibility" title={messages.sectionVisibility} flat={flat}>
+      <strong className="block text-body text-fg" data-testid="project-visibility-current-status">{statusText}</strong>
       {view.visibilities.length === 0 ? (
         <p
           className="text-body text-fg-muted"
           data-testid="project-detail-visibility-empty"
         >
-          <strong className="block text-fg">{t("projects.cards.visibility.unpublished")}</strong>
           <span className="text-xs">{t("projects.cards.visibility.unpublishedNote")}</span>
         </p>
       ) : (
@@ -449,7 +462,7 @@ function VisibilitySection({
       {/* ✅ T-06-06: `S-013`（公開範囲の設定）への導線（`docs/04` §S-011 操作と結果）。
                     🔴 `canEdit`（＝ `PROJECT_EDITOR_ROLES`）のときだけ出す —— `VIEWER` は
                     公開範囲を変更できない（`BR-31`）。取引先はこのセクション自体に到達しない。 */}
-      {canEdit ? (
+      {canEdit && visibilityControl ? visibilityControl : canEdit ? (
         <Link
           className={cn(SECONDARY_LINK_CLASSES, "mt-1")}
           href={`/projects/${view.id}/visibility`}
@@ -469,10 +482,14 @@ export function ProjectDetailScreen({
   messages,
   cards,
   compactHeader,
+  visibilityControl,
+  visibilityPartnerCount,
 }: {
   readonly view: ProjectDetailView;
   readonly requirementKinds: RequirementKindOrder;
   readonly cards?: ReactNode;
+  readonly visibilityControl?: ReactNode;
+  readonly visibilityPartnerCount?: number;
   readonly compactHeader?: {readonly categoryLabel:string;readonly sourceKindLabel:string;readonly category:string;readonly sourceKind:string;readonly updatedAt:string;readonly assignee:string|null;readonly copyText:string;readonly updatedLabel:string;readonly assigneeLabel:string;readonly candidatesLabel:string; readonly statusOptions: readonly {value:string;label:string}[]};
   /**
    * 🔴 `VIEWER` と取引先には `S-012` への導線を出さない（docs/04 §S-011 権限差分）。
@@ -484,6 +501,9 @@ export function ProjectDetailScreen({
 }) {
   const headline = projectHeadlineRows(view);
   const conditions = projectConditionRows(view);
+  const hostVisibilityStatus = view.audience === 'HOST'
+    ? projectVisibilityLabel(view.visibilities.length, visibilityPartnerCount ?? view.visibilities.length + 1)
+    : null;
 
   return (
     <div data-testid="project-detail-screen" data-audience={view.audience}>
@@ -500,7 +520,7 @@ export function ProjectDetailScreen({
       {/* 🔴 折りたたみの外（`CLAUDE.md` §13.3）。移動中の判断に要る 3 値。 */}
       {compactHeader ? <dl className="mb-4 flex flex-wrap items-center gap-3 text-xs text-fg-muted" data-testid="project-detail-headline">
         <div><dt className="sr-only">{headline[0]?.label}</dt><dd className="m-0" data-testid="project-detail-headline-status"><ProjectDetailStatus status={view.status} label={headline[0]?.value??''} options={compactHeader.statusOptions} canEdit={canEdit && view.audience === "HOST"}/></dd></div>
-        {view.audience === "HOST" ? <div><dt className="sr-only">{messages.sectionVisibility}</dt><dd className="m-0"><Badge variant="outline"><span data-testid={view.publishState.state === "UNPUBLISHED" ? "project-detail-visibility-warning" : undefined}>{view.publishState.state === "UNPUBLISHED" ? t("projects.cards.visibility.unpublished") : view.publishState.state === "AUTO_REVOKED" ? t("projects.list.visibility.autoRevoked") : `${view.publishState.visibleToCount}${t("projects.list.visibility.publishedTo")}`}</span></Badge></dd></div> : null}
+        {view.audience === "HOST" && hostVisibilityStatus !== null ? <div><dt className="sr-only">{messages.sectionVisibility}</dt><dd className="m-0"><Badge variant="outline"><span data-testid={view.publishState.state === "UNPUBLISHED" ? "project-detail-visibility-warning" : undefined}>{t(VISIBILITY_STATUS_KEYS[hostVisibilityStatus])}</span></Badge></dd></div> : null}
         <div><dt className="sr-only">{compactHeader.categoryLabel}</dt><dd className="m-0"><Badge variant="outline">{compactHeader.category}</Badge></dd></div>
         <div><dt className="sr-only">{compactHeader.sourceKindLabel}</dt><dd className="m-0"><Badge variant="outline">{compactHeader.sourceKind}</Badge></dd></div>
         {/* ✅ 2026-11-02: 募集人数・開始時期などの主要条件は、タブの上の共通サマリー（ProjectCardEditor）に集約した。ここには出さない（重複させない）。 */}
@@ -587,7 +607,7 @@ export function ProjectDetailScreen({
         // ✅ 2026-11-02: 公開範囲と提案は、案件詳細のタブ（概要の「公開状況」/ 関連・履歴）の中に置く。
         isValidElement<{ visibility?: ReactNode; proposals?: ReactNode }>(cards) ? (
           cloneElement(cards, {
-            visibility: <VisibilitySection view={view} canEdit={canEdit} messages={messages} flat />,
+            visibility: <VisibilitySection view={view} canEdit={canEdit} messages={messages} visibilityControl={visibilityControl} visibilityPartnerCount={visibilityPartnerCount} flat />,
           })
         ) : (
           cards
@@ -646,6 +666,8 @@ export function ProjectDetailScreen({
                   view={view}
                   canEdit={canEdit}
                   messages={messages}
+                  visibilityControl={visibilityControl}
+                  visibilityPartnerCount={visibilityPartnerCount}
                 />
               </>
             ) : null}

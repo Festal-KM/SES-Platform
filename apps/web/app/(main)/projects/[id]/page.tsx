@@ -51,6 +51,9 @@ import { ProjectDetailSession } from "./project-detail-session";
 //    理由は `not-shared-notice.tsx` 冒頭）。
 import { NotSharedNotice } from "./not-shared-notice";
 import { ProjectDetailScreen } from "./project-detail-screen";
+import { ProjectVisibilityPopup } from "./project-visibility-popup";
+import { listProjectVisibilityChoices } from "../../../../lib/projects/visibility";
+import { executionDenialMessageKey } from "../../../../lib/api/guards";
 import { PageHeading } from "../../_shell/page-heading";
 import {
   isPageActionRole,
@@ -99,6 +102,9 @@ export default async function ProjectDetailPage({
   });
   if (result === null) return <NotSharedNotice />;
   const { view, data } = result;
+  const canEditVisibility = isProjectEditorRole(outcome.ctx.role) && view.audience === 'HOST';
+  const visibilityChoices = view.audience === 'HOST' ? await listProjectVisibilityChoices(outcome.ctx, view.id) : [];
+  const denialKey = executionDenialMessageKey(outcome.ctx.lifecycleState);
   let options: ProjectCardOptions = {};
   if (data && view.audience === "HOST") {
     const [skills, assignees] = await Promise.all([
@@ -172,6 +178,8 @@ export default async function ProjectDetailPage({
         <ProjectDetailSession id={view.id} initialStatus={view.status}>
         <ProjectDetailScreen
           view={view}
+          visibilityPartnerCount={view.audience === 'HOST' ? visibilityChoices.length : undefined}
+          visibilityControl={canEditVisibility ? <ProjectVisibilityPopup projectId={view.id} choices={visibilityChoices} denialMessage={denialKey ? t(denialKey) : null} /> : undefined}
           compactHeader={data && view.audience === 'HOST' ? {
             categoryLabel:t('projects.cards.field.category'),sourceKindLabel:t('projects.cards.field.sourceKind'),
             category: options.category?.find(item=>item.value===data.values.category)?.label??t('projects.detail.valueNone'),
