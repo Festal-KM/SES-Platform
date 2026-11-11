@@ -35,15 +35,7 @@ const PROJECT_PUBLISH_REQUEST_KIND = 'PUBLISH' as const;
  */
 const MANUAL_REVOKE_REASON = 'MANUAL' as const;
 
-/**
- * `#28` の応答の `verdict`（docs/05 §6.4 #28）。
- *
- * 🔴 **`PASS` / `FAIL` を持たない。** ゲートは非同期であり（docs/05 §12.1 / §11.1）、
- *    `PUT` の応答時点で合否は存在しない。ここが表すのは「**この要求で公開が成立したか**」
- *    ではなく「**公開の要求をどう扱ったか**」である。
- *   - `PUBLISHED` … 新しい公開先を追加した。
- *   - `NO_PUBLISH_REQUESTED` … 新しい公開先が無い（解除のみ / 変更なし）。ゲートは起動しない。
- */
+/** 即時公開されたか、追加の公開先が無かったかを返す。 */
 export const PROJECT_VISIBILITY_VERDICTS = ['PUBLISHED', 'NO_PUBLISH_REQUESTED'] as const;
 
 export type ProjectVisibilityVerdict = (typeof PROJECT_VISIBILITY_VERDICTS)[number];
@@ -80,16 +72,7 @@ export type ProjectVisibilityMeta = {
   readonly now: Date;
 };
 
-/**
- * 公開先の集合の差分（🔴 **純粋関数**。ユニットテストが規則を固定する）。
- *
- * 🔴 **`added` と `revoked` は非対称に扱う**（`updateProjectVisibility` の中核）:
- *    - `revoked`（境界を**狭める**）… ゲートは要らない。公開をやめることは、外へ出る情報を
- *      増やさないためである。
- *    - `added`（境界を**広げる**）… ゲートを通るまで行にしない（`F-014 AC-3`）。
- * 🔴 出力はすべて**昇順にそろえる**（監査ログの `before` / `after` が入力順で揺れると、
- *    同じ変更が別の記録に見える）。
- */
+/** 公開先の変更を追加・維持・解除に分け、ID の昇順で返す。 */
 export function diffProjectVisibility(
   current: readonly string[],
   requested: readonly string[],
@@ -114,28 +97,15 @@ export type ProjectVisibilityChange = {
   readonly before: readonly string[];
   /** 変更後の公開先（＝ 現在も公開されている相手。`diffProjectVisibility` の `kept`）。 */
   readonly kept: readonly string[];
-  /** 要求された集合（`after` との差が「ゲート待ち」である）。 */
+  /** 要求された公開先。 */
   readonly requested: readonly string[];
-  /** ゲートに預けた公開先（🔴 **まだ公開されていない**）。 */
+  /** 新たに公開する相手。 */
   readonly added: readonly string[];
   readonly revoked: readonly string[];
   readonly verdict: ProjectVisibilityVerdict;
 };
 
-/**
- * 監査ログの `summary`（`F-014 AC-5`「実施者・**変更前後の公開先**」。T-06-07）。
- *
- * 🔴 **純粋関数として切り出す**（`diffProjectVisibility` と同じ理由）。ここが `AC-5` の
- *    「何を残すか」の唯一の定義であり、ユニットテストが**キー集合と値の形**を固定する。
- * 🔴 **載せてよいのは ID・列挙値だけである**（docs/05 §16.2 / `F-058`）。取引先の**社名**を
- *    載せない —— 運営者の監査ログ横断検索に出るためであり、戻り値の型（`AuditSummary`）も
- *    値を文字列・数値・真偽・`null` に限っている。
- * 🔴 **`after` は「変更後に公開されている相手」であって「要求された相手」ではない。**
- *    追加はゲートを通るまで行にならない（`F-014 AC-3`）ので `pending` に出る。ここを
- *    混ぜると、記録だけを見た人が「公開済み」と読み違える。
- * 🔴 いずれも **ID の昇順で連結する**（`diffProjectVisibility` が昇順にそろえている）。
- *    入力順で揺れると、同じ変更が別の記録に見えて連鎖（前の `after` = 次の `before`）が切れる。
- */
+/** 公開前後の ID と操作結果のみを監査ログに残す。 */
 export function projectVisibilityAuditSummary(change: ProjectVisibilityChange): AuditSummary {
   return {
     before: change.before.join(','),
@@ -231,8 +201,6 @@ export async function updateProjectVisibility(
   projectId: string,
   input: ProjectVisibilityInput,
   meta: ProjectVisibilityMeta,
-  // 🔴 既定値を持たない。「実装が入るまで保留するスタブ」を既定にすると、配線を忘れた経路が
-  //    **静かに公開されないまま成功を返す**（`CLAUDE.md` §11.1 の壊れ方）。
   _deps?: { readonly gate: ProjectPublishGate },
 ): Promise<ProjectVisibilityUpdateView> {
   void _deps;
