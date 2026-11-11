@@ -457,6 +457,16 @@ describe('🔴 F-014 AC-3: 内部限定の情報が公開文に出ていたら�
     expect(await visibleToPartner(PARTNER_USER_1, projectId)).toBe(false);
   });
 
+  it('公開対象の仕入単価は卸単価と区別し、公開文にあっても商流違反にしない', async () => {
+    const { projectId, outcome } = await requestAndRunGate({
+      name: '仕入単価',
+      publicSummary: '想定仕入単価は 700000 円 / 月です。',
+      to: [PARTNER_1.partnerCompanyId],
+    });
+    expect(outcome).toMatchObject({ overall: 'PASS', publish: { kind: 'PUBLISHED' } });
+    expect(await visibleToPartner(PARTNER_USER_1, projectId)).toBe(true);
+  });
+
   it('🔴 公開先に含まれない取引先の社名が含まれていれば FAIL（パートナー間の相互参照 0 件）', async () => {
     const { projectId, outcome } = await requestAndRunGate({
       name: '他社名',

@@ -48,6 +48,7 @@ import {
   GLOBAL_SKILL_IDS,
   isolationSeedProjectNames,
   ISOLATION_FORBIDDEN_MARKERS,
+  ISOLATION_PROJECT_PURCHASE_PRICE,
   ISOLATION_SEED_IDS,
   runSeed,
 } from '@ses/db/seed';
@@ -772,7 +773,7 @@ describe('🔴 F-013 AC-2: 商流情報の射影（取得時に分ける）', ()
 
     expect(body['audience']).toBe('HOST');
     expect(String(body['endClientName'])).toContain(ISOLATION_FORBIDDEN_MARKERS.endClientName);
-    expect(body['internalUnitPrice']).toBe(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice);
+    expect(body['internalUnitPrice']).toBe(ISOLATION_PROJECT_PURCHASE_PRICE);
   });
 
   it('🔴 取引先の応答に `endClientName` / `internalUnitPrice` の**キーが存在しない**', async () => {
@@ -787,8 +788,9 @@ describe('🔴 F-013 AC-2: 商流情報の射影（取得時に分ける）', ()
     // 🔴 値も 1 文字も現れない（別のキー名に紛れ込んでいないことの確認）。
     const serialized = JSON.stringify(body);
     expect(serialized).not.toContain(ISOLATION_FORBIDDEN_MARKERS.endClientName);
-    expect(body['unitPriceMin']).toBe(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice);
-    expect(body['unitPriceMax']).toBe(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice);
+    expect(serialized).not.toContain(String(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice));
+    expect(body['unitPriceMin']).toBe(ISOLATION_PROJECT_PURCHASE_PRICE);
+    expect(body['unitPriceMax']).toBe(ISOLATION_PROJECT_PURCHASE_PRICE);
   });
 
   it('🔴 取引先にも判断材料（要件・外部公開用のレンジ・公開用の記載）は届く', async () => {
@@ -1166,7 +1168,8 @@ describe('🔴 F-013 AC-2: 一覧の取引先向け情報の境界', () => {
     const raw = await (await getProjects(ctx)).text();
 
     expect(raw).not.toContain(ISOLATION_FORBIDDEN_MARKERS.endClientName);
-    expect(raw).toContain(String(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice));
+    expect(raw).not.toContain(String(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice));
+    expect(raw).toContain(String(ISOLATION_PROJECT_PURCHASE_PRICE));
     expect(raw).not.toContain('endClientName');
     expect(raw).not.toContain('internalUnitPrice');
   });

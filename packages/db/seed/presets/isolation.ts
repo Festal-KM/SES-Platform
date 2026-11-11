@@ -309,6 +309,9 @@ export const ISOLATION_FORBIDDEN_MARKERS = {
   careerDescription: 'seed-forbidden-career-description',
 } as const;
 
+/** 公開先に示してよい案件の仕入単価。非公開の卸単価と異なる値にする。 */
+export const ISOLATION_PROJECT_PURCHASE_PRICE = 765432;
+
 // ---------------------------------------------------------------------------
 // 合成データの素材（🔴 実在の企業名・個人名を使わない。F-053 AC-1 / BR-47）
 // ---------------------------------------------------------------------------
@@ -713,9 +716,11 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number): Promise<void> 
         id: ids.publishedProjectId,
         tenantId: ids.tenantId,
         name: projectNames.published,
-        // 🔴 いずれも公開範囲の外に出さない項目（F-013 AC-2）。経路 5 の射影にも現れない。
+        // 仕入単価と非公開の卸単価を異なる値にし、公開対象を検証する。
         endClientName: `${ISOLATION_FORBIDDEN_MARKERS.endClientName}-${endClientName}`,
-        internalUnitPrice: ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice,
+        internalUnitPrice: ISOLATION_PROJECT_PURCHASE_PRICE,
+        unitPriceMin: ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice,
+        unitPriceMax: ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice,
         publicSummary: '公開用の概要（合成データ）',
         status: 'OPEN',
         startDate: dateOnly(addDays(now, 30)),
@@ -727,7 +732,9 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number): Promise<void> 
         tenantId: ids.tenantId,
         name: projectNames.private,
         endClientName: `${ISOLATION_FORBIDDEN_MARKERS.endClientName}-private`,
-        internalUnitPrice: ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice,
+        internalUnitPrice: ISOLATION_PROJECT_PURCHASE_PRICE,
+        unitPriceMin: ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice,
+        unitPriceMax: ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice,
         publicSummary: null,
         status: 'OPEN',
         startDate: dateOnly(addDays(now, -150)),

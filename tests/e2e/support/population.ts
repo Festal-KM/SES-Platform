@@ -8,6 +8,7 @@ import {
   DEMO_SEED_NAME_RULES,
   demoSeedEmails,
   ISOLATION_FORBIDDEN_MARKERS,
+  ISOLATION_PROJECT_PURCHASE_PRICE,
   ISOLATION_SEED_IDS,
   ISOLATION_SEED_PERSON_NAMES,
   ISOLATION_SEED_PLATFORM_USERS,
@@ -178,7 +179,7 @@ export function operatorForbiddenMarkers(): readonly string[] {
  *    JSON 応答は件数・状態・日時だけの小さな構造なので、そこでだけ照合する。
  */
 export function operatorForbiddenApiMarkers(): readonly string[] {
-  return [...operatorForbiddenMarkers(), String(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice)];
+  return [...operatorForbiddenMarkers(), String(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice), String(ISOLATION_PROJECT_PURCHASE_PRICE)];
 }
 
 // ---------------------------------------------------------------------------
@@ -225,6 +226,7 @@ export function operatorNonDisclosureApiMarkers(): readonly string[] {
   return [
     ...operatorNonDisclosureMarkers(),
     String(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice),
+    String(ISOLATION_PROJECT_PURCHASE_PRICE),
     String(T1107_NON_DISCLOSURE_MARKERS.proposalOfferedUnitPrice),
     String(T1107_NON_DISCLOSURE_MARKERS.purgeCounts),
   ];
