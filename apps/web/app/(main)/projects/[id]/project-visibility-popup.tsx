@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Button, Checkbox, SECONDARY_LINK_CLASSES } from '@ses/ui';
-import { Dialog, DIALOG_PANEL_WIDE_CLASSES } from '@ses/ui/client';
+import { Button, Checkbox, PAGE_BODY_PROSE_MAX_WIDTH_CLASS, SECONDARY_LINK_CLASSES } from '@ses/ui';
+import { Dialog } from '@ses/ui/client';
 import { t } from '@ses/i18n';
 import type { ProjectVisibilityChoice } from '../../../../lib/projects/visibility';
 import { VISIBILITY_PARTNER_COMPANIES_MAX } from '../../../../lib/projects/visibility-limits';
@@ -64,7 +64,7 @@ export function ProjectVisibilityPopup({ projectId, choices, denialMessage }: {
     <Dialog open={open} onOpenChange={(next) => {
       if (!next && dirty && !window.confirm(t('projects.visibilitySettings.leaveConfirm'))) return;
       setOpen(next);
-    }} title={t('projects.visibilitySettings.title')} body={t('projects.visibilitySettings.popup.description')} panelClassName={DIALOG_PANEL_WIDE_CLASSES}
+    }} title={t('projects.visibilitySettings.title')} body={t('projects.visibilitySettings.popup.description')} panelClassName={PAGE_BODY_PROSE_MAX_WIDTH_CLASS}
       field={<div>
         {choices.length === 0 ? <p className="m-0 text-body text-fg-muted">{t('projects.visibilitySettings.select.empty.title')}</p> : (
           <div className="max-h-48 overflow-y-auto rounded-md border border-border sm:max-h-80" data-testid="project-visibility-partner-list">

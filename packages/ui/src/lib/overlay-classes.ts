@@ -115,9 +115,6 @@ export const DIALOG_PANEL_CLASSES = cn(
  */
 export const DIALOG_PANEL_NARROW_CLASSES = 'max-w-100';
 
-/** 公開先の選択など、利用者が一覧を確認する画面で使う幅。 */
-export const DIALOG_PANEL_WIDE_CLASSES = 'max-w-180';
-
 /**
  * `Drawer` のパネル（右から出る側面パネル）。
  *
