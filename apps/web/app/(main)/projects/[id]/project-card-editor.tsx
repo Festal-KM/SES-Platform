@@ -600,7 +600,7 @@ export function ProjectCardEditor({
               </section>
             ) : null}
             <div className={cn("grid min-w-0 grid-cols-1 gap-x-6 gap-y-3", !editing && (id === "working" || id === "price" || id === "commercial" || id === "notes") && "md:grid-cols-2")}>{PROJECT_CARD_FIELDS[id].filter((key) =>
-              key !== "settlementMaxHours" && (editing || key !== "sourceKind" || data.values.sourceKind !== "OWN") && (editing || key !== "copySummary"),
+              key !== "parallelOk" && key !== "settlementMaxHours" && (editing || key !== "sourceKind" || data.values.sourceKind !== "OWN") && (editing || key !== "copySummary"),
             ).map((key) =>
               <div key={key} className={cn("min-w-0", !editing && id === "notes" && key === "copySummary" && "md:col-span-2")}>{editing ? (
                 <Field key={key} as="div">
@@ -714,13 +714,8 @@ export function ProjectCardEditor({
     <div className="min-w-0 overflow-hidden rounded-md border border-border bg-bg">{children}</div>
   );
   const sections: Record<ProjectDetailTab, ReactNode> = {
-    overview: <div className="flex flex-col gap-3">{panel(<div data-testid="project-detail-summary-strip">{card("basic")}{card("working")}</div>)}{panel(card("summary"))}</div>,
-    requirements: panel(
-      <>
-        {card("content")}
-        {card("development")}
-      </>,
-    ),
+    overview: <div className="flex flex-col gap-3"><div className="flex flex-col gap-3" data-testid="project-detail-summary-strip">{panel(card("basic"))}{panel(card("working"))}</div>{panel(card("summary"))}</div>,
+    requirements: <div className="flex flex-col gap-3">{panel(card("content"))}{panel(card("development"))}</div>,
     working: <div className="flex flex-col gap-3">{panel(card("price"))}{panel(card("commercial"))}{panel(card("notes"))}</div>,
     related: panel(
       <>
