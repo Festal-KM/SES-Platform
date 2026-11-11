@@ -29,6 +29,7 @@ test('候補パネルで検査済みの候補と理由を確認し、失敗を�
     const panel = page.getByTestId('project-ai-candidates-panel');
     await expect(panel.getByText('Java の経験')).toBeVisible();
     await expect(panel.getByText(t('projects.aiCandidates.shared'))).toBeVisible();
+    await expect(panel.getByRole('link', { name: t('projects.aiCandidates.openList') })).toHaveAttribute('href', `/projects/${id}/candidates`);
     await expectNoHorizontalOverflow('案件候補パネル', page);
     await page.unroute(`**/api/projects/${id}/ai-candidates**`);
     await page.route(`**/api/projects/${id}/ai-candidates**`, (route) => route.fulfill({ status: 500 }));

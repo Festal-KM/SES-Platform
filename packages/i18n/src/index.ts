@@ -3064,6 +3064,7 @@ const ja = {
   // ✅ T-08-05: `S-016` へ接続した（それまでは `projects.detail.candidates.comingSoon` の注記だった）。
   'projects.detail.candidates.open': '候補を探す',
   'projects.aiCandidates.open': 'AIで候補を探す',
+  'projects.aiCandidates.openList': '候補一覧を開く',
   'projects.aiCandidates.title': 'AI候補検索',
   'projects.aiCandidates.close': '閉じる',
   'projects.aiCandidates.prompt': '重視するスキルを入力',

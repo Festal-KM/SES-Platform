@@ -396,6 +396,36 @@ describe('AI 候補選出の一時データ', () => {
   });
 });
 
+describe('AI 候補の結果表示', () => {
+  it('結果取得前に共有解除された候補を表示せず、残りの順序を保つ', async () => {
+    const { configureMatchCandidatesQueue } = await import('../../apps/web/lib/jobs/match-candidates-queue');
+    const { startAiCandidates, readAiCandidates } = await import('../../apps/web/lib/candidates/ai-service');
+    const enqueue = vi.fn(async () => undefined);
+    configureMatchCandidatesQueue({ enqueue });
+    const { runId } = await startAiCandidates(hostA, PROJECT_A_PUBLISHED, '', null);
+    expect(enqueue).toHaveBeenCalledWith({ tenantId: TENANT_A, runId });
+    const now = new Date();
+    const system = systemTenantCtx(TENANT_A, { queue: 'match.candidates', jobId: 'candidate-result-test' });
+    const claimed = await claimProjectCandidateAiRun(system, runId, now);
+    expect(claimed).not.toBeNull();
+    const input = claimed!.input as { refs: { token: string; key: string; kind: string }[] };
+    expect(input.refs.length).toBeGreaterThan(1);
+    const removed = candidateRef(PROJECT_A_PUBLISHED, ENGINEER_A_PARTNER);
+    expect(input.refs.some((ref) => ref.key === removed)).toBe(true);
+    await finishProjectCandidateAiRun(system, {
+      id: runId, now, output: { rationales: input.refs.map((ref) => ({ token: ref.token, reason: 'スキルを確認' })) },
+    });
+    await admin.engineerShare.update({ where: { id: SHARE_A_P1 }, data: { revokedAt: new Date() } });
+    const result = await readAiCandidates(hostA, PROJECT_A_PUBLISHED, runId, null);
+    expect(result.status).toBe('COMPLETED');
+    if (result.status !== 'COMPLETED') throw new Error('結果が完了していません');
+    expect(result.candidates.map((item) => item.candidate.key)).not.toContain(removed);
+    expect(result.candidates.map((item) => item.candidate.key)).toEqual(
+      input.refs.filter((ref) => ref.key !== removed).map((ref) => ref.key),
+    );
+  });
+});
+
 describe('🔴 F-017 AC-5: パートナーの応答に匿名候補が 1 件も含まれない', () => {
   it('公開された案件の候補一覧は自社台帳だけであり、candidateRef がどの深さにも無い', async () => {
     const body = await bodyOf(await getCandidates(partnerA1, PROJECT_A_PUBLISHED));

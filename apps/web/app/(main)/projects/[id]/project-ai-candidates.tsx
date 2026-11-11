@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { Button, Icon, Input } from '@ses/ui';
+import Link from 'next/link';
+import { Button, Icon, Input, SECONDARY_LINK_CLASSES } from '@ses/ui';
 import { t } from '@ses/i18n';
 
 type Candidate = {
-  readonly candidate: { readonly kind: 'OWN' | 'ANONYMOUS'; readonly key: string; readonly displayName?: string; readonly skills: readonly string[] };
+  readonly candidate: { readonly kind: 'OWN' | 'ANONYMOUS'; readonly key: string; readonly displayName?: string; readonly id?: string; readonly skills: readonly string[] };
   readonly reason: string;
 };
 type Entry = { readonly question: string; readonly candidates: readonly Candidate[] };
@@ -60,11 +61,12 @@ export function ProjectAiCandidates({ projectId }: { readonly projectId: string 
     {open ? <aside className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-border bg-bg p-4 sm:w-96" aria-label={t('projects.aiCandidates.title')} data-testid="project-ai-candidates-panel">
       <div className="flex items-center justify-between gap-3"><h2 className="m-0 text-body font-semibold">{t('projects.aiCandidates.title')}</h2><Button variant="ghost" onClick={() => setOpen(false)}>{t('projects.aiCandidates.close')}</Button></div>
       <p className="text-cell text-fg-muted">{t('projects.aiCandidates.hint')}</p>
+      <Link href={`/projects/${projectId}/candidates`} className={SECONDARY_LINK_CLASSES}>{t('projects.aiCandidates.openList')}</Link>
       <div className="flex flex-1 flex-col gap-4 overflow-auto" aria-live="polite">
         {entries.map((entry, index) => <section key={index} className="flex flex-col gap-2">
           {entry.question ? <p className="m-0 text-body font-semibold">{entry.question}</p> : null}
           {entry.candidates.length === 0 ? <p>{t('projects.aiCandidates.empty')}</p> : entry.candidates.map(({ candidate, reason }) => <div key={candidate.key} className="border-b border-border py-2">
-            <p className="m-0 font-semibold">{candidate.kind === 'OWN' ? candidate.displayName : t('projects.aiCandidates.shared')}</p>
+            <p className="m-0 font-semibold">{candidate.kind === 'OWN' && candidate.id ? <Link href={`/engineers/${candidate.id}`}>{candidate.displayName}</Link> : candidate.kind === 'OWN' ? candidate.displayName : t('projects.aiCandidates.shared')}</p>
             <p className="m-0 text-cell">{candidate.skills.join(' / ')}</p><p className="m-0 text-cell text-fg-muted">{reason}</p>
           </div>)}
         </section>)}
