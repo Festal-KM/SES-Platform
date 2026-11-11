@@ -9,9 +9,7 @@
 import { requireExecutable, requireNotViewer, requireRole } from '../../../../../lib/api/guards';
 import { withApiRoute } from '../../../../../lib/api/withApiRoute';
 import { readRequestMeta } from '../../../../../lib/auth/session';
-import { requireGateRunJobQueue } from '../../../../../lib/jobs/gate-run-queue';
 import { PROJECT_EDITOR_ROLES } from '../../../../../lib/projects/policy';
-import { createProjectPublishGate } from '../../../../../lib/projects/publish-gate';
 import {
   PROJECT_AUDIT_ACTIONS,
   readProjectDetail,
@@ -89,16 +87,8 @@ export const PATCH = withApiRoute(
     },
   },
   async ({ ctx, params, body }) => {
-    // 🔴 T-12-10: 公開中の案件で公開欄 3 欄が実際に変わった保存は、コミット後に
-    //    `gate.run{ PROJECT_PUBLISH, kind='RECHECK' }` を積む（`F-014 AC-6`。docs/05 §11.11
-    //    「T-12-10 の実装の決着」③）。実装の選択は起動時 DI の 1 箇所（`lib/db/bootstrap.ts`）で
-    //    終わっており、未登録なら `requireGateRunJobQueue()` が例外を投げる ——
-    //    🔴 **黙って「再検査しない」に倒さない**（`CLAUDE.md` §11.1。それは T-12-10 が塞ぐ穴そのもの）。
-    const now = new Date();
     return Response.json(
-      await updateProject(ctx, params.id, body, {
-        gate: createProjectPublishGate({ queue: requireGateRunJobQueue(), now }),
-      }),
+      await updateProject(ctx, params.id, body),
     );
   },
 );

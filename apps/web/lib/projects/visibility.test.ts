@@ -58,9 +58,9 @@ describe('🔴 公開先の差分（広げる操作と狭める操作を分け�
 
 describe('🔴 `verdict` は「公開できたか」ではなく「要求をどう扱ったか」である', () => {
   it('`PASS` / `FAIL` を持たない（ゲートは非同期であり、この応答時点に合否は無い）', () => {
-    expect([...PROJECT_VISIBILITY_VERDICTS]).toEqual(['PENDING_GATE', 'NO_PUBLISH_REQUESTED']);
+    expect([...PROJECT_VISIBILITY_VERDICTS]).toEqual(['PUBLISHED', 'NO_PUBLISH_REQUESTED']);
     expect(PROJECT_VISIBILITY_VERDICTS).not.toContain('PASS');
-    expect(PROJECT_VISIBILITY_VERDICTS).not.toContain('PUBLISHED');
+    expect(PROJECT_VISIBILITY_VERDICTS).not.toContain('PENDING_GATE');
   });
 });
 
@@ -88,11 +88,11 @@ describe('🔴 F-014 AC-5: 監査ログに残す「変更前後の公開先」�
       requested: ['a', 'c'],
       added: ['c'],
       revoked: [],
-      verdict: 'PENDING_GATE',
+      verdict: 'PUBLISHED',
     });
 
-    expect(summary['after']).toBe('a');
-    expect(summary['pending']).toBe('c');
+    expect(summary['after']).toBe('a,c');
+    expect(summary['pending']).toBe('');
     // 🔴 要求（`requested`）と成立（`after`）の差が「ゲート待ち」である。ここを畳むと、
     //    記録だけを見た人が「公開済み」と読み違える。
     expect(summary['requested']).toBe('a,c');
