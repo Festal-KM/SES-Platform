@@ -251,7 +251,7 @@ export const DROPDOWN_MENU_CONTENT_CLASSES = cn(
  *    （文字 `--color-fg-placeholder` + 背景 `--color-bg-inset` + `cursor: not-allowed`）。
  */
 export const DROPDOWN_MENU_ITEM_CLASSES = cn(
-  'flex cursor-pointer items-center rounded-sm px-3 py-2 text-left text-body text-fg outline-none',
+  'flex min-h-11 cursor-pointer items-center rounded-sm px-3 py-2 text-left text-body text-fg outline-none md:min-h-8 md:py-1',
   TRANSITION_CLASSES,
   'hover:bg-bg-subtle data-[highlighted]:bg-bg-subtle',
   'data-[disabled]:cursor-not-allowed data-[disabled]:bg-bg-inset data-[disabled]:text-fg-placeholder',

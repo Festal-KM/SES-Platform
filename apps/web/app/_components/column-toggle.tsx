@@ -39,7 +39,7 @@
 //    遷移は `next/link` が行う（並び替え〔`DataTableSortLink`〕と同じ規律: 表示の状態は URL）。
 // 🔴 文言を持たない（`packages/i18n` から画面が引いた文字列を props で受ける。`CLAUDE.md` §3.5）。
 import Link from 'next/link';
-import { Button } from '@ses/ui';
+import { Button, Icon } from '@ses/ui';
 import { DataTableColumnToggle, type DataTableToggleableColumn } from '@ses/ui/client';
 
 /**
@@ -67,8 +67,9 @@ export function ColumnToggle({
     <DataTableColumnToggle
       // 🔴 secondary（§7.6）。列の出し入れは primary でも破壊的操作でもない。
       trigger={
-        <Button type="button" variant="secondary" data-testid={`${testIdPrefix}trigger`}>
+        <Button type="button" variant="secondary" className="gap-2" data-testid={`${testIdPrefix}trigger`}>
           {triggerLabel}
+          <Icon name="chevron-down" size="sm" />
         </Button>
       }
       columns={columns}
