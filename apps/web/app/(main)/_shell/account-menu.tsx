@@ -37,7 +37,7 @@
 //
 // 🔴 **文言を持たない**（語は `main-shell.tsx`〔サーバ〕が `packages/i18n` から解決して渡す）。
 import Link from 'next/link';
-import { Avatar, Button, Icon } from '@ses/ui';
+import { Avatar, Button } from '@ses/ui';
 import { DropdownMenu, type DropdownMenuItems } from '@ses/ui/client';
 
 export type AccountMenuProps = {
@@ -100,7 +100,6 @@ export function AccountMenu({
           <Avatar initials={initials} title={accountLabel} />
           {/* 🔴 凍結値（`app-header-account`）。氏名 + ロール名のテキスト（上の 2）。 */}
           <span data-testid="app-header-account">{accountLabel}</span>
-          <Icon name="chevron-down" size="sm" />
         </Button>
       }
     />
