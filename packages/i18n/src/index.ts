@@ -3504,6 +3504,7 @@ const ja = {
   'projects.list.search.savedApply': '適用',
   'projects.list.search.savedActive': '適用中',
   'projects.list.search.savedMenu': 'の操作メニュー',
+  'projects.list.search.savedMenuButton': '操作',
   'projects.list.search.savedRename': '名前を変更',
   'projects.list.search.savedOverwrite': '現在の条件で上書き',
   'projects.list.search.savedRemove': '削除',

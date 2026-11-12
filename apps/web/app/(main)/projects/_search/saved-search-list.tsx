@@ -2,8 +2,9 @@
 
 // 保存条件はブラウザー・ユーザーごとの既存ストアを使用する。
 import { useState } from 'react';
+import { t } from '@ses/i18n';
 import {
-  Badge, Button, Field, Icon, IconButton, Input, Select,
+  Badge, Button, Field, Icon, Input, Select,
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
   MULTI_SELECT_BADGE_CLASSES, FOCUS_RING_CLASSES, cn,
 } from '@ses/ui';
@@ -167,8 +168,12 @@ export function SavedSearchList({
                       {active ? <span className="text-xs font-medium text-brand">{messages.activeLabel}</span> : null}
                       <div onClick={(event) => { event.stopPropagation(); }}>
                       <DropdownMenu align="end" trigger={
-                        <IconButton type="button" variant="ghost" size="sm" icon={<Icon name="more-horizontal" size="sm" />}
-                          aria-label={`${item.name} ${messages.menuLabel}`} data-testid={`${testIdPrefix}saved-menu`} />
+                        <Button type="button" variant="secondary" size="sm" className="gap-2"
+                          aria-label={`${item.name} ${messages.menuLabel}`} data-testid={`${testIdPrefix}saved-menu`}>
+                          <span className="hidden md:inline">{t('projects.list.search.savedMenuButton')}</span>
+                          <span className="md:hidden"><Icon name="more-horizontal" size="sm" /></span>
+                          <span className="hidden md:inline-flex"><Icon name="chevron-down" size="sm" /></span>
+                        </Button>
                       } items={[
                         { kind: 'action', label: messages.rename, onSelect: () => { onRename(item); } },
                         { kind: 'action', label: messages.overwrite, onSelect: () => { onOverwrite(item); } },
