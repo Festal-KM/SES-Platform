@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
-import { Button, IconButton, Icon, Input, Skeleton, SECONDARY_LINK_CLASSES, AI_CANDIDATE_PANEL_VIEWPORT_CLASSES, AI_CANDIDATE_PANEL_MOTION_CLASSES, cn } from '@ses/ui';
+import { Button, IconButton, Icon, Input, Skeleton, SECONDARY_LINK_CLASSES, AI_CANDIDATE_PANEL_VIEWPORT_CLASSES, AI_CANDIDATE_PANEL_MOTION_CLASSES, AI_CANDIDATE_LAYOUT_TRANSITION_CLASSES, AI_CANDIDATE_LAYOUT_OPEN_CLASSES, AI_CANDIDATE_LAYOUT_CLOSED_CLASSES, cn } from '@ses/ui';
 import { Tooltip } from '@ses/ui/client';
 import { t } from '@ses/i18n';
 
@@ -12,7 +12,7 @@ type Candidate = {
 };
 type Entry = { readonly question: string; readonly candidates: readonly Candidate[] };
 
-const OpenCandidatePanel = createContext<(() => void) | null>(null);
+const CandidatePanelContext = createContext<{ openPanel: () => void; panel: ReactNode; open: boolean; visible: boolean } | null>(null);
 
 export function ProjectAiLayout({ projectId, children }: { readonly projectId: string; readonly children: ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -26,7 +26,7 @@ export function ProjectAiLayout({ projectId, children }: { readonly projectId: s
 
   useEffect(() => {
     if (!open) return;
-    panelRef.current?.scrollIntoView({ block: 'nearest' });
+    if (window.matchMedia('(max-width: 1535px)').matches) panelRef.current?.scrollIntoView({ block: 'nearest' });
     let second = 0;
     const first = requestAnimationFrame(() => { second = requestAnimationFrame(() => setVisible(true)); });
     return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
@@ -80,9 +80,7 @@ export function ProjectAiLayout({ projectId, children }: { readonly projectId: s
     void search(message);
   }
 
-  return <OpenCandidatePanel.Provider value={openPanel}>
-    <div className="flex flex-col gap-4 2xl:flex-row">
-    {open ? <div ref={panelRef} className={cn('w-full overflow-hidden 2xl:self-start', AI_CANDIDATE_PANEL_VIEWPORT_CLASSES)}><aside className={cn('flex h-full min-h-80 w-full flex-col rounded-md border border-border bg-bg p-4', AI_CANDIDATE_PANEL_MOTION_CLASSES, visible ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0')} aria-hidden={!visible} inert={!visible} aria-label={t('projects.aiCandidates.title')} data-testid="project-ai-candidates-panel">
+  const panel = open ? <div ref={panelRef} className={cn('min-w-0 w-full overflow-hidden 2xl:self-start', AI_CANDIDATE_PANEL_VIEWPORT_CLASSES)}><aside className={cn('flex h-full min-h-80 w-full flex-col rounded-md border border-border bg-bg p-4', AI_CANDIDATE_PANEL_MOTION_CLASSES, visible ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0')} aria-hidden={!visible} inert={!visible} aria-label={t('projects.aiCandidates.title')} data-testid="project-ai-candidates-panel">
       <div className="flex items-center justify-between gap-3"><h2 className="m-0 text-body font-semibold">{t('projects.aiCandidates.title')}</h2><Tooltip content={t('projects.aiCandidates.close')}><IconButton variant="ghost" size="sm" icon={<Icon name="x" />} aria-label={t('projects.aiCandidates.close')} onClick={closePanel} /></Tooltip></div>
       <p className="text-cell text-fg-muted">{t('projects.aiCandidates.hint')}</p>
       <Link href={`/projects/${projectId}/candidates`} className={SECONDARY_LINK_CLASSES}>{t('projects.aiCandidates.openList')}</Link>
@@ -98,14 +96,21 @@ export function ProjectAiLayout({ projectId, children }: { readonly projectId: s
         {failed ? <p role="alert">{t('projects.aiCandidates.error')}</p> : null}
       </div>
       <form method="post" onSubmit={submit} className="flex gap-2"><Input aria-label={t('projects.aiCandidates.prompt')} value={message} onChange={(event) => setMessage(event.target.value)} /><Button type="submit">{t('projects.aiCandidates.send')}</Button></form>
-    </aside></div> : null}
-    <div className="min-w-0 flex-1 2xl:order-first">{children}</div>
-    </div>
-  </OpenCandidatePanel.Provider>;
+    </aside></div> : null;
+  return <CandidatePanelContext.Provider value={{ openPanel, panel, open, visible }}>{children}</CandidatePanelContext.Provider>;
+}
+
+export function ProjectAiBody({ children }: { readonly children: ReactNode }) {
+  const context = useContext(CandidatePanelContext);
+  if (!context) throw new Error('候補パネルの配置がありません');
+  return <div className={cn('grid grid-cols-1 gap-y-4 2xl:gap-y-0', AI_CANDIDATE_LAYOUT_TRANSITION_CLASSES, context.visible ? AI_CANDIDATE_LAYOUT_OPEN_CLASSES : AI_CANDIDATE_LAYOUT_CLOSED_CLASSES)}>
+    {context.panel}
+    <div className="min-w-0 2xl:order-first" data-testid="project-ai-content">{children}</div>
+  </div>;
 }
 
 export function ProjectAiCandidates() {
-  const openPanel = useContext(OpenCandidatePanel);
-  if (!openPanel) throw new Error('候補パネルの配置がありません');
-  return <Button variant="primary" data-testid="project-detail-candidates" onClick={openPanel}>{t('projects.aiCandidates.open')}</Button>;
+  const context = useContext(CandidatePanelContext);
+  if (!context) throw new Error('候補パネルの配置がありません');
+  return <Button variant="primary" data-testid="project-detail-candidates" onClick={context.openPanel} disabled={context.open}>{t('projects.aiCandidates.open')}</Button>;
 }

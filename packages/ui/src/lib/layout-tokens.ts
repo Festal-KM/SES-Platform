@@ -172,11 +172,17 @@ export const DETAIL_PANE_VIEWPORT_CLASSES =
 
 /** 案件詳細の候補パネル。広い画面ではヘッダーと上下の余白を避ける。 */
 export const AI_CANDIDATE_PANEL_VIEWPORT_CLASSES =
-  '2xl:w-96 2xl:shrink-0 2xl:sticky 2xl:top-[calc(var(--app-banner-h,0px)+4.5rem)] 2xl:h-[calc(100dvh-var(--app-banner-h,0px)-11rem)] 2xl:min-h-80';
+  '2xl:sticky 2xl:top-[calc(var(--app-banner-h,0px)+4.5rem)] 2xl:h-[calc(100dvh-var(--app-banner-h,0px)-11rem)] 2xl:min-h-80';
 
 /** 候補パネルの開閉。動きを減らす設定を尊重する。 */
 export const AI_CANDIDATE_PANEL_MOTION_CLASSES =
-  'transition-[translate,opacity] duration-300 ease-out motion-reduce:transition-none';
+  '2xl:w-96 transition-[translate,opacity] duration-300 ease-out motion-reduce:transition-none';
+
+/** 候補パネルと詳細カードの幅を同じ速度で変える。 */
+export const AI_CANDIDATE_LAYOUT_TRANSITION_CLASSES =
+  'transition-[grid-template-columns,column-gap] duration-300 ease-out motion-reduce:transition-none';
+export const AI_CANDIDATE_LAYOUT_OPEN_CLASSES = '2xl:grid-cols-[minmax(0,1fr)_24rem] 2xl:gap-x-4';
+export const AI_CANDIDATE_LAYOUT_CLOSED_CLASSES = '2xl:grid-cols-[minmax(0,1fr)_0fr] 2xl:gap-x-0';
 
 /** 案件詳細の情報幅。外側の面は全幅のまま左寄せにする。 */
 export const PROJECT_DETAIL_CONTENT_WIDTH_CLASS = 'max-w-240';
