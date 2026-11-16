@@ -49,8 +49,8 @@ describe('プロンプトの登録表（docs/05 §7.7）', () => {
     expect(PROMPT_VERSION_PATTERN.test(module.version)).toBe(true);
   });
 
-  it('登録済みのロールはすべて AI_ROLES の値である（⚠️ 残る 5 ロールは後続スプリント）', () => {
-    expect(registeredPromptRoles()).toEqual(['gate-inspector']);
+  it('登録済みのロールはすべて AI_ROLES の値である', () => {
+    expect(registeredPromptRoles()).toEqual(['gate-inspector', 'match-explainer']);
   });
 
   it('🔴 未登録の版を引いたら例外になる（現行版へ暗黙にフォールバックしない）', () => {

@@ -663,6 +663,7 @@ export type {
 // 🔴 経路 5（docs/05 §4.9）の読み取りの型。`TenantDb` / `HostTenantDb` と違い、
 //    API 層が `toPartnerView()` の入力型として参照するため export する。
 export type { PartnerScopeDb, PartnerScopeTarget } from './with-tenant.js';
+export { createProjectCandidateAiRun, readProjectCandidateAiRun, failPendingProjectCandidateAiRun, claimProjectCandidateAiRun, finishProjectCandidateAiRun } from './project-candidate-ai.js';
 // 🔴 T-06-05: `@db.Date` に渡す値の組み立て（docs/05 §6.4 #15 / #25 / #26）。
 //    検索の述語（`search/**`）と `apps/web` の書き込み経路が**同じ変換**を通るための唯一の出所。
 export { toDateOnly } from './date-only.js';

@@ -9,6 +9,7 @@
 //    後でそのときのプロンプトを再現するためである（`BR-13` / docs/05 §7.7）。
 
 import { prompt as gateInspectorV1 } from './gate-inspector.v1.js';
+import { prompt as matchExplainerV1 } from './match-explainer.v1.js';
 import type { GateInspectorPromptModule } from './contracts.js';
 
 export type {
@@ -30,6 +31,10 @@ export const GATE_INSPECTOR_PROMPTS = {
 
 export type GateInspectorPromptVersion = keyof typeof GATE_INSPECTOR_PROMPTS;
 
+export const MATCH_EXPLAINER_PROMPTS = {
+  'match-explainer.v1': matchExplainerV1,
+} as const;
+
 /**
  * 🔴 **現行版の登録表**（docs/05 §7.7「版の切替は `prompts/roles/index.ts` の 1 行を書き換える」）。
  *
@@ -40,6 +45,7 @@ export type GateInspectorPromptVersion = keyof typeof GATE_INSPECTOR_PROMPTS;
  */
 export const ROLE_PROMPTS = {
   'gate-inspector': GATE_INSPECTOR_PROMPTS['gate-inspector.v1'],
+  'match-explainer': MATCH_EXPLAINER_PROMPTS['match-explainer.v1'],
 } as const;
 
 export type RegisteredPromptRole = keyof typeof ROLE_PROMPTS;

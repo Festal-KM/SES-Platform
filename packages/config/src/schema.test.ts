@@ -486,3 +486,14 @@ describe('S3 資格情報（MinIO 用）は staging / production では設定で
     expect(() => loadAppEnv(input)).toThrow(EnvValidationError);
   });
 });
+
+
+describe('開発用の候補説明 AI', () => {
+  it('明示指定なしでは利用せず、指定には開発環境のキーが必要', () => {
+    const base = buildValidEnv('development');
+    expect(loadAppEnv(base).DEVELOPMENT_CANDIDATE_AI_REAL).toBe(false);
+    expect(() => loadAppEnv({ ...base, DEVELOPMENT_CANDIDATE_AI_REAL: 'true', ANTHROPIC_API_KEY: '' })).toThrow();
+    expect(loadAppEnv({ ...base, DEVELOPMENT_CANDIDATE_AI_REAL: 'true', ANTHROPIC_API_KEY: 'sk-ant-test-candidate' }).DEVELOPMENT_CANDIDATE_AI_REAL).toBe(true);
+    expect(() => loadAppEnv({ ...buildValidEnv('demo'), DEVELOPMENT_CANDIDATE_AI_REAL: 'true' })).toThrow();
+  });
+});

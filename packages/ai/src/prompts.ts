@@ -139,6 +139,11 @@ export function currentGateInspectorPrompt(): GateInspectorPromptModule {
   return ROLE_PROMPTS['gate-inspector'];
 }
 
+/** 案件の候補選出に使う、版管理されたプロンプト。 */
+export function currentMatchExplainerPrompt() {
+  return ROLE_PROMPTS['match-explainer'];
+}
+
 /**
  * 🔴 生成物に保存された版でプロンプトを引く（`BR-13` の再現性の実体）。
  *

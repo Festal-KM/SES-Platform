@@ -178,6 +178,8 @@ export const INTERNAL_JOB_NAMES = [
   //    S3 への `PutObject` は外部 I/O だが**送信ではない**（宛先が無い）。表の値のとおり `attempts: 2`。
   //    冪等性は `DataExportRequest.status` の CAS（`QUEUED → RUNNING`。2 度目は 0 件）。
   'export.generate',
+  // AI の再試行はロール実行内で管理する。
+  'match.candidates',
 ] as const;
 
 export type InternalJobName = (typeof INTERNAL_JOB_NAMES)[number];
@@ -273,6 +275,7 @@ export const QUEUE_DEFINITIONS = {
     backoff: { type: 'exponential', delay: 5_000 },
   }),
   'scan.poll': internalQueue('scan.poll', { attempts: 3 }),
+  'match.candidates': internalQueue('match.candidates', { attempts: 1 }),
   // 🔴 T-07-11（docs/05 §9.8）。席数の日次スナップショット（毎日 01:00 JST）。
   //    `scan.poll` と同じ性質（読み取り + 冪等な upsert）なのでバックオフを持たない。
   'usage.seat-snapshot': internalQueue('usage.seat-snapshot', { attempts: 3 }),
@@ -347,6 +350,11 @@ export type GateRunJob = {
 
 /** `gate.run` のキュー名（`QUEUE_DEFINITIONS` のキーと同じ。文字列を書き写さない）。 */
 export const GATE_RUN_JOB = 'gate.run' satisfies InternalJobName;
+
+/** AI 候補選出のキューには、本文や候補者情報を載せない。 */
+export const MATCH_CANDIDATES_JOB = 'match.candidates' satisfies InternalJobName;
+export type MatchCandidatesJob = { readonly tenantId: string; readonly runId: string };
+export type MatchCandidatesJobQueue = { enqueue(job: MatchCandidatesJob): Promise<void> };
 
 /**
  * 🔴 区切り文字（docs/05 §9.3 のスケッチは `:` だったが **`.` に変えた**。T-07-08 / §11.10）。

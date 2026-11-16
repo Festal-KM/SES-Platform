@@ -29,7 +29,6 @@ import type { ProjectPublicField, ProjectPublishStateView } from "@ses/domain";
 import {
   cn,
   Badge,
-  PRIMARY_LINK_CLASSES,
   Card,
   NameCell,
   SECONDARY_LINK_CLASSES,
@@ -53,6 +52,7 @@ import { formatDateTimeJst } from "../../../../lib/format/datetime";
 import type { ProjectDetailView } from "../../../../lib/projects/service";
 import { ProjectCardEditTrigger, ProjectDetailCopyAction } from "./project-card-editor";
 import { ProjectDetailStatus } from "./project-detail-status";
+import { ProjectAiCandidates, ProjectAiLayout } from "./project-ai-candidates";
 
 export type ProjectDetailScreenMessages = {
   readonly sectionRequirements: string;
@@ -486,6 +486,7 @@ export function ProjectDetailScreen({
   const conditions = projectConditionRows(view);
 
   return (
+    <ProjectAiLayout projectId={view.id}>
     <div data-testid="project-detail-screen" data-audience={view.audience}>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
         <h1
@@ -494,7 +495,7 @@ export function ProjectDetailScreen({
         >
           {view.name}
         </h1>
-        {compactHeader?<div className="flex flex-wrap items-center gap-2"><ProjectDetailCopyAction text={compactHeader.copyText} id={view.id}/><Link className={PRIMARY_LINK_CLASSES} href={`/projects/${view.id}/candidates`} data-testid="project-detail-candidates">{compactHeader.candidatesLabel}</Link></div>:null}
+        {compactHeader?<div className="flex flex-wrap items-center gap-2"><ProjectDetailCopyAction text={compactHeader.copyText} id={view.id}/>{canEdit ? <ProjectAiCandidates /> : null}</div>:null}
       </div>
 
       {/* 🔴 折りたたみの外（`CLAUDE.md` §13.3）。移動中の判断に要る 3 値。 */}
@@ -653,5 +654,6 @@ export function ProjectDetailScreen({
         </div>
       )}
     </div>
+    </ProjectAiLayout>
   );
 }

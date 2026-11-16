@@ -58,6 +58,7 @@ import {
   createObjectStore,
   InMemoryMinuteWindowCounter,
   isQueueName,
+  MATCH_CANDIDATES_JOB,
   MockEmailScriptNotApplicableError,
   type AccountMailJob,
   type EmailSender,
@@ -110,6 +111,7 @@ import {
   type ScheduledJobDeps,
 } from './jobs/index.js';
 import { runScheduled, type SchedulerRunDetail } from './scheduler.js';
+import { createCandidateMatchHandler } from './jobs/match-candidates.js';
 
 /** 停止できるもの（`close()` を 1 本にまとめるための最小の形）。 */
 type Closable = { close(): Promise<void> };
@@ -428,6 +430,13 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
   // 5. `gate.run` の Worker（イベント起動。スケジュールではない）
   // --------------------------------------------------------------------------
   const gateRunHandler = createGateRunHandler({ now, aiClient, models, aiDailyCostLimitUsd });
+  // 開発環境で明示指定された場合だけ候補説明に Claude を使う。
+  // 他の AI 処理と外部送信の設定は変えない。
+  const candidateAiClient = env.APP_ENV === 'development' && env.DEVELOPMENT_CANDIDATE_AI_REAL
+    ? createAiClient('real', { messagesApi: createAnthropicMessagesApiFrom(env.ANTHROPIC_API_KEY) })
+    : aiClient;
+  const candidateMatchHandler = createCandidateMatchHandler({ now, aiClient: candidateAiClient, models, aiDailyCostLimitUsd });
+  track(createBullMqWorker({ queueName: MATCH_CANDIDATES_JOB, connection, handler: (payload, jobId) => candidateMatchHandler(payload, jobId) }));
   track(
     createBullMqWorker({
       queueName: GATE_RUN_JOB,
@@ -545,6 +554,7 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
     ready: Promise.all(ready).then(() => undefined),
     queues: [
       GATE_RUN_JOB,
+      MATCH_CANDIDATES_JOB,
       SEND_PROPOSAL_JOB,
       TENANT_PURGE_JOB,
       EXPORT_GENERATE_JOB,

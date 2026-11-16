@@ -809,6 +809,7 @@ describe('AC-7 ⑧ 運営者の DB ロールは返却データに到達できな
       'chat_saved_messages',
       'chat_thread_announcements',
       'engineer_careers',
+      'project_candidate_ai_runs',
     ]);
     // ✅ 2026-10-16（#129）: 消さない表を「読むだけ」のポリシー（chat_threads）を置いていた。
     //    ✅ 2026-10-26（#166 の 2）: chat_threads が PURGE_SPEC.delete に入り `_purge_scope_select` を持ったので外した（同じ式を 2 つ持たない）。

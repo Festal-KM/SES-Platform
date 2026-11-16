@@ -27,6 +27,11 @@ import {
   configureTenantDb,
   disconnectTenantDb,
   resolveTenantCtx,
+  systemTenantCtx,
+  createProjectCandidateAiRun,
+  readProjectCandidateAiRun,
+  claimProjectCandidateAiRun,
+  finishProjectCandidateAiRun,
   type AuthenticatedTenantCtx,
 } from '@ses/db';
 import { createUnextendedClient, type UnextendedClient } from '@ses/db/testing';
@@ -40,7 +45,9 @@ import {
   PROJECT_A_PUBLISHED,
   SHARE_A_P1,
   TENANT_A,
+  TENANT_B,
   USER_A_HOST,
+  USER_B_HOST,
   USER_A_PARTNER,
   USER_A_PARTNER2,
 } from './support/fixtures.js';
@@ -359,6 +366,92 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await admin.auditLog.deleteMany({ where: { action: 'project.view' } });
+});
+
+describe('AI 候補選出の一時データ', () => {
+  it('依頼者とテナントを分離し、同じ要求を一度だけ処理する', async () => {
+    const now = new Date();
+    const run = await createProjectCandidateAiRun(hostA, {
+      projectId: PROJECT_A_PUBLISHED,
+      payload: { candidates: [] },
+      expiresAt: new Date(now.getTime() + 60_000),
+    });
+    expect(run).not.toBeNull();
+    const id = run!.id;
+    const hostB = await resolveTenantCtx({
+      tenantId: TENANT_B, lifecycleState: 'ACTIVE', partnerCompanyId: null,
+      partnerSuspendedAt: null, twoFactor: 'NOT_ENROLLED', userId: USER_B_HOST, role: 'SALES',
+    }, { deviceKind: 'api' });
+    expect(await readProjectCandidateAiRun(hostB, { id, projectId: PROJECT_A_PUBLISHED, now })).toBeNull();
+    await expect(readProjectCandidateAiRun(partnerA1, { id, projectId: PROJECT_A_PUBLISHED, now })).rejects.toThrow();
+    const job = { queue: 'match.candidates', jobId: 'isolation-test' };
+    const systemA = systemTenantCtx(TENANT_A, job);
+    const systemB = systemTenantCtx(TENANT_B, job);
+    expect(await claimProjectCandidateAiRun(systemB, id, now)).toBeNull();
+    expect(await claimProjectCandidateAiRun(systemA, id, now)).not.toBeNull();
+    expect(await claimProjectCandidateAiRun(systemA, id, now)).toBeNull();
+    await finishProjectCandidateAiRun(systemA, { id, now, output: { rationales: [] } });
+    expect((await readProjectCandidateAiRun(hostA, { id, projectId: PROJECT_A_PUBLISHED, now }))?.status).toBe('COMPLETED');
+    expect(await readProjectCandidateAiRun(hostA, { id, projectId: PROJECT_A_PUBLISHED, now: new Date(now.getTime() + 120_000) })).toBeNull();
+  });
+});
+
+describe('AI 候補の結果表示', () => {
+  it('自社候補の表示枠に収まらないスキルも AI 入力に含める', async () => {
+    const { configureMatchCandidatesQueue } = await import('../../apps/web/lib/jobs/match-candidates-queue');
+    const { startAiCandidates } = await import('../../apps/web/lib/candidates/ai-service');
+    const additional = [
+      { id: '01930000-0000-7000-8000-0000000009d1', name: '候補検証スキルA', category: 'LANGUAGE', sortKey: 11 },
+      { id: '01930000-0000-7000-8000-0000000009d2', name: '候補検証スキルB', category: 'LANGUAGE', sortKey: 12 },
+      { id: '01930000-0000-7000-8000-0000000009d3', name: '候補検証スキルC', category: 'LANGUAGE', sortKey: 13 },
+    ];
+    try {
+      await admin.skill.createMany({ data: additional });
+      await admin.engineerSkill.createMany({ data: additional.map((skill) => ({
+        tenantId: TENANT_A, engineerId: ENGINEER_A_HOST, skillId: skill.id,
+        yearsOfExperience: 1, source: 'MANUAL',
+      })) });
+      configureMatchCandidatesQueue({ enqueue: async () => undefined });
+      const { runId } = await startAiCandidates(hostA, PROJECT_A_PUBLISHED, '候補検証スキルC', null);
+      const run = await readProjectCandidateAiRun(hostA, { id: runId, projectId: PROJECT_A_PUBLISHED, now: new Date() });
+      const input = run!.input as { candidates: { token: string; skills: string[] }[]; refs: { token: string; key: string }[]; requestedSkills: string[] };
+      const host = input.refs.find((ref) => ref.key === ENGINEER_A_HOST);
+      expect(host).toBeDefined();
+      expect(input.candidates.find((candidate) => candidate.token === host!.token)?.skills).toContain('候補検証スキルC');
+      expect(input.requestedSkills).toContain('候補検証スキルC');
+    } finally {
+      await admin.engineerSkill.deleteMany({ where: { engineerId: ENGINEER_A_HOST, skillId: { in: additional.map((item) => item.id) } } });
+      await admin.skill.deleteMany({ where: { id: { in: additional.map((item) => item.id) } } });
+    }
+  });
+
+  it('結果取得前に共有解除された候補を表示せず、残りの順序を保つ', async () => {
+    const { configureMatchCandidatesQueue } = await import('../../apps/web/lib/jobs/match-candidates-queue');
+    const { startAiCandidates, readAiCandidates } = await import('../../apps/web/lib/candidates/ai-service');
+    const enqueue = vi.fn(async () => undefined);
+    configureMatchCandidatesQueue({ enqueue });
+    const { runId } = await startAiCandidates(hostA, PROJECT_A_PUBLISHED, '', null);
+    expect(enqueue).toHaveBeenCalledWith({ tenantId: TENANT_A, runId });
+    const now = new Date();
+    const system = systemTenantCtx(TENANT_A, { queue: 'match.candidates', jobId: 'candidate-result-test' });
+    const claimed = await claimProjectCandidateAiRun(system, runId, now);
+    expect(claimed).not.toBeNull();
+    const input = claimed!.input as { refs: { token: string; key: string; kind: string }[] };
+    expect(input.refs.length).toBeGreaterThan(1);
+    const removed = candidateRef(PROJECT_A_PUBLISHED, ENGINEER_A_PARTNER);
+    expect(input.refs.some((ref) => ref.key === removed)).toBe(true);
+    await finishProjectCandidateAiRun(system, {
+      id: runId, now, output: { rationales: input.refs.map((ref) => ({ token: ref.token, reason: 'スキルを確認' })) },
+    });
+    await admin.engineerShare.update({ where: { id: SHARE_A_P1 }, data: { revokedAt: new Date() } });
+    const result = await readAiCandidates(hostA, PROJECT_A_PUBLISHED, runId, null);
+    expect(result.status).toBe('COMPLETED');
+    if (result.status !== 'COMPLETED') throw new Error('結果が完了していません');
+    expect(result.candidates.map((item) => item.candidate.key)).not.toContain(removed);
+    expect(result.candidates.map((item) => item.candidate.key)).toEqual(
+      input.refs.filter((ref) => ref.key !== removed).map((ref) => ref.key),
+    );
+  });
 });
 
 describe('🔴 F-017 AC-5: パートナーの応答に匿名候補が 1 件も含まれない', () => {

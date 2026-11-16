@@ -8,6 +8,7 @@ import type { MessageKey } from '@ses/i18n';
 import type { PurgeTargetTable } from './view';
 
 export const PURGE_TARGET_MESSAGE_KEYS = {
+  project_candidate_ai_runs: 'retention.schedule.kind.project_candidate_ai_runs',
   engineers: 'retention.schedule.kind.engineers',
   skill_sheets: 'retention.schedule.kind.skill_sheets',
   skill_sheet_extractions: 'retention.schedule.kind.skill_sheet_extractions',

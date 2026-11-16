@@ -85,6 +85,8 @@ const commonShape = {
   ANON_REFERENCE_HMAC_SECRET: base64AtLeastBytes(32),
   WEBHOOK_PATH_SECRET: base64AtLeastBytes(32),
 
+  // 開発環境の候補検索だけで実 Claude を使う場合の明示指定。
+  DEVELOPMENT_CANDIDATE_AI_REAL: envBoolean(false),
   // §6.3 AI（Anthropic）— ANTHROPIC_API_KEY は環境ごとに必須/任意が変わるため各ブランチで定義
   ANTHROPIC_MODEL_DEFAULT: z.string().min(1).default('claude-sonnet-5'),
   ANTHROPIC_MODEL_CHEAP: z.string().min(1).default('claude-haiku-4-5-20251001'),
@@ -426,6 +428,9 @@ function checkResourceIsolation(data: EnvUnionData, ctx: IssueSink): void {
  */
 function crossFieldChecks(data: EnvUnionData, ctx: IssueSink): void {
   const isProduction = data.APP_ENV === 'production';
+  if (data.DEVELOPMENT_CANDIDATE_AI_REAL && (data.APP_ENV !== 'development' || !data.ANTHROPIC_API_KEY)) {
+    addIssue(ctx, 'DEVELOPMENT_CANDIDATE_AI_REAL', '開発環境で Claude のキーがある場合のみ指定できます');
+  }
   const resourceIsolation = data.AWS_ISOLATION_MODE === 'resource';
   if (resourceIsolation) checkResourceIsolation(data, ctx);
   if (data.APP_ENV === 'development' && (!resourceIsolation || data.S3_ENDPOINT !== undefined)) {

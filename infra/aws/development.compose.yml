@@ -33,7 +33,9 @@ services:
     network_mode: host
     working_dir: /app
     user: '1000:1000'
-    env_file: /workspaces/ses-platform-live/.runtime.env
+    env_file:
+      - /workspaces/ses-platform-live/.runtime.env
+      - /run/ses-platform-candidate/worker.env
     volumes:
       - /workspaces/ses-platform-live:/app
     command: ['node', 'scripts/aws-development-server.mjs', 'worker']
