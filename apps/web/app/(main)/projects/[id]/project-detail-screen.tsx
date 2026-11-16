@@ -22,6 +22,7 @@
 import { cloneElement, isValidElement, type ReactNode } from "react";
 import Link from "next/link";
 import { t } from "@ses/i18n";
+import { ProjectAiResearch } from './project-ai-research';
 // 🔴 型だけを import する（本ファイルはサーバコンポーネントだが、`@ses/db` の**値**を
 //    持ち込むと `*.render.test.tsx` が Prisma クライアントを読み込むことになる）。
 import type { RequirementKind } from "@ses/db";
@@ -29,7 +30,6 @@ import type { ProjectPublicField, ProjectPublishStateView } from "@ses/domain";
 import {
   cn,
   Badge,
-  PRIMARY_LINK_CLASSES,
   Card,
   NameCell,
   SECONDARY_LINK_CLASSES,
@@ -494,7 +494,7 @@ export function ProjectDetailScreen({
         >
           {view.name}
         </h1>
-        {compactHeader?<div className="flex flex-wrap items-center gap-2"><ProjectDetailCopyAction text={compactHeader.copyText} id={view.id}/><Link className={PRIMARY_LINK_CLASSES} href={`/projects/${view.id}/candidates`} data-testid="project-detail-candidates">{compactHeader.candidatesLabel}</Link></div>:null}
+        {compactHeader?<div className="flex flex-wrap items-center gap-2"><ProjectDetailCopyAction text={compactHeader.copyText} id={view.id}/><ProjectAiResearch /></div>:null}
       </div>
 
       {/* 🔴 折りたたみの外（`CLAUDE.md` §13.3）。移動中の判断に要る 3 値。 */}

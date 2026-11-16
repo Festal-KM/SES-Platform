@@ -3063,6 +3063,13 @@ const ja = {
   'projects.detail.proposals.comingSoon': '提案の一覧は後続のリリースで表示されます。',
   // ✅ T-08-05: `S-016` へ接続した（それまでは `projects.detail.candidates.comingSoon` の注記だった）。
   'projects.detail.candidates.open': '候補を探す',
+  'projects.detail.aiResearch.open': 'AIリサーチで候補を探す',
+  'projects.detail.aiResearch.title': 'AIリサーチ',
+  'projects.detail.aiResearch.subtitle': 'この案件に合う候補を探す',
+  'projects.detail.aiResearch.intro': '案件に合う人材について、AIに相談できるチャットです。',
+  'projects.detail.aiResearch.preparing': 'AIへの質問と候補の検索は準備中です。',
+  'projects.detail.aiResearch.placeholder': '質問の入力は準備中です',
+  'projects.detail.aiResearch.close': '閉じる',
 
   // --- 🔴 T-12-10 公開の状態（`docs/04` 改訂 14 §S-011 の 4 値 / `F-014 AC-6`〜`AC-13` / `UC-26`）---
   // 🔴 **4 値はどれも別の語である**（`CLAUDE.md` §4.2「失敗と保留を混同しない」）。
