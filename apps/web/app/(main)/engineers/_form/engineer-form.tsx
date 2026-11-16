@@ -276,6 +276,7 @@ export type EngineerFormMessages = {
 
 export type EngineerFormProps = {
   readonly mode: 'CREATE' | 'EDIT';
+  readonly canUseIntake?: boolean;
   /** `EDIT` のときだけ非 null。`PATCH /api/engineers/{id}` の対象。 */
   readonly engineerId: string | null;
   readonly initial: EngineerFormValues;
@@ -387,6 +388,7 @@ function toRequestBody(values: EngineerFormValues) {
 
 export function EngineerForm({
   mode,
+  canUseIntake = false,
   engineerId,
   initial,
   skillDictionary,
@@ -688,7 +690,7 @@ export function EngineerForm({
       data-mode={mode}
       className="flex flex-col gap-6"
     >
-      {mode === 'CREATE' ? <IntakeStart kind="ENGINEER" skillDictionary={skillDictionary} onApply={(draft, skills) => {
+      {mode === 'CREATE' && canUseIntake ? <IntakeStart kind="ENGINEER" skillDictionary={skillDictionary} onApply={(draft, skills) => {
         const known = new Set(values.skills.map((entry) => entry.skillId));
         update({
           displayName: draft.name?.slice(0, 200) ?? values.displayName,
