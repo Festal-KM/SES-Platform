@@ -176,7 +176,7 @@ export const AI_CANDIDATE_PANEL_VIEWPORT_CLASSES =
 
 /** 候補パネルの開閉。動きを減らす設定を尊重する。 */
 export const AI_CANDIDATE_PANEL_MOTION_CLASSES =
-  'transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none';
+  'transition-[translate,opacity] duration-300 ease-out motion-reduce:transition-none';
 
 /** 案件詳細の情報幅。外側の面は全幅のまま左寄せにする。 */
 export const PROJECT_DETAIL_CONTENT_WIDTH_CLASS = 'max-w-240';

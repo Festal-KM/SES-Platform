@@ -82,7 +82,7 @@ export function ProjectAiLayout({ projectId, children }: { readonly projectId: s
 
   return <OpenCandidatePanel.Provider value={openPanel}>
     <div className="flex flex-col gap-4 2xl:flex-row">
-    {open ? <div ref={panelRef} className={cn('w-full overflow-hidden 2xl:self-start', AI_CANDIDATE_PANEL_VIEWPORT_CLASSES)}><aside className={cn('flex h-full min-h-80 w-full flex-col rounded-md border border-border bg-bg p-4', AI_CANDIDATE_PANEL_MOTION_CLASSES, visible ? 'translate-x-0 opacity-100' : 'translate-x-6 opacity-0')} aria-hidden={!visible} inert={!visible} aria-label={t('projects.aiCandidates.title')} data-testid="project-ai-candidates-panel">
+    {open ? <div ref={panelRef} className={cn('w-full overflow-hidden 2xl:self-start', AI_CANDIDATE_PANEL_VIEWPORT_CLASSES)}><aside className={cn('flex h-full min-h-80 w-full flex-col rounded-md border border-border bg-bg p-4', AI_CANDIDATE_PANEL_MOTION_CLASSES, visible ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0')} aria-hidden={!visible} inert={!visible} aria-label={t('projects.aiCandidates.title')} data-testid="project-ai-candidates-panel">
       <div className="flex items-center justify-between gap-3"><h2 className="m-0 text-body font-semibold">{t('projects.aiCandidates.title')}</h2><Tooltip content={t('projects.aiCandidates.close')}><IconButton variant="ghost" size="sm" icon={<Icon name="x" />} aria-label={t('projects.aiCandidates.close')} onClick={closePanel} /></Tooltip></div>
       <p className="text-cell text-fg-muted">{t('projects.aiCandidates.hint')}</p>
       <Link href={`/projects/${projectId}/candidates`} className={SECONDARY_LINK_CLASSES}>{t('projects.aiCandidates.openList')}</Link>
