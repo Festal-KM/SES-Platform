@@ -3,7 +3,7 @@
 import { cloneElement, isValidElement, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { t } from '@ses/i18n';
-import { Badge, Button, DIALOG_PANEL_NARROW_CLASSES, Field, Icon, IconButton, Input, FILTER_SUMMARY_BAR_CLASSES, cn } from '@ses/ui';
+import { Badge, Button, DIALOG_PANEL_NARROW_CLASSES, Field, Icon, IconButton, Input, SegmentedControl, FILTER_SUMMARY_BAR_CLASSES, cn } from '@ses/ui';
 import { Dialog, Tabs, Tooltip } from '@ses/ui/client';
 import type { EngineerActiveFilterView } from '../../../lib/engineers/list-rows';
 
@@ -92,4 +92,19 @@ function EngineerSearchPanelInner({ children, activeFilters, scope }: {
       field={<Field label={t('engineers.searchPanel.name')}><Input value={name} maxLength={80} onChange={(event) => setName(event.target.value)} /></Field>}
       cancelLabel={t('projects.search.cancel')} confirm={<Button type="button" onClick={() => { if (!name.trim() || items.length >= 50) { setNotice(t('engineers.searchPanel.saveError')); return; } if (persist([...items, { id: crypto.randomUUID(), name: name.trim(), query: savedQuery }])) { setDialogOpen(false); setNotice(''); } }}>{t('projects.search.save')}</Button>} />
   </div>;
+}
+
+/** 登録値の区分と一覧の検索条件を同じ人月表示で選ぶ。 */
+export function EngineerUtilizationFilter({ initial }: { readonly initial: string }) {
+  const [value, setValue] = useState(initial);
+  return <>
+    <input type="hidden" name="utilizationBand" value={value} data-testid="engineer-list-filter-utilization" />
+    <SegmentedControl value={value} onChange={setValue} label={t('projects.search.utilization')}
+      testIdPrefix="engineer-list-utilization-" options={[
+        { value: '', label: t('projects.search.all') },
+        { value: 'FULL', label: t('projects.search.band.FULL') },
+        { value: 'HALF_TO_FULL', label: t('projects.search.band.HALF_TO_FULL') },
+        { value: 'UNDER_HALF', label: t('projects.search.band.UNDER_HALF') },
+      ]} />
+  </>;
 }

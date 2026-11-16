@@ -81,7 +81,7 @@
 //    props で受け取る** —— 組み立てはテストできる場所（`engineerListHref`）に置く。
 import Link from 'next/link';
 import { t } from '@ses/i18n';
-import { EngineerSearchPanel } from './engineer-search-panel';
+import { EngineerSearchPanel, EngineerUtilizationFilter } from './engineer-search-panel';
 import {
   Button,
   Card,
@@ -491,13 +491,8 @@ export function EngineerLedgerScreen({
                         data-testid="engineer-list-filter-available-by"
                       />
                     </Field>
-                    {searchScope ? <Field label={t('projects.search.utilization')}>
-                      <Select name="utilizationBand" defaultValue={filters.utilizationBand ?? ''} data-testid="engineer-list-filter-utilization">
-                        <option value="">{t('projects.search.all')}</option>
-                        <option value="FULL">{t('projects.search.band.FULL')}</option>
-                        <option value="HALF_TO_FULL">{t('projects.search.band.HALF_TO_FULL')}</option>
-                        <option value="UNDER_HALF">{t('projects.search.band.UNDER_HALF')}</option>
-                      </Select>
+                    {searchScope ? <Field as="div" className="sm:col-span-2" label={t('projects.search.utilization')}>
+                      <EngineerUtilizationFilter initial={filters.utilizationBand ?? ''} />
                     </Field> : null}
                     </div>
                     {searchScope ? <p className="m-0 bg-bg-subtle px-3 py-3 text-body font-semibold text-fg">{t('projects.search.advanced')}</p> : null}
