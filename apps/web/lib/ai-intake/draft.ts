@@ -23,10 +23,14 @@ export function intakeDraftFromText(text: string, kind: 'PROJECT' | 'ENGINEER'):
   const amount = labeledLine(text, ['単価', '希望単価']);
   const parts = amount?.normalize('NFKC').match(/\d[\d,]*(?:\.\d+)?\s*(?:万円|万|円)?/g)?.slice(0, 2);
   const sharedMan = parts?.length === 2 && /万/.test(parts[1] ?? '') && !/[万円]/.test(parts[0] ?? '');
-  const prices = parts?.map((part, index) => {
+  const parsedPrices = parts?.map((part, index) => {
     const value = Number(part.replace(/[^\d.]/g, ''));
-    return Math.round(value * (/万/.test(part) || (index === 0 && sharedMan) ? 10_000 : 1));
-  }).filter((value) => Number.isSafeInteger(value) && value >= 0 && value <= 100_000_000);
+    const inMan = /万/.test(part) || (index === 0 && sharedMan);
+    if (!inMan && !/円/.test(part) && value < 10_000) return NaN;
+    return Math.round(value * (inMan ? 10_000 : 1));
+  });
+  const prices = parsedPrices?.every((value) => Number.isSafeInteger(value) && value >= 0 && value <= 100_000_000)
+    && (parsedPrices.length < 2 || parsedPrices[0]! <= parsedPrices[1]!) ? parsedPrices : undefined;
   const validDate = iso && !Number.isNaN(Date.parse(`${iso}T00:00:00Z`))
     && new Date(`${iso}T00:00:00Z`).toISOString().slice(0, 10) === iso;
   return {

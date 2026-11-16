@@ -7,6 +7,12 @@ describe('登録文の下書き', () => {
       name: 'データ基盤', summary: 'SQL開発', availableFrom: '2027-01-05', priceMin: 600000, priceMax: 800000,
     });
   });
+  it('単位が不明な単価や逆転した範囲は推測して入力しない', () => {
+    expect(intakeDraftFromText('単価：80', 'PROJECT')).toEqual({});
+    expect(intakeDraftFromText('単価：90〜60万円', 'PROJECT')).toEqual({});
+    expect(intakeDraftFromText('開始日：2027/2/31', 'PROJECT')).toEqual({});
+  });
+
   it('ラベルのない個人情報を他の項目として推測しない', () => {
     expect(intakeDraftFromText('山田太郎\nexample@example.test', 'ENGINEER')).toEqual({});
   });
