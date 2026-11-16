@@ -61,6 +61,27 @@ path.write_text(''.join('%s=%s\n' % item for item in values.items()))
 PY
 touch .runtime.env
 chmod 600 .env .runtime.env
+# 明示的に有効化したときだけ候補検索専用の秘密値を worker に渡す。
+# SSM のログ、共有 .runtime.env、web コンテナに値を出さない。
+install -d -m 0700 /run/ses-platform-candidate
+python3 - <<'PYAI'
+import json, os, pathlib, subprocess
+path = pathlib.Path('/run/ses-platform-candidate/worker.env')
+content = ''
+if pathlib.Path('/workspaces/ses-config/candidate-ai-enabled').exists():
+    result = subprocess.run(['aws', 'secretsmanager', 'get-secret-value', '--region', 'ap-northeast-1',
+        '--secret-id', '/ses-platform-development/candidate-ai', '--output', 'json'], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SystemExit('候補 AI の専用シークレットを取得できません')
+    secret = json.loads(json.loads(result.stdout)['SecretString'])
+    key = secret.get('ANTHROPIC_API_KEY', '')
+    if not isinstance(key, str) or not key.startswith('sk-ant-') or '\n' in key or '\r' in key:
+        raise SystemExit('候補 AI の専用シークレットが不正です')
+    content = 'DEVELOPMENT_CANDIDATE_AI_REAL=true\nANTHROPIC_API_KEY=' + key + '\n'
+fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, 'w') as file:
+    file.write(content)
+PYAI
 compose=(docker compose -f docker-compose.yml -f infra/aws/development.compose.yml)
 "${compose[@]}" up -d postgres redis mailhog clamav
 "${compose[@]}" stop s3mock

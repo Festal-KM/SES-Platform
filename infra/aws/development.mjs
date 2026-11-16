@@ -25,7 +25,12 @@ export function developmentTemplate() {
             { Effect: 'Allow', Action: ['kms:Decrypt', 'kms:Encrypt', 'kms:GenerateDataKey'], Resource: ref('StorageKeyArn'), Condition: { StringEquals: { 'kms:ViaService': sub('s3.${AWS::Region}.amazonaws.com') } } },
             { Effect: 'Deny', Action: 's3:*', NotResource: [sub('arn:${AWS::Partition}:s3:::ses-platform-development-files-${AWS::AccountId}-${AWS::Region}'), sub('arn:${AWS::Partition}:s3:::ses-platform-development-files-${AWS::AccountId}-${AWS::Region}/*')] },
             { Effect: 'Deny', Action: 'kms:*', NotResource: ref('StorageKeyArn') },
-            { Effect: 'Deny', Action: ['secretsmanager:*', 'ssm:GetParameter', 'ssm:GetParameters', 'ssm:GetParametersByPath', 'sts:AssumeRole', 'iam:*', 'ses:*', 'sns:Publish'], Resource: '*' },
+            // 候補検索専用シークレットのみ読み取る。既存の external と他環境は取得不可。
+            { Effect: 'Allow', Action: 'secretsmanager:GetSecretValue', Resource: sub('arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/ses-platform-development/candidate-ai-*') },
+            { Effect: 'Deny', Action: 'secretsmanager:*', NotResource: sub('arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/ses-platform-development/candidate-ai-*') },
+            { Effect: 'Deny', NotAction: 'secretsmanager:GetSecretValue', Resource: sub('arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/ses-platform-development/candidate-ai-*') },
+            { Effect: 'Allow', Action: 'kms:Decrypt', Resource: ref('StorageKeyArn'), Condition: { StringEquals: { 'kms:ViaService': sub('secretsmanager.${AWS::Region}.amazonaws.com') }, StringLike: { 'kms:EncryptionContext:SecretARN': sub('arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/ses-platform-development/candidate-ai-*') } } },
+            { Effect: 'Deny', Action: ['ssm:GetParameter', 'ssm:GetParameters', 'ssm:GetParametersByPath', 'sts:AssumeRole', 'iam:*', 'ses:*', 'sns:Publish'], Resource: '*' },
           ] } }],
         },
       },

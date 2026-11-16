@@ -23,10 +23,16 @@ test('自動停止は開発の1台に限定し、本番や他プロジェクト�
   assert.equal(r.StopSchedule.Properties.ScheduleExpression, 'rate(15 minutes)');
 });
 
-test('作業用ロールに本番送信・秘密値取得・ロール変更の権限を与えない', () => {
+test('候補 AI 専用の秘密以外と本番送信・ロール変更を拒否する', () => {
   const statements = developmentTemplate().Resources.WorkspaceRole.Properties.Policies[0].PolicyDocument.Statement;
   const deny = statements.find((s) => s.Effect === 'Deny' && Array.isArray(s.Action));
-  for (const action of ['secretsmanager:*', 'ssm:GetParameter', 'sts:AssumeRole', 'iam:*', 'ses:*', 'sns:Publish']) assert.ok(deny.Action.includes(action));
+  for (const action of ['ssm:GetParameter', 'sts:AssumeRole', 'iam:*', 'ses:*', 'sns:Publish']) assert.ok(deny.Action.includes(action));
+  const secretAllow = statements.find((s) => s.Effect === 'Allow' && s.Action === 'secretsmanager:GetSecretValue');
+  assert.match(JSON.stringify(secretAllow.Resource), /ses-platform-development\/candidate-ai-/);
+  assert.ok(statements.some((s) => s.Effect === 'Deny' && s.Action === 'secretsmanager:*' && s.NotResource));
+  assert.ok(statements.some((s) => s.Effect === 'Deny' && s.NotAction === 'secretsmanager:GetSecretValue' && s.Resource));
+  const decrypt = statements.find((s) => s.Effect === 'Allow' && s.Action === 'kms:Decrypt');
+  assert.match(JSON.stringify(decrypt.Condition), /candidate-ai-/);
   const getObject = statements.find((s) => s.Action === 's3:GetObject');
   assert.ok(JSON.stringify(getObject.Resource).includes('/bootstrap/*'));
   assert.ok(statements.some((s) => s.Effect === 'Deny' && s.Action === 's3:*' && s.NotResource));

@@ -430,7 +430,12 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
   // 5. `gate.run` の Worker（イベント起動。スケジュールではない）
   // --------------------------------------------------------------------------
   const gateRunHandler = createGateRunHandler({ now, aiClient, models, aiDailyCostLimitUsd });
-  const candidateMatchHandler = createCandidateMatchHandler({ now, aiClient, models, aiDailyCostLimitUsd });
+  // 開発環境で明示指定された場合だけ候補説明に Claude を使う。
+  // 他の AI 処理と外部送信の設定は変えない。
+  const candidateAiClient = env.APP_ENV === 'development' && env.DEVELOPMENT_CANDIDATE_AI_REAL
+    ? createAiClient('real', { messagesApi: createAnthropicMessagesApiFrom(env.ANTHROPIC_API_KEY) })
+    : aiClient;
+  const candidateMatchHandler = createCandidateMatchHandler({ now, aiClient: candidateAiClient, models, aiDailyCostLimitUsd });
   track(createBullMqWorker({ queueName: MATCH_CANDIDATES_JOB, connection, handler: (payload, jobId) => candidateMatchHandler(payload, jobId) }));
   track(
     createBullMqWorker({
