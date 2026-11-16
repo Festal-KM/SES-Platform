@@ -9,6 +9,8 @@ test('自社人材の検索条件を保存し、折りたたんでも検索で�
   try {
     await page.goto('/engineers');
     await expect(page.getByRole('heading', { name: t('engineers.searchPanel.title') })).toBeVisible();
+    await expect(page.getByText(t('projects.search.basic'), { exact: true })).toBeVisible();
+    await expect(page.getByText(t('projects.search.advanced'), { exact: true })).toBeVisible();
     const query = page.getByTestId('engineer-list-filter-q');
     await query.fill('検索確認');
     await page.getByRole('button', { name: t('projects.search.save'), exact: true }).click();
@@ -23,6 +25,10 @@ test('自社人材の検索条件を保存し、折りたたんでも検索で�
     await expect(page.getByTestId('engineer-list-search')).toBeVisible();
     await page.getByTestId('engineer-list-search').click();
     await expect(page).toHaveURL(/q=%E6%A4%9C%E7%B4%A2%E7%A2%BA%E8%AA%8D/);
+    await page.getByTestId('engineer-list-clear').click();
+    await expect(page).not.toHaveURL(/q=/);
+    await page.getByRole('button', { name: t('engineers.searchPanel.expand') }).click();
+    await expect(page.getByTestId('engineer-list-filter-q')).toHaveValue('');
     await expectNoHorizontalOverflow('人材検索', page);
     session.outbound.assertNone();
   } finally { await session.close(); }

@@ -513,7 +513,7 @@ export function EngineerLedgerScreen({
                     <Field label={messages.searchSkillMode}>
                       <Select
                         name="skillMode"
-                        defaultValue={filters.skillMode}
+                        defaultValue={searchScope && filters.skills.length === 0 && filters.skillMode === 'AND' ? 'OR' : filters.skillMode}
                         data-testid="engineer-list-filter-skill-mode"
                       >
                         {skillModeOptions.map((option) => (

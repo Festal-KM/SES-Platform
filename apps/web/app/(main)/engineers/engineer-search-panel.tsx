@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { cloneElement, isValidElement, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { t } from '@ses/i18n';
 import { Badge, Button, DIALOG_PANEL_NARROW_CLASSES, Field, Icon, IconButton, Input, FILTER_SUMMARY_BAR_CLASSES, cn } from '@ses/ui';
@@ -21,6 +21,7 @@ export function EngineerSearchPanel({ children, activeFilters, scope }: {
   const [name, setName] = useState('');
   const [savedQuery, setSavedQuery] = useState('');
   const [notice, setNotice] = useState('');
+  const [resetVersion, setResetVersion] = useState(0);
   const storageKey = scope ? `ses.engineers.savedSearches.v1.${scope.tenantId}.${scope.userId}` : null;
 
   useEffect(() => {
@@ -72,13 +73,13 @@ export function EngineerSearchPanel({ children, activeFilters, scope }: {
       headerRight={<><Tooltip content={t('projects.search.save')}><IconButton type="button" variant="ghost" size="sm" icon={<Icon name="list-plus" />} aria-label={t('projects.search.save')} onClick={openSave} /></Tooltip>
         <Tooltip content={expanded ? t('engineers.searchPanel.collapse') : t('engineers.searchPanel.expand')}><IconButton type="button" variant="ghost" size="sm" icon={<Icon name="chevron-down" className={cn('transition-transform', expanded && 'rotate-180')} />} aria-label={expanded ? t('engineers.searchPanel.collapse') : t('engineers.searchPanel.expand')} aria-expanded={expanded} onClick={() => setExpanded(!expanded)} /></Tooltip></>}
       items={[{ value: 'SEARCH', label: t('engineers.list.search.legend'), content: null }, { value: 'SAVED', label: t('projects.search.saved'), count: items.length, content: null }]} />
-    <div hidden={!expanded || tab !== 'SEARCH'}>{children}</div>
+    <div hidden={!expanded || tab !== 'SEARCH'}>{isValidElement(children) ? cloneElement(children, { key: `${String(children.key)}-${resetVersion}` }) : children}</div>
     <div hidden={!expanded || tab !== 'SAVED'}>{savedBody}</div>
     <div className={cn(FILTER_SUMMARY_BAR_CLASSES, 'flex-wrap')}  data-testid="engineer-search-summary">
       <span className="text-xs text-fg-muted">{t('engineers.list.filtered.activeTitle')}</span>
       {activeFilters.length ? activeFilters.map((filter) => <Badge key={filter.key} variant="brand"><span>{filter.label}</span><Tooltip content={`${filter.label}${t('engineers.list.filtered.remove')}`}><IconButton type="button" variant="ghost" size="sm" icon={<Icon name="x" />} aria-label={`${filter.label}${t('engineers.list.filtered.remove')}`} onClick={() => router.push(filter.href, { scroll: false })} /></Tooltip></Badge>) : <span className="text-xs text-fg-muted">{t('engineers.searchPanel.noConditions')}</span>}
       <div className="ml-auto flex items-center gap-2">
-        <Tooltip content={t('projects.search.clearAll')}><IconButton type="button" variant="ghost" aria-label={t('projects.search.clearAll')} icon={<Icon name="filter-x" />} onClick={() => router.push('/engineers', { scroll: false })} data-testid="engineer-list-clear" /></Tooltip>
+        <Tooltip content={t('projects.search.clearAll')}><IconButton type="button" variant="ghost" aria-label={t('projects.search.clearAll')} icon={<Icon name="filter-x" />} onClick={() => { setResetVersion((value) => value + 1); router.push('/engineers', { scroll: false }); }} data-testid="engineer-list-clear" /></Tooltip>
         <Tooltip content={t('projects.search.submit')}><IconButton type="submit" form="engineer-search-form" variant="primary" aria-label={t('projects.search.submit')} icon={<Icon name="search" />} data-testid="engineer-list-search" /></Tooltip>
       </div>
     </div>
