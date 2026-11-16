@@ -3065,7 +3065,7 @@ const ja = {
   'projects.detail.candidates.open': '候補を探す',
   'projects.aiCandidates.open': 'AIで要員候補を探す',
   'projects.aiCandidates.openList': '候補一覧を開く',
-  'projects.aiCandidates.title': 'AI候補検索',
+  'projects.aiCandidates.title': 'AIリサーチ',
   'projects.aiCandidates.close': '閉じる',
   'projects.aiCandidates.prompt': '重視するスキルを入力',
   'projects.aiCandidates.send': '探す',

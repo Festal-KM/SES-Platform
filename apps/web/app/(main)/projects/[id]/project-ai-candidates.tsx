@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
-import { Button, Input, SECONDARY_LINK_CLASSES, AI_CANDIDATE_PANEL_VIEWPORT_CLASSES, cn } from '@ses/ui';
+import { Button, IconButton, Icon, Input, SECONDARY_LINK_CLASSES, AI_CANDIDATE_PANEL_VIEWPORT_CLASSES, cn } from '@ses/ui';
+import { Tooltip } from '@ses/ui/client';
 import { t } from '@ses/i18n';
 
 type Candidate = {
@@ -62,7 +63,7 @@ export function ProjectAiLayout({ projectId, children }: { readonly projectId: s
   return <OpenCandidatePanel.Provider value={() => { setOpen(true); if (entries.length === 0) void search(''); }}>
     <div className="flex flex-col gap-4 2xl:flex-row">
     {open ? <aside ref={panelRef} className={cn('flex min-h-80 w-full flex-col rounded-md border border-border bg-bg p-4 2xl:self-start', AI_CANDIDATE_PANEL_VIEWPORT_CLASSES)} aria-label={t('projects.aiCandidates.title')} data-testid="project-ai-candidates-panel">
-      <div className="flex items-center justify-between gap-3"><h2 className="m-0 text-body font-semibold">{t('projects.aiCandidates.title')}</h2><Button variant="ghost" onClick={() => setOpen(false)}>{t('projects.aiCandidates.close')}</Button></div>
+      <div className="flex items-center justify-between gap-3"><h2 className="m-0 text-body font-semibold">{t('projects.aiCandidates.title')}</h2><Tooltip content={t('projects.aiCandidates.close')}><IconButton variant="ghost" size="sm" icon={<Icon name="x" />} aria-label={t('projects.aiCandidates.close')} onClick={() => setOpen(false)} /></Tooltip></div>
       <p className="text-cell text-fg-muted">{t('projects.aiCandidates.hint')}</p>
       <Link href={`/projects/${projectId}/candidates`} className={SECONDARY_LINK_CLASSES}>{t('projects.aiCandidates.openList')}</Link>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto" aria-live="polite">
