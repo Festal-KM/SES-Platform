@@ -51,6 +51,9 @@ test('候補パネルで検査済みの候補と理由を確認し、失敗を�
     expect(panelBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
     expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(900);
     await expectNoHorizontalOverflow('PC の案件候補パネル', page);
+    const transition = await panel.evaluate((element) => getComputedStyle(element).transitionProperty);
+    expect(transition).toContain('translate');
+    expect(transition).toContain('opacity');
     await panel.getByRole('button', { name: t('projects.aiCandidates.close') }).click();
     await expect(panel).toBeHidden();
   } finally {
