@@ -62,6 +62,7 @@ export default async function NewEngineerPage() {
       <PageHeading trail={ENGINEER_NEW_TRAIL} title={t('engineers.new.title')} />
       <EngineerForm
         mode="CREATE"
+        canUseResidence={outcome.ctx.partnerCompanyId === null}
         canUseIntake={outcome.ctx.partnerCompanyId === null}
         engineerId={null}
         initial={EMPTY_ENGINEER_FORM_VALUES}

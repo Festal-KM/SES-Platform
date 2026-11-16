@@ -280,6 +280,7 @@ export type EngineerFormMessages = {
 export type EngineerFormProps = {
   readonly mode: 'CREATE' | 'EDIT';
   readonly canUseIntake?: boolean;
+  readonly canUseResidence?: boolean;
   /** `EDIT` のときだけ非 null。`PATCH /api/engineers/{id}` の対象。 */
   readonly engineerId: string | null;
   readonly initial: EngineerFormValues;
@@ -356,13 +357,13 @@ function numberOrNull(value: string): number | null {
  * 送信する body（docs/05 §6.4 #16 の `EngineerInput`）。
  * 🔴 ここに `ownerPartnerCompanyId` を組み立てる余地が無い（値そのものを画面が知らない）。
  */
-function toRequestBody(values: EngineerFormValues) {
+function toRequestBody(values: EngineerFormValues, canUseResidence: boolean) {
   return {
     displayName: values.displayName.trim(),
     availability: values.availability,
     availableFrom: emptyToNull(values.availableFrom),
     utilizationRate: numberOrNull(values.utilizationRate ?? ''),
-    residencePrefecture: emptyToNull(values.residencePrefecture ?? ''),
+    ...(canUseResidence ? { residencePrefecture: emptyToNull(values.residencePrefecture ?? '') } : {}),
     unitPriceMin: numberOrNull(values.unitPriceMin),
     unitPriceMax: numberOrNull(values.unitPriceMax),
     prefecture: emptyToNull(values.prefecture),
@@ -394,6 +395,7 @@ function toRequestBody(values: EngineerFormValues) {
 export function EngineerForm({
   mode,
   canUseIntake = false,
+  canUseResidence = false,
   engineerId,
   initial,
   skillDictionary,
@@ -622,7 +624,7 @@ export function EngineerForm({
         {
           method: mode === 'CREATE' ? 'POST' : 'PATCH',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(toRequestBody(values)),
+          body: JSON.stringify(toRequestBody(values, canUseResidence)),
         },
       );
       if (!response.ok) {
@@ -1377,12 +1379,12 @@ export function EngineerForm({
             />
           </Field>
         </fieldset>
-        <Field className="mb-4" label={t('engineers.searchPanel.residence')}>
+        {canUseResidence ? <Field className="mb-4" label={t('engineers.searchPanel.residence')}>
           <Select name="residencePrefecture" value={values.residencePrefecture ?? ''} onChange={(event) => update({ residencePrefecture: event.target.value })} data-testid="engineer-residence-prefecture">
             <option value="">{messages.valueUnset}</option>
             {prefectureOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </Select>
-        </Field>
+        </Field> : null}
         <Field className="mb-4" label={messages.prefectureLabel}>
           <Select
             name="prefecture"
