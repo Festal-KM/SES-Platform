@@ -2619,7 +2619,7 @@ const ja = {
   //    —— 到達しない状態の文言を先回りで置かない（`engineers.notFound` の判断と同じ）。
   'intake.ai.projectTitle': '文章から案件を入力',
   'intake.ai.engineerTitle': '文章から人材を入力',
-  'intake.ai.description': '文章中の登録済み技術名を AI で整理します。氏名・企業名・単価はブラウザー内で抽出し、AI には送りません。',
+  'intake.ai.description': '文章から下書きを作り、対応する技術名を AI で整理します。文章・氏名・企業名・単価は AI に送らず、入力済みの欄は上書きしません。',
   'intake.ai.textLabel': 'サマリー文章',
   'intake.ai.analyze': 'AIで内容を整理',
   'intake.ai.loading': '内容を整理しています',
