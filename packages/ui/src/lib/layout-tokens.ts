@@ -170,6 +170,10 @@ export const RAIL_RANK_CIRCLE_CLASSES = 'h-7 w-7';
 export const DETAIL_PANE_VIEWPORT_CLASSES =
   'lg:sticky lg:top-[calc(var(--app-banner-h,0px)+4.5rem)] lg:h-[calc(100dvh-var(--app-banner-h,0px)-11rem)] lg:min-h-80';
 
+/** 案件詳細の候補パネル。広い画面ではヘッダーと上下の余白を避ける。 */
+export const AI_CANDIDATE_PANEL_VIEWPORT_CLASSES =
+  '2xl:w-96 2xl:shrink-0 2xl:sticky 2xl:top-[calc(var(--app-banner-h,0px)+4.5rem)] 2xl:h-[calc(100dvh-var(--app-banner-h,0px)-11rem)] 2xl:min-h-80';
+
 /** 案件詳細の情報幅。外側の面は全幅のまま左寄せにする。 */
 export const PROJECT_DETAIL_CONTENT_WIDTH_CLASS = 'max-w-240';
 export const PROJECT_DETAIL_REQUIREMENTS_WIDTH_CLASS = 'max-w-275';

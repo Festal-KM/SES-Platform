@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
-import { Button, Icon, Input, SECONDARY_LINK_CLASSES } from '@ses/ui';
+import { Button, Input, SECONDARY_LINK_CLASSES, AI_CANDIDATE_PANEL_VIEWPORT_CLASSES, cn } from '@ses/ui';
 import { t } from '@ses/i18n';
 
 type Candidate = {
@@ -11,12 +11,17 @@ type Candidate = {
 };
 type Entry = { readonly question: string; readonly candidates: readonly Candidate[] };
 
-export function ProjectAiCandidates({ projectId }: { readonly projectId: string }) {
+const OpenCandidatePanel = createContext<(() => void) | null>(null);
+
+export function ProjectAiLayout({ projectId, children }: { readonly projectId: string; readonly children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [entries, setEntries] = useState<readonly Entry[]>([]);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
+  const panelRef = useRef<HTMLElement>(null);
+
+  useEffect(() => { if (open) panelRef.current?.scrollIntoView({ block: 'nearest' }); }, [open]);
 
   async function search(question: string) {
     if (loading) return;
@@ -54,15 +59,13 @@ export function ProjectAiCandidates({ projectId }: { readonly projectId: string 
     void search(message);
   }
 
-  return <>
-    <Button variant="primary" data-testid="project-detail-candidates" onClick={() => { setOpen(true); if (entries.length === 0) void search(''); }}>
-      <Icon name="ai-consult" size="sm" /> {t('projects.aiCandidates.open')}
-    </Button>
-    {open ? <aside className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-border bg-bg p-4 sm:w-96" aria-label={t('projects.aiCandidates.title')} data-testid="project-ai-candidates-panel">
+  return <OpenCandidatePanel.Provider value={() => { setOpen(true); if (entries.length === 0) void search(''); }}>
+    <div className="flex flex-col gap-4 2xl:flex-row">
+    {open ? <aside ref={panelRef} className={cn('flex min-h-80 w-full flex-col rounded-md border border-border bg-bg p-4 2xl:self-start', AI_CANDIDATE_PANEL_VIEWPORT_CLASSES)} aria-label={t('projects.aiCandidates.title')} data-testid="project-ai-candidates-panel">
       <div className="flex items-center justify-between gap-3"><h2 className="m-0 text-body font-semibold">{t('projects.aiCandidates.title')}</h2><Button variant="ghost" onClick={() => setOpen(false)}>{t('projects.aiCandidates.close')}</Button></div>
       <p className="text-cell text-fg-muted">{t('projects.aiCandidates.hint')}</p>
       <Link href={`/projects/${projectId}/candidates`} className={SECONDARY_LINK_CLASSES}>{t('projects.aiCandidates.openList')}</Link>
-      <div className="flex flex-1 flex-col gap-4 overflow-auto" aria-live="polite">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto" aria-live="polite">
         {entries.map((entry, index) => <section key={index} className="flex flex-col gap-2">
           {entry.question ? <p className="m-0 text-body font-semibold">{entry.question}</p> : null}
           {entry.candidates.length === 0 ? <p>{t('projects.aiCandidates.empty')}</p> : entry.candidates.map(({ candidate, reason }) => <div key={candidate.key} className="border-b border-border py-2">
@@ -75,5 +78,13 @@ export function ProjectAiCandidates({ projectId }: { readonly projectId: string 
       </div>
       <form method="post" onSubmit={submit} className="flex gap-2"><Input aria-label={t('projects.aiCandidates.prompt')} value={message} onChange={(event) => setMessage(event.target.value)} /><Button type="submit">{t('projects.aiCandidates.send')}</Button></form>
     </aside> : null}
-  </>;
+    <div className="min-w-0 flex-1 2xl:order-first">{children}</div>
+    </div>
+  </OpenCandidatePanel.Provider>;
+}
+
+export function ProjectAiCandidates() {
+  const openPanel = useContext(OpenCandidatePanel);
+  if (!openPanel) throw new Error('候補パネルの配置がありません');
+  return <Button variant="primary" data-testid="project-detail-candidates" onClick={openPanel}>{t('projects.aiCandidates.open')}</Button>;
 }

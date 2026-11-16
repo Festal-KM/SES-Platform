@@ -84,7 +84,6 @@ import {
   Columns2,
   Download,
   Ellipsis,
-  Cpu,
   Eye,
   FilePenLine,
   FileText,
@@ -137,7 +136,6 @@ import { cn } from './lib/cn.js';
  *    写像に無い名前を渡した呼び出しは型エラーになる。
  */
 export const ICONS = {
-  'ai-consult': Cpu,
   // ── `docs/04` §3.1 の表（グローバルナビの全項目。上から表の順）
   home: House,
   users: Users,

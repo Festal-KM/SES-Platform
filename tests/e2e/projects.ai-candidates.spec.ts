@@ -39,6 +39,18 @@ test('候補パネルで検査済みの候補と理由を確認し、失敗を�
     await panel.getByRole('button', { name: t('projects.aiCandidates.send') }).click();
     await expect(panel.getByRole('alert')).toHaveText(t('projects.aiCandidates.error'));
     await expect(panel.getByText('Java の経験')).toBeVisible();
+    await page.setViewportSize({ width: 1908, height: 900 });
+    const panelBox = await panel.boundingBox();
+    const detailBox = await page.getByTestId('project-detail-screen').boundingBox();
+    const headerBox = await page.getByTestId('app-header').boundingBox();
+    expect(panelBox).not.toBeNull();
+    expect(detailBox).not.toBeNull();
+    expect(headerBox).not.toBeNull();
+    if (!panelBox || !detailBox || !headerBox) throw new Error('配置を確認できません');
+    expect(panelBox.x).toBeGreaterThanOrEqual(detailBox.x + detailBox.width);
+    expect(panelBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
+    expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(900);
+    await expectNoHorizontalOverflow('PC の案件候補パネル', page);
   } finally {
     await session.close();
   }
