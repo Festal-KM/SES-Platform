@@ -25,8 +25,9 @@ test("案件カードは一つずつ編集し、キャンセル・失敗・保�
       page.getByTestId("project-card-editor").locator("input,textarea:not([readonly]),select"),
     ).toHaveCount(0);
     await page.getByTestId("project-detail-edit-link").click();
-    // 🔴 公開欄には「公開先の取引先が読む」印を出す。未公開の案件では再検査の事前表示を出さない（S-012 改訂 14）。
+    // 公開項目の編集欄を表示し、繰り返しの公開説明は表示しない。
     await expect(page.getByTestId("project-card-public-field-name")).toBeVisible();
+    await expect(page.getByText(t("projects.publicField.notice"))).toHaveCount(0);
     await expect(page.getByTestId("project-card-recheck-notice")).toHaveCount(0);
     await page.getByTestId("project-card-input-name").fill("未保存の名前");
     // 未保存のまま別セクションを開こうとしたときは確認が出る。
@@ -99,6 +100,7 @@ test("案件カードは一つずつ編集し、キャンセル・失敗・保�
     await page.getByTestId("project-card-edit-content").click();
     await page.getByTestId("project-card-requirement-add-MUST").click();
     await expect(page.getByTestId("project-card-public-field-requirements")).toBeVisible();
+    await expect(page.getByText(t("projects.cards.requirementPublicNotice"))).toHaveCount(0);
     await expect(
       page.locator('[data-testid^="project-card-requirement-text-"]'),
     ).toHaveCount(1);
