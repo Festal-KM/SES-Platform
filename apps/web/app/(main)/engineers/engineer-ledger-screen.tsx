@@ -91,6 +91,7 @@ import {
   DataTable,
   EmptyState,
   Field,
+  Icon,
   Input,
   Pagination,
   SECONDARY_LINK_CLASSES,
@@ -318,7 +319,7 @@ function engineerColumns(
 
 function EngineerDetailSection({ enabled, children }: { readonly enabled: boolean; readonly children: ReactNode }) {
   if (!enabled) return <>{children}</>;
-  return <details className="min-w-0"><summary className="flex cursor-pointer items-center bg-bg-subtle px-3 py-3 text-body font-semibold text-fg">{t('projects.search.advanced')}</summary><div className="pt-3">{children}</div></details>;
+  return <details className="min-w-0"><summary className="flex cursor-pointer items-center bg-bg-subtle px-3 py-3 text-body font-semibold text-fg">{t('projects.search.advanced')}<Icon name="chevron-down" className="ml-auto" /></summary><div className="pt-3">{children}</div></details>;
 }
 
 export function EngineerLedgerScreen({
@@ -604,12 +605,14 @@ export function EngineerLedgerScreen({
                     押しても効かない検索欄を描くより、いま何ができないのかを書く。
                     ✅ SP-22 段④: 場所を絞り込みカードの中へ移した（**どの条件が無いのか**は
                        条件の群の隣で読むものであり、一覧の上の独立した行ではない）。 */}
+                {!searchScope ? <>
                 <p className="mt-3 text-xs text-fg-muted" data-testid="engineer-list-search-coming-soon">
                   {messages.searchComingSoon}
                 </p>
                 <p className="mt-1 text-xs text-fg-muted" data-testid="engineer-list-experience-coming-soon">
                   {messages.experienceComingSoon}
                 </p>
+                </> : null}
               </CardContent>
             </Card>
           }
