@@ -1379,6 +1379,7 @@ export function EngineerForm({
         </fieldset>
         <Field className="mb-4" label={t('engineers.searchPanel.residence')}>
           <Select name="residencePrefecture" value={values.residencePrefecture ?? ''} onChange={(event) => update({ residencePrefecture: event.target.value })} data-testid="engineer-residence-prefecture">
+            <option value="">{messages.valueUnset}</option>
             {prefectureOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </Select>
         </Field>
