@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
-import { Button, IconButton, Icon, Input, SECONDARY_LINK_CLASSES, AI_CANDIDATE_PANEL_VIEWPORT_CLASSES, AI_CANDIDATE_PANEL_MOTION_CLASSES, cn } from '@ses/ui';
+import { Button, IconButton, Icon, Input, Skeleton, SECONDARY_LINK_CLASSES, AI_CANDIDATE_PANEL_VIEWPORT_CLASSES, AI_CANDIDATE_PANEL_MOTION_CLASSES, cn } from '@ses/ui';
 import { Tooltip } from '@ses/ui/client';
 import { t } from '@ses/i18n';
 
@@ -94,7 +94,7 @@ export function ProjectAiLayout({ projectId, children }: { readonly projectId: s
             <p className="m-0 text-cell">{candidate.skills.join(' / ')}</p><p className="m-0 text-cell text-fg-muted">{reason}</p>
           </div>)}
         </section>)}
-        {loading ? <p>{t('projects.aiCandidates.loading')}</p> : null}
+        {loading ? <div role="status" className="flex flex-col gap-3"><p className="m-0 text-body">{t('projects.aiCandidates.loading')}</p><Skeleton lines={3} className="motion-reduce:animate-none" /></div> : null}
         {failed ? <p role="alert">{t('projects.aiCandidates.error')}</p> : null}
       </div>
       <form method="post" onSubmit={submit} className="flex gap-2"><Input aria-label={t('projects.aiCandidates.prompt')} value={message} onChange={(event) => setMessage(event.target.value)} /><Button type="submit">{t('projects.aiCandidates.send')}</Button></form>
