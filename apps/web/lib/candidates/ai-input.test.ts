@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CandidateRowView } from './list-rows';
-import { orderCandidateReasons, prepareCandidateFacts, resolveCandidateTokens, selectCandidatesForExplanation } from './ai-input';
+import { orderCandidateReasons, prepareCandidateFacts, resolveCandidateTokens } from './ai-input';
 
 const own: CandidateRowView = {
   kind: 'OWN', key: 'private-id', id: 'private-id', displayName: '個人名', skills: ['Java'],
@@ -14,15 +14,25 @@ const shared: CandidateRowView = {
 };
 
 describe('AI に渡す候補情報', () => {
-  it('既存の順で最大20人を選び、AI の返却順や欠落で選択を変えない', () => {
-    expect(selectCandidatesForExplanation(Array.from({ length: 21 }, () => own))).toHaveLength(20);
+  it('AI が選んだ候補だけを既存の順で返し、未知と重複を拒否する', () => {
     expect(orderCandidateReasons(['a', 'b'], [{ token: 'b', reason: 'B' }, { token: 'a', reason: 'A' }])).toEqual([
       { token: 'a', reason: 'A' }, { token: 'b', reason: 'B' },
     ]);
-    expect(() => orderCandidateReasons(['a', 'b'], [{ token: 'a', reason: 'A' }])).toThrow();
+    expect(orderCandidateReasons(['a', 'b'], [{ token: 'a', reason: 'A' }])).toEqual([{ token: 'a', reason: 'A' }]);
+    expect(orderCandidateReasons(['a'], [])).toEqual([]);
     expect(() => orderCandidateReasons(['a'], [{ token: 'a', reason: 'A' }, { token: 'a', reason: '重複' }])).toThrow();
     expect(() => orderCandidateReasons(['a'], [{ token: 'b', reason: '未知' }])).toThrow();
   });
+  it('20件を超える候補も AI に渡し、後ろの候補を選択できる', () => {
+    let next = 0;
+    const candidates = Array.from({ length: 21 }, (_, index) => ({ ...own, key: `key-${index}`, id: `id-${index}` }));
+    const prepared = prepareCandidateFacts(candidates, () => `token-${next++}`);
+    expect(prepared.input.candidates).toHaveLength(21);
+    expect(orderCandidateReasons(prepared.input.candidates.map((item) => item.token), [
+      { token: 'token-20', reason: 'スキルが一致' },
+    ])).toEqual([{ token: 'token-20', reason: 'スキルが一致' }]);
+  });
+
   it('スキルと一時識別子だけを渡し、元の候補は外部送信しない', () => {
     const tokens = ['一時1', '一時2'];
     const result = prepareCandidateFacts([own, shared], () => tokens.shift() ?? '');
