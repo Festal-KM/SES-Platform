@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { t } from '../../packages/i18n/src/index';
 import { hostOwner, openTenantSession } from './support/sessions';
 
 for (const item of [
@@ -39,7 +40,7 @@ test('登録AIの実行中に手で入力した値を上書きしない', async 
     await page.getByTestId('intake-text').fill('案件名：解析結果\nJava');
     await page.getByTestId('intake-analyze').click();
     await page.getByTestId('project-name').fill('手入力の名前');
-    await expect(page.getByTestId('intake-start').getByRole('status')).toBeVisible();
+    await expect(page.getByText(t('intake.ai.projectReview'))).toBeVisible();
     await expect(page.getByTestId('project-name')).toHaveValue('手入力の名前');
   } finally { await session.close(); }
 });
