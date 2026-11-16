@@ -56,6 +56,7 @@
 //    - 削除は保存前に限り取り消せる（保存後の復元は持たない —— 監査ログの「削除」が確定した事実か
 //      一時的なものか読めなくなる）。
 //    - 🔴 `id` は既存行にだけ付けて送る（無いと「編集」と「削除 + 追加」が区別できず監査が嘘になる）。
+import { t } from '@ses/i18n';
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import Link from 'next/link';
 import {
@@ -136,6 +137,7 @@ export type EngineerFormValues = {
   readonly displayName: string;
   readonly availability: string;
   readonly availableFrom: string;
+  readonly utilizationRate?: string;
   readonly unitPriceMin: string;
   readonly unitPriceMax: string;
   readonly prefecture: string;
@@ -356,6 +358,7 @@ function toRequestBody(values: EngineerFormValues) {
     displayName: values.displayName.trim(),
     availability: values.availability,
     availableFrom: emptyToNull(values.availableFrom),
+    utilizationRate: numberOrNull(values.utilizationRate ?? ''),
     unitPriceMin: numberOrNull(values.unitPriceMin),
     unitPriceMax: numberOrNull(values.unitPriceMax),
     prefecture: emptyToNull(values.prefecture),
@@ -1304,6 +1307,11 @@ export function EngineerForm({
               </option>
             ))}
           </Select>
+        </Field>
+        <Field className="mb-4" label={t('projects.search.utilizationPercent')}>
+          <Input name="utilizationRate" type="number" min={0} max={100} step={1}
+            value={values.utilizationRate ?? ''} onChange={(event) => update({ utilizationRate: event.target.value })}
+            disabled={phase === 'submitting'} data-testid="engineer-utilization-rate" />
         </Field>
         <Field className="mb-4" label={messages.availableFromLabel}>
           <Input

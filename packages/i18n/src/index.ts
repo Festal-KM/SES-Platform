@@ -2649,6 +2649,16 @@ const ja = {
   'engineers.list.experienceComingSoon':
     '「経験年数」は、登録されたスキルの経験年数で判定します（スキルを指定した場合はそのスキル、指定しない場合は最も長いスキル）。1 人あたりの集約値を列として表示するのは、後続のリリースです。スキルごとの経験年数は人材の詳細で確認できます。',
   // --- 検索条件（`docs/04` §S-005 セクション 1・2 / `F-009`）。T-06-04 ---
+  'engineers.searchPanel.title': '自社人材管理',
+  'engineers.searchPanel.register': '＋新規人材登録',
+  'engineers.searchPanel.localNote': '検索条件はこのブラウザーに保存されます。',
+  'engineers.searchPanel.empty': '保存した条件はありません。',
+  'engineers.searchPanel.storageError': '保存した条件を読み書きできませんでした。',
+  'engineers.searchPanel.saveError': '名前を入力してください。保存できる条件は50件までです。',
+  'engineers.searchPanel.name': '条件名',
+  'engineers.searchPanel.collapse': '検索条件を折りたたむ',
+  'engineers.searchPanel.expand': '検索条件を開く',
+  'engineers.searchPanel.noConditions': '条件は指定されていません。',
   'engineers.list.search.legend': '検索条件',
   'engineers.list.search.q': 'フリーワード（氏名・希望条件）',
   'engineers.list.search.skills': 'スキル',

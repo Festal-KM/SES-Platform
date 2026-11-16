@@ -60,6 +60,7 @@ export type EngineerWhereFragment = {
   prefecture?: null | PrefectureCode | { not: PrefectureCode };
   remoteMode?: null | RemoteMode | { not: RemoteMode };
   availability?: EngineerAvailability;
+  utilizationRate?: { gte: number; lte: number };
   displayName?: FreeWordFilter;
   preferenceNote?: FreeWordFilter;
   AND?: EngineerWhereFragment[];
@@ -106,6 +107,7 @@ export type EngineerSearchCriteria = {
   /** リモート可否。🔴 こちらは**ハード条件**である（下記）。 */
   readonly remote?: RemoteMode;
   readonly availability?: EngineerAvailability;
+  readonly utilizationBand?: 'FULL' | 'HALF_TO_FULL' | 'UNDER_HALF';
   /** フリーワード。 */
   readonly q?: string;
   /** 🔴 既定オフ（`F-009 AC-5`）。「開始日に間に合う人だけ」。 */
@@ -307,6 +309,9 @@ export function engineerSearchPlan(criteria: EngineerSearchCriteria): EngineerSe
     ...engineerSkillConditions(criteria),
     ...engineerPriceConditions(criteria),
   ];
+  if (criteria.utilizationBand === 'FULL') and.push({ utilizationRate: { gte: 100, lte: 100 } });
+  if (criteria.utilizationBand === 'HALF_TO_FULL') and.push({ utilizationRate: { gte: 50, lte: 99 } });
+  if (criteria.utilizationBand === 'UNDER_HALF') and.push({ utilizationRate: { gte: 0, lte: 49 } });
   // 🔴 チェックボックスがオンのソフト条件は**母集団を絞る**（`F-009 AC-5` の「オンのとき」）。
   if (criteria.availableBy !== undefined && criteria.onlyInTime) {
     and.push(inTimeCondition(criteria.availableBy).match);

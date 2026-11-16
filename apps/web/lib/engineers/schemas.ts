@@ -33,7 +33,7 @@ import {
   ENGINEER_SKILL_MODES,
   REMOTE_MODES,
 } from '@ses/db';
-import { PREFECTURE_CODES, YEAR_MONTH_PATTERN } from '@ses/domain';
+import { PREFECTURE_CODES, YEAR_MONTH_PATTERN, PROJECT_UTILIZATION_BANDS } from '@ses/domain';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 import { idCursorPageQuerySchema } from '../api/pagination';
 import { checkboxFilter, optionalFilter, optionalListFilter } from '../api/query-filters';
@@ -111,6 +111,7 @@ const engineerFields = {
   availability: z.enum(ENGINEER_AVAILABILITIES),
   /** 稼働可能時期（`@db.Date`）。`YYYY-MM-DD`。 */
   availableFrom: z.iso.date().nullable(),
+  utilizationRate: z.number().int().min(0).max(100).nullable(),
   unitPriceMin: z.number().int().min(0).max(UNIT_PRICE_MAX).nullable(),
   unitPriceMax: z.number().int().min(0).max(UNIT_PRICE_MAX).nullable(),
   prefecture: z.enum(PREFECTURE_CODES).nullable(),
@@ -151,6 +152,7 @@ export const createEngineerBodySchema = z.object({
   // 🔴 既定は「稼働中」（DB の `@default("WORKING")` と一致させる）。
   availability: engineerFields.availability.default('WORKING'),
   availableFrom: engineerFields.availableFrom.default(null),
+  utilizationRate: engineerFields.utilizationRate.optional(),
   unitPriceMin: engineerFields.unitPriceMin.default(null),
   unitPriceMax: engineerFields.unitPriceMax.default(null),
   prefecture: engineerFields.prefecture.default(null),
@@ -179,6 +181,7 @@ export const updateEngineerBodySchema = z.object({
   displayName: engineerFields.displayName.optional(),
   availability: engineerFields.availability.optional(),
   availableFrom: engineerFields.availableFrom.optional(),
+  utilizationRate: engineerFields.utilizationRate.optional(),
   unitPriceMin: engineerFields.unitPriceMin.optional(),
   unitPriceMax: engineerFields.unitPriceMax.optional(),
   prefecture: engineerFields.prefecture.optional(),
@@ -279,7 +282,10 @@ export const engineerSearchCriteriaFields = {
   onlyCommutable: checkboxFilter(),
 } as const;
 
-export const engineerListQuerySchema = idCursorPageQuerySchema.extend(engineerSearchCriteriaFields);
+export const engineerListQuerySchema = idCursorPageQuerySchema.extend({
+  ...engineerSearchCriteriaFields,
+  utilizationBand: optionalFilter(z.enum(PROJECT_UTILIZATION_BANDS)),
+});
 
 export type EngineerListQuery = z.infer<typeof engineerListQuerySchema>;
 

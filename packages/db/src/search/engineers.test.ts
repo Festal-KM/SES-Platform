@@ -311,3 +311,12 @@ describe('🔴 F-009 AC-1: 並びのキーが決定的である', () => {
     expect(json).not.toContain('rank');
   });
 });
+
+
+describe('人材の稼働率', () => {
+  it('選んだ人月の範囲で絞り込み、未設定は条件に含めない', () => {
+    expect(engineerSearchPlan(criteria({ utilizationBand: 'FULL' })).where.AND).toContainEqual({ utilizationRate: { gte: 100, lte: 100 } });
+    expect(engineerSearchPlan(criteria({ utilizationBand: 'HALF_TO_FULL' })).where.AND).toContainEqual({ utilizationRate: { gte: 50, lte: 99 } });
+    expect(engineerSearchPlan(criteria({ utilizationBand: 'UNDER_HALF' })).where.AND).toContainEqual({ utilizationRate: { gte: 0, lte: 49 } });
+  });
+});

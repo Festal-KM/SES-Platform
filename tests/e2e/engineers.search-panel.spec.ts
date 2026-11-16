@@ -1,0 +1,29 @@
+import { expect, test } from '@playwright/test';
+import { t } from '../../packages/i18n/src/index';
+import { hostOwner, openTenantSession } from './support/sessions';
+import { expectNoHorizontalOverflow } from './support/assertions';
+
+test('自社人材の検索条件を保存し、折りたたんでも検索できる', async ({ browser }) => {
+  const session = await openTenantSession(browser, hostOwner(1));
+  const page = session.page;
+  try {
+    await page.goto('/engineers');
+    await expect(page.getByRole('heading', { name: t('engineers.searchPanel.title') })).toBeVisible();
+    const query = page.getByTestId('engineer-list-filter-q');
+    await query.fill('検索確認');
+    await page.getByRole('button', { name: t('projects.search.save'), exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel(t('engineers.searchPanel.name')).fill('確認用の条件');
+    await dialog.getByRole('button', { name: t('projects.search.save') }).click();
+    await page.getByRole('tab', { name: /保存した条件/ }).click();
+    await expect(page.getByRole('button', { name: '確認用の条件' })).toBeVisible();
+    await page.getByRole('button', { name: '確認用の条件' }).click();
+    await expect(page).toHaveURL(/q=%E6%A4%9C%E7%B4%A2%E7%A2%BA%E8%AA%8D/);
+    await page.getByRole('button', { name: t('engineers.searchPanel.collapse') }).click();
+    await expect(page.getByTestId('engineer-list-search')).toBeVisible();
+    await page.getByTestId('engineer-list-search').click();
+    await expect(page).toHaveURL(/q=%E6%A4%9C%E7%B4%A2%E7%A2%BA%E8%AA%8D/);
+    await expectNoHorizontalOverflow('人材検索', page);
+    session.outbound.assertNone();
+  } finally { await session.close(); }
+});

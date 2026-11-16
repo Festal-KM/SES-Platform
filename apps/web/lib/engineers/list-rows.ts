@@ -204,6 +204,7 @@ export function engineerListHref(query: EngineerListQuery, cursor: string | null
   if (query.prefecture !== undefined) params.set('prefecture', query.prefecture);
   if (query.remote !== undefined) params.set('remote', query.remote);
   if (query.availability !== undefined) params.set('availability', query.availability);
+  if (query.utilizationBand !== undefined) params.set('utilizationBand', query.utilizationBand);
   if (query.q !== undefined) params.set('q', query.q);
   // 🔴 既定オフ（`F-009 AC-5`）。オンのときだけ載る ＝ **URL からオンだと分かる**。
   if (query.onlyInTime) params.set('onlyInTime', '1');
@@ -275,6 +276,10 @@ export function activeEngineerFilters(
   const push = (key: string, label: string, next: EngineerListQuery): void => {
     filters.push({ key, label, href: toHref(next) });
   };
+
+  if (query.utilizationBand !== undefined) {
+    push('utilizationBand', `${t('projects.search.utilization')}: ${t(`projects.search.band.${query.utilizationBand}`)}`, without(query, { utilizationBand: undefined }));
+  }
 
   for (const skillId of query.skills ?? []) {
     push(

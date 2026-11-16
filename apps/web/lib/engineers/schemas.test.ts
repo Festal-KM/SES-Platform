@@ -428,3 +428,14 @@ describe('careers[]（T-09-12）', () => {
     expect(updateEngineerBodySchema.parse({ careers: [] }).careers).toEqual([]);
   });
 });
+
+
+describe('人材の稼働率', () => {
+  it('0〜100の整数と検索区分を受け付ける', () => {
+    expect(createEngineerBodySchema.parse({ displayName: 'a', utilizationRate: 0 }).utilizationRate).toBe(0);
+    expect(createEngineerBodySchema.safeParse({ displayName: 'a', utilizationRate: 101 }).success).toBe(false);
+    expect(createEngineerBodySchema.safeParse({ displayName: 'a', utilizationRate: 0.5 }).success).toBe(false);
+    expect(engineerListQuerySchema.parse({ utilizationBand: 'UNDER_HALF' }).utilizationBand).toBe('UNDER_HALF');
+    expect(engineerListQuerySchema.safeParse({ utilizationBand: 'UNKNOWN' }).success).toBe(false);
+  });
+});

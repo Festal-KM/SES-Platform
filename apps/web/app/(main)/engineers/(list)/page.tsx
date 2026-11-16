@@ -90,8 +90,8 @@ export default async function EngineerLedgerPage({
           ⚠️ testid（`engineer-list-register`）は移設前から凍結されている値である（`U-22`）。 */}
       <PageHeading
         trail={ENGINEER_LIST_TRAIL}
-        title={t('engineers.list.title')}
-        primaryAction={engineerListPrimaryAction(canRegister)}
+        title={t(isPartner ? 'engineers.list.title' : 'engineers.searchPanel.title')}
+        primaryAction={isPartner ? engineerListPrimaryAction(canRegister) : canRegister ? { labelKey: 'engineers.searchPanel.register', href: '/engineers/new', kind: 'ACTION' } : null}
         canAct={isPageActionRole(ctx.role)}
         testId="engineer-list-register"
       />
@@ -113,6 +113,7 @@ export default async function EngineerLedgerPage({
           prefecture: query.prefecture ?? '',
           remote: query.remote ?? '',
           availability: query.availability ?? '',
+          utilizationBand: query.utilizationBand ?? '',
           onlyInTime: query.onlyInTime,
           onlyCommutable: query.onlyCommutable,
         }}
@@ -122,6 +123,7 @@ export default async function EngineerLedgerPage({
         remoteOptions={engineerRemoteFilterOptions}
         availabilityOptions={engineerAvailabilityFilterOptions}
         activeFilters={activeEngineerFilters(query, skillNames)}
+        searchScope={isPartner ? undefined : { tenantId: ctx.tenantId, userId: ctx.userId }}
         // 🔴 取引先には所属区分の列を出さない（docs/04 §S-005 権限差分）。出所は ctx である。
         showOwnershipColumn={!isPartner}
         // 🔴 導線は帯へ移したので、本体が使うのは「理由テキストを出すか」の判定だけである。
