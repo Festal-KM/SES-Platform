@@ -3063,9 +3063,9 @@ const ja = {
   'projects.detail.proposals.comingSoon': '提案の一覧は後続のリリースで表示されます。',
   // ✅ T-08-05: `S-016` へ接続した（それまでは `projects.detail.candidates.comingSoon` の注記だった）。
   'projects.detail.candidates.open': '候補を探す',
-  'projects.aiCandidates.open': 'AIで要員候補を探す',
+  'projects.aiCandidates.open': 'AIリサーチ',
   'projects.aiCandidates.openList': '候補一覧を開く',
-  'projects.aiCandidates.title': 'AI候補検索',
+  'projects.aiCandidates.title': 'AIリサーチ',
   'projects.aiCandidates.close': '閉じる',
   'projects.aiCandidates.prompt': '重視するスキルを入力',
   'projects.aiCandidates.send': '探す',

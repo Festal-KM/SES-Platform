@@ -52,7 +52,7 @@ import { formatDateTimeJst } from "../../../../lib/format/datetime";
 import type { ProjectDetailView } from "../../../../lib/projects/service";
 import { ProjectCardEditTrigger, ProjectDetailCopyAction } from "./project-card-editor";
 import { ProjectDetailStatus } from "./project-detail-status";
-import { ProjectAiCandidates, ProjectAiLayout } from "./project-ai-candidates";
+import { ProjectAiBody, ProjectAiCandidates, ProjectAiLayout } from "./project-ai-candidates";
 
 export type ProjectDetailScreenMessages = {
   readonly sectionRequirements: string;
@@ -584,6 +584,7 @@ export function ProjectDetailScreen({
         </p>
       </div>
 
+      <ProjectAiBody>
       {cards && view.audience === "HOST" ? (
         // ✅ 2026-11-02: 公開範囲と提案は、案件詳細のタブ（概要の「公開状況」/ 関連・履歴）の中に置く。
         isValidElement<{ visibility?: ReactNode; proposals?: ReactNode }>(cards) ? (
@@ -653,6 +654,7 @@ export function ProjectDetailScreen({
           </div>
         </div>
       )}
+      </ProjectAiBody>
     </div>
     </ProjectAiLayout>
   );
