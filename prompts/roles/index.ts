@@ -10,6 +10,7 @@
 
 import { prompt as gateInspectorV1 } from './gate-inspector.v1.js';
 import { prompt as matchExplainerV1 } from './match-explainer.v1.js';
+import { prompt as skillNormalizerV1 } from './skill-normalizer.v1.js';
 import { prompt as matchExplainerV2 } from './match-explainer.v2.js';
 import type { GateInspectorPromptModule } from './contracts.js';
 
@@ -37,17 +38,22 @@ export const MATCH_EXPLAINER_PROMPTS = {
   'match-explainer.v2': matchExplainerV2,
 } as const;
 
+export const SKILL_NORMALIZER_PROMPTS = {
+  'skill-normalizer.v1': skillNormalizerV1,
+} as const;
+
 /**
  * 🔴 **現行版の登録表**（docs/05 §7.7「版の切替は `prompts/roles/index.ts` の 1 行を書き換える」）。
  *
- * ⚠️ ここに現れるのは**プロンプトが実装済みのロールだけ**である。残る 5 ロール
- *    （`sheet-parser` / `skill-normalizer` / `match-explainer` / `proposal-drafter` /
+ * ⚠️ ここに現れるのは**プロンプトが実装済みのロールだけ**である。残る 3 ロール
+ *    （`sheet-parser` / `proposal-drafter` /
  *    `renewal-advisor`）は後続スプリントで追加される。`packages/ai` は未登録のロールを
  *    引かれたら例外にする（既定のプロンプトへ暗黙にフォールバックしない）。
  */
 export const ROLE_PROMPTS = {
   'gate-inspector': GATE_INSPECTOR_PROMPTS['gate-inspector.v1'],
   'match-explainer': MATCH_EXPLAINER_PROMPTS['match-explainer.v2'],
+  'skill-normalizer': SKILL_NORMALIZER_PROMPTS['skill-normalizer.v1'],
 } as const;
 
 export type RegisteredPromptRole = keyof typeof ROLE_PROMPTS;

@@ -117,6 +117,7 @@ export { decideRetry, MAX_LLM_ATTEMPTS, RETRY_BACKOFF_MS, RETRY_JITTER_RATIO, ty
 export * from './roles/types.js';
 export { createRoleRunner, estimateInputTokens, type AiRoleRunner, type AiRuntime } from './run.js';
 export { matchExplainerSpec, matchExplainerOutputSchema, type MatchExplainerInput, type MatchExplainerOutput } from './roles/match-explainer.js';
+export { skillNormalizerSpec, skillNormalizerOutputSchema, type SkillNormalizerInput, type SkillNormalizerOutput } from './roles/skill-normalizer.js';
 // 🔴 プロンプトインジェクションの境界（docs/05 §7.8）。ロールのプロンプトは外部由来の本文を
 //    `wrapUntrusted` で囲み、システム側に `UNTRUSTED_BOUNDARY_INSTRUCTION` を必ず含める。
 export {

@@ -809,6 +809,7 @@ describe('AC-7 ⑧ 運営者の DB ロールは返却データに到達できな
       'chat_saved_messages',
       'chat_thread_announcements',
       'engineer_careers',
+      'intake_ai_runs',
       'project_candidate_ai_runs',
     ]);
     // ✅ 2026-10-16（#129）: 消さない表を「読むだけ」のポリシー（chat_threads）を置いていた。

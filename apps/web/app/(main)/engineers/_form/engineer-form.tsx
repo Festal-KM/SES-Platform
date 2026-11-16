@@ -1,4 +1,5 @@
 'use client';
+import { IntakeStart } from '../../../_components/intake-start';
 
 // apps/web/app/(main)/engineers/_form/engineer-form.tsx
 // `S-007` エンジニアの登録・編集 — フォーム本体（docs/04 §S-007 / `F-008` / `F-010`）。T-05-01。
@@ -277,6 +278,7 @@ export type EngineerFormMessages = {
 
 export type EngineerFormProps = {
   readonly mode: 'CREATE' | 'EDIT';
+  readonly canUseIntake?: boolean;
   /** `EDIT` のときだけ非 null。`PATCH /api/engineers/{id}` の対象。 */
   readonly engineerId: string | null;
   readonly initial: EngineerFormValues;
@@ -389,6 +391,7 @@ function toRequestBody(values: EngineerFormValues) {
 
 export function EngineerForm({
   mode,
+  canUseIntake = false,
   engineerId,
   initial,
   skillDictionary,
@@ -690,6 +693,21 @@ export function EngineerForm({
       data-mode={mode}
       className="flex flex-col gap-6"
     >
+      {mode === 'CREATE' && canUseIntake ? <IntakeStart kind="ENGINEER" skillDictionary={skillDictionary} onApply={(draft, skills) => {
+        setValues((current) => {
+          const known = new Set(current.skills.map((entry) => entry.skillId));
+          return { ...current,
+            displayName: current.displayName || draft.name?.slice(0, 200) || '',
+            preferenceNote: current.preferenceNote || draft.summary || '',
+            availableFrom: current.availableFrom || draft.availableFrom || '',
+            unitPriceMin: current.unitPriceMin || (draft.priceMin === undefined ? '' : String(draft.priceMin)),
+            unitPriceMax: current.unitPriceMax || (draft.priceMax === undefined ? '' : String(draft.priceMax)),
+            skills: [...current.skills, ...skills.filter((skill) => !known.has(skill.id)).map((skill) => ({ skillId: skill.id, name: skill.name, yearsOfExperience: '', level: '' }))],
+          };
+        });
+        setDirty(true); setPhase((current) => current === 'saved' ? 'idle' : current);
+      }} /> : null}
+      <span id="intake-manual-start" tabIndex={-1} />
       {phase === 'error' ? (
         <p role="alert" className="text-body text-danger" data-testid="engineer-form-error">
           {messages.saveError}

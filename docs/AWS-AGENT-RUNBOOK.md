@@ -15,9 +15,9 @@ mainから開発への自動反映・停止中の扱い・手動再実行・復�
 
 2026-11-06、宮田の承認により、画面調整の専用プレビューだけは SSM 転送を使える。正式な開発画面とは別であり、使用方法と制約は [画面プレビュー](./AWS-UI-PREVIEW.md) を参照する。
 
-## 開発環境の候補検索で Claude を使う
+## 開発環境の候補検索・登録時の技術名整理で Claude を使う
 
-候補検索だけを実 Claude に接続できる。開発環境のその他の AI 処理・メール・署名・課金の選択は変更しない。専用シークレットは `/ses-platform-development/candidate-ai` であり、既存の `/ses-platform-development/external` から Claude キーだけをコピーする。既存値は上書きしない。VM は専用シークレットのみ読み取れ、既存の external と他環境の秘密値は拒否される。キーは worker 専用の揮発ファイルと環境変数に入り、web と共有設定ファイルには渡さない。
+候補検索と、明示的に有効にした登録時の技術名整理を実 Claude に接続できる。開発環境のその他の AI 処理・メール・署名・課金の選択は変更しない。専用シークレットは `/ses-platform-development/candidate-ai` であり、既存の `/ses-platform-development/external` から Claude キーだけをコピーする。既存値は上書きしない。VM は専用シークレットのみ読み取れ、既存の external と他環境の秘密値は拒否される。キーは worker 専用の揮発ファイルと環境変数に入り、web と共有設定ファイルには渡さない。
 
 main の CI 成功後、開発環境だけで次の順に行う。変更案は WorkspaceRole 以外の変更があれば中断する。
 
@@ -27,7 +27,7 @@ node scripts/aws-candidate-ai-policy.mjs plan
 node scripts/aws-candidate-ai-policy.mjs apply
 ```
 
-スタック更新成功を確認後、SSM で `/workspaces/ses-config/candidate-ai-enabled` を root 所有で作成し、通常の main の AWS 開発環境配備を行う。以後の配備時にキーを取得する。無効にするときは同じマーカーを取り除いて通常配備する。取得失敗時は配備を失敗させ、黙って模擬応答には切り替えない。API キー・シークレット値をログ、チャット、CI の出力に載せない。
+スタック更新成功を確認後、SSM で `/workspaces/ses-config/candidate-ai-enabled` を root 所有で作成し、通常の main の AWS 開発環境配備を行う。登録時の技術名整理も実接続する場合は、利用者の承認後に `/workspaces/ses-config/intake-ai-enabled` も root 所有で作成する。以後の配備時にキーを取得する。無効にするときは同じマーカーを取り除いて通常配備する。取得失敗時は配備を失敗させ、黙って模擬応答には切り替えない。API キー・シークレット値をログ、チャット、CI の出力に載せない。
 
 ## 新しいPCの準備
 

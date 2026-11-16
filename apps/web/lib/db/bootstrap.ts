@@ -76,7 +76,8 @@ import { configureAccountMailQueue, PendingAccountMailQueue } from '../jobs/acco
 import { configureDomainJobQueue, PendingDomainJobQueue } from '../jobs/domain-jobs';
 import { configureGateRunJobQueue } from '../jobs/gate-run-queue';
 import { configureMatchCandidatesQueue } from '../jobs/match-candidates-queue';
-import { MATCH_CANDIDATES_JOB, type MatchCandidatesJob } from '@ses/connectors';
+import { MATCH_CANDIDATES_JOB, INTAKE_PARSE_JOB, type MatchCandidatesJob, type IntakeParseJob } from '@ses/connectors';
+import { configureIntakeParseQueue } from '../jobs/intake-parse-queue';
 import { configureSendProposalJobQueue } from '../jobs/send-proposal-queue';
 import { configureExportGenerateJobQueue } from '../jobs/export-generate-queue';
 import { resolveInviteUrlRuntime, type InviteUrlRuntime } from '../invitations/invite-link';
@@ -293,6 +294,7 @@ export function ensureDbConfigured(): void {
   //    🔴 `Queue` の実体化は最初の enqueue まで遅延する（登録しただけで Redis へ繋ぎにいかない）。
   configureGateRunJobQueue(createBullMqGateRunQueue({ url: env.REDIS_URL }));
   configureMatchCandidatesQueue(createBullMqJobEnqueuer<MatchCandidatesJob>({ queueName: MATCH_CANDIDATES_JOB, connection: { url: env.REDIS_URL } }));
+  configureIntakeParseQueue(createBullMqJobEnqueuer<IntakeParseJob>({ queueName: INTAKE_PARSE_JOB, connection: { url: env.REDIS_URL } }));
   // 🔴 T-09-06: `send.proposal` の enqueue 先（docs/05 §9.4 / §10.2）。`gate.run` と同じ判断で**環境で分岐しない** ——
   //    積んだだけで誰も送らないキューは「送信を受け付けたのに永久に送られない」（`APPROVED` のまま）という壊れ方であり、
   //    `CLAUDE.md` §11.1 そのものである。`Queue` の実体化は最初の enqueue まで遅延する。
