@@ -7,5 +7,6 @@ describe('登録 AI に渡す情報', () => {
     expect(() => intakeFactsForAi({ skills: ['Java'], original: '山田太郎・80万円' })).toThrow();
     expect(() => intakeFactsForAi({ skills: ['John Smith'] })).toThrow();
     expect(() => intakeFactsForAi({ skills: ['Java', 'Java'] })).toThrow();
+    expect(() => intakeFactsForAi({ skills: [] })).toThrow();
   });
 });

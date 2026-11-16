@@ -8,7 +8,7 @@ import { InvalidJobPayloadError, requireUuid } from './payload.js';
 function parseIntakeInput(input: unknown): { readonly skills: string[] } {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) throw new Error('技術名が不正です');
   const value = input as Record<string, unknown>;
-  if (Object.keys(value).some((key) => key !== 'skills') || !Array.isArray(value.skills) || value.skills.length > 50
+  if (Object.keys(value).some((key) => key !== 'skills') || !Array.isArray(value.skills) || value.skills.length === 0 || value.skills.length > 50
     || value.skills.some((name) => typeof name !== 'string' || name.length === 0 || name.length > 80 || !isSafeIntakeSkill(name))) {
     throw new Error('技術名が不正です');
   }
@@ -36,10 +36,6 @@ export function createIntakeParseHandler(deps: {
     try {
       const facts = intakeFactsForAi(run.input);
       const original = parseIntakeInput(run.input).skills;
-      if (original.length === 0) {
-        await finishIntakeAiRun(ctx, { id: runId, now: deps.now(), output: { skills: [] } });
-        return;
-      }
       const masked = mask(facts, { fullNames: [], birthDates: [], emails: [], phones: [], affiliations: [], unitPrices: [], endClientNames: [] });
       const runner = createRoleRunner({ client: deps.aiClient, usage: createAiUsageRecorder(job), costGuard: createAiCostGuard({ job, dailyLimitUsd: deps.aiDailyCostLimitUsd }), models: deps.models });
       const result = await runner.runRole(skillNormalizerSpec, { facts: masked.text }, { tenantId, targetType: 'INTAKE', targetId: runId, now: deps.now });

@@ -6,9 +6,9 @@ import { withApiRoute } from '../../../../lib/api/withApiRoute';
 import { NotFoundError } from '../../../../lib/api/errors';
 import { requireIntakeParseQueue } from '../../../../lib/jobs/intake-parse-queue';
 
-const skills = z.array(z.string().trim().min(1).max(80).refine(isSafeIntakeSkill)).max(50);
+const skills = z.array(z.string().trim().min(1).max(80).refine(isSafeIntakeSkill)).min(1).max(50);
 const inputSchema = z.object({ kind: z.enum(['PROJECT', 'ENGINEER']), skills }).strict();
-const outputSchema = z.object({ skills });
+const outputSchema = z.object({ skills: z.array(z.string().trim().min(1).max(80).refine(isSafeIntakeSkill)).max(50) });
 const editable = ['OWNER', 'ADMIN', 'SALES'] as const;
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
