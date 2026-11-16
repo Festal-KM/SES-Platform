@@ -172,7 +172,7 @@ export const DETAIL_PANE_VIEWPORT_CLASSES =
 
 /** 案件詳細の候補パネル。広い画面ではヘッダーと上下の余白を避ける。 */
 export const AI_CANDIDATE_PANEL_VIEWPORT_CLASSES =
-  '2xl:sticky 2xl:top-[calc(var(--app-banner-h,0px)+4.5rem)] 2xl:h-[calc(100dvh-var(--app-banner-h,0px)-11rem)] 2xl:min-h-80';
+  '2xl:sticky 2xl:top-[calc(var(--app-banner-h,0px)+4.5rem)] 2xl:h-[calc(100dvh-var(--app-banner-h,0px)-14rem)] 2xl:min-h-80';
 
 /** 候補パネルの開閉。動きを減らす設定を尊重する。 */
 export const AI_CANDIDATE_PANEL_MOTION_CLASSES =
