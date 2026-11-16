@@ -1507,3 +1507,42 @@ describe('🔴 F-009: エンジニアの複合検索と決定的順序（T-06-04
     });
   });
 });
+
+
+describe('人材の稼働率', () => {
+  it('稼働率を保存し、閲覧できる人材だけを区分で検索する', async () => {
+    const host = await ctxOf(HOST_1, 'SALES');
+    const partner = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+    const low = await createdIdOf(await postEngineer(host, { displayName: `${MARKER}低稼働`, utilizationRate: 0 }));
+    const high = await createdIdOf(await postEngineer(host, { displayName: `${MARKER}高稼働`, utilizationRate: 100 }));
+    const other = await createdIdOf(await postEngineer(partner, { displayName: `${MARKER}取引先`, utilizationRate: 100 }));
+    expect((await engineerRow(low)).utilizationRate).toBe(0);
+    expect((await engineerRow(high)).utilizationRate).toBe(100);
+    const lowResult = await listBodyOf(await getEngineers(host, '?utilizationBand=UNDER_HALF'));
+    const highResult = await listBodyOf(await getEngineers(host, '?utilizationBand=FULL'));
+    expect(lowResult.items.map((item) => item.id)).toContain(low);
+    expect(lowResult.items.map((item) => item.id)).not.toContain(high);
+    expect(highResult.items.map((item) => item.id)).toContain(high);
+    expect(highResult.items.map((item) => item.id)).not.toContain(low);
+    expect(highResult.items.map((item) => item.id)).not.toContain(other);
+    expect((await patchEngineer(host, high, { utilizationRate: 50 })).status).toBe(200);
+    expect((await engineerRow(high)).utilizationRate).toBe(50);
+  });
+});
+
+
+describe('人材の在住地', () => {
+  it('希望勤務地と分けて保存し、自社で閲覧できる一致行だけを検索する', async () => {
+    const host = await ctxOf(HOST_1, 'SALES');
+    const partner = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+    const tokyo = await createdIdOf(await postEngineer(host, { displayName: `${MARKER}東京在住`, residencePrefecture: '13', prefecture: '27' }));
+    const osaka = await createdIdOf(await postEngineer(host, { displayName: `${MARKER}大阪在住`, residencePrefecture: '27', prefecture: '13' }));
+    const other = await createdIdOf(await postEngineer(partner, { displayName: `${MARKER}他社在住`, residencePrefecture: '13' }));
+    const result = await listBodyOf(await getEngineers(host, '?residencePrefecture=13'));
+    expect(result.items.map((item) => item.id)).toContain(tokyo);
+    expect(result.items.map((item) => item.id)).not.toContain(osaka);
+    expect(result.items.map((item) => item.id)).not.toContain(other);
+    expect((await patchEngineer(host, tokyo, { residencePrefecture: '27' })).status).toBe(200);
+    expect((await engineerRow(tokyo)).residencePrefecture).toBe('27');
+  });
+});

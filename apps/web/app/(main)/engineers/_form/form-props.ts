@@ -59,6 +59,8 @@ export const EMPTY_ENGINEER_FORM_VALUES: EngineerFormValues = {
   // 🔴 DB の既定（`engineers.availability` の `@default("WORKING")`）と一致させる。
   availability: 'WORKING',
   availableFrom: '',
+  utilizationRate: '',
+  residencePrefecture: '',
   unitPriceMin: '',
   unitPriceMax: '',
   prefecture: '',
@@ -78,6 +80,8 @@ export function toEngineerFormValues(view: EngineerEditView): EngineerFormValues
     displayName: view.displayName,
     availability: view.availability,
     availableFrom: view.availableFrom ?? '',
+    utilizationRate: view.utilizationRate == null ? '' : String(view.utilizationRate),
+    residencePrefecture: view.residencePrefecture ?? '',
     unitPriceMin: view.unitPriceMin === null ? '' : String(view.unitPriceMin),
     unitPriceMax: view.unitPriceMax === null ? '' : String(view.unitPriceMax),
     prefecture: view.prefecture ?? '',

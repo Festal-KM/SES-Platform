@@ -46,7 +46,11 @@ import { isPageActionRole, ENGINEER_LIST_TRAIL } from '../../../../lib/shell/pag
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = { title: t('engineers.list.title') };
+export async function generateMetadata(): Promise<Metadata> {
+  const outcome = await resolveTenantCtxOutcome();
+  const own = outcome.status === 'AUTHENTICATED' && outcome.ctx.partnerCompanyId === null;
+  return { title: t(own ? 'engineers.searchPanel.title' : 'engineers.list.title') };
+}
 
 export default async function EngineerLedgerPage({
   searchParams,
@@ -90,8 +94,8 @@ export default async function EngineerLedgerPage({
           ⚠️ testid（`engineer-list-register`）は移設前から凍結されている値である（`U-22`）。 */}
       <PageHeading
         trail={ENGINEER_LIST_TRAIL}
-        title={t('engineers.list.title')}
-        primaryAction={engineerListPrimaryAction(canRegister)}
+        title={t(isPartner ? 'engineers.list.title' : 'engineers.searchPanel.title')}
+        primaryAction={isPartner ? engineerListPrimaryAction(canRegister) : canRegister ? { labelKey: 'engineers.searchPanel.register', href: '/engineers/new', kind: 'ACTION' } : null}
         canAct={isPageActionRole(ctx.role)}
         testId="engineer-list-register"
       />
@@ -110,9 +114,11 @@ export default async function EngineerLedgerPage({
           priceMin: query.priceMin === undefined ? '' : String(query.priceMin),
           priceMax: query.priceMax === undefined ? '' : String(query.priceMax),
           availableBy: query.availableBy ?? '',
+          residencePrefecture: query.residencePrefecture ?? '',
           prefecture: query.prefecture ?? '',
           remote: query.remote ?? '',
           availability: query.availability ?? '',
+          utilizationBand: query.utilizationBand ?? '',
           onlyInTime: query.onlyInTime,
           onlyCommutable: query.onlyCommutable,
         }}
@@ -122,6 +128,7 @@ export default async function EngineerLedgerPage({
         remoteOptions={engineerRemoteFilterOptions}
         availabilityOptions={engineerAvailabilityFilterOptions}
         activeFilters={activeEngineerFilters(query, skillNames)}
+        searchScope={isPartner ? undefined : { tenantId: ctx.tenantId, userId: ctx.userId }}
         // 🔴 取引先には所属区分の列を出さない（docs/04 §S-005 権限差分）。出所は ctx である。
         showOwnershipColumn={!isPartner}
         // 🔴 導線は帯へ移したので、本体が使うのは「理由テキストを出すか」の判定だけである。

@@ -80,6 +80,9 @@
 //    「文言が無い状態の描画」を試せなくなる。**検索条件つきのリンク（ページング・条件の解除）は
 //    props で受け取る** —— 組み立てはテストできる場所（`engineerListHref`）に置く。
 import Link from 'next/link';
+import type { ReactNode } from 'react';
+import { t } from '@ses/i18n';
+import { EngineerSearchPanel, EngineerUtilizationFilter } from './engineer-search-panel';
 import {
   Button,
   Card,
@@ -88,6 +91,7 @@ import {
   DataTable,
   EmptyState,
   Field,
+  Icon,
   Input,
   Pagination,
   SECONDARY_LINK_CLASSES,
@@ -125,8 +129,10 @@ export type EngineerListFilterValues = {
   readonly priceMax: string;
   readonly availableBy: string;
   readonly prefecture: string;
+  readonly residencePrefecture?: string;
   readonly remote: string;
   readonly availability: string;
+  readonly utilizationBand?: string;
   readonly onlyInTime: boolean;
   readonly onlyCommutable: boolean;
 };
@@ -311,6 +317,11 @@ function engineerColumns(
   ];
 }
 
+function EngineerDetailSection({ enabled, children }: { readonly enabled: boolean; readonly children: ReactNode }) {
+  if (!enabled) return <>{children}</>;
+  return <details className="min-w-0"><summary className="flex cursor-pointer items-center bg-bg-subtle px-3 py-3 text-body font-semibold text-fg">{t('projects.search.advanced')}<Icon name="chevron-down" className="ml-auto" /></summary><div className="pt-3">{children}</div></details>;
+}
+
 export function EngineerLedgerScreen({
   rows,
   filters,
@@ -320,6 +331,7 @@ export function EngineerLedgerScreen({
   remoteOptions,
   availabilityOptions,
   activeFilters,
+  searchScope,
   showOwnershipColumn,
   canRegister,
   nextPageHref,
@@ -339,6 +351,7 @@ export function EngineerLedgerScreen({
    *    導線」）。空配列なら絞り込みが効いていない。
    */
   readonly activeFilters: readonly EngineerActiveFilterView[];
+  readonly searchScope?: { readonly tenantId: string; readonly userId: string };
   /**
    * 🔴 取引先には所属区分の列を出さない（docs/04 §S-005 権限差分「全件が自社であるため
    *    意味がない」）。判定の出所は `ctx.partnerCompanyId` であり、行の値ではない。
@@ -387,26 +400,34 @@ export function EngineerLedgerScreen({
                     そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。
                     ⚠️ `mb-0` / `w-full` は帯の中に置いたための余白・幅の調整である（`cn()` の規律 1）。
                        `FILTER_FORM_CLASSES` の `mb-6` は帯の外に置く 3 画面がまだ使っている。 */}
+                <EngineerSearchPanel activeFilters={activeFilters} scope={searchScope}>
                 <form
-                  className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full')}
+                  key={JSON.stringify(filters)}
+                  className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full', searchScope && 'flex flex-col items-stretch gap-4')}
                   method="get"
                   action="/engineers"
+                  id="engineer-search-form"
                   data-testid="engineer-list-filters"
                 >
                   <fieldset className="contents">
                     <legend className="sr-only">{messages.searchLegend}</legend>
-                    {/* 🔴 フリーワードは**全幅**（ワイヤーフレームの検索欄。`S-010` と同じ）。最も使う
-                        条件を 1 行目に単独で置く —— 他の条件と同じ幅に並べると、入力できる語数が
-                        画面幅で変わる。 */}
-                    <Field className="sm:col-span-2 lg:col-span-3 xl:col-span-4" label={messages.searchQ}>
-                      <Input
-                        type="search"
-                        name="q"
-                        defaultValue={filters.q}
-                        data-testid="engineer-list-filter-q"
-                      />
+                    {searchScope ? <p className="m-0 bg-bg-subtle px-3 py-3 text-body font-semibold text-fg">{t('projects.search.basic')}</p> : null}
+                    <div className={cn(searchScope ? 'grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-4' : 'contents')}>
+                    <Field label={messages.searchAvailability}>
+                      <Select
+                        name="availability"
+                        defaultValue={filters.availability}
+                        data-testid="engineer-list-filter-availability"
+                      >
+                        {availabilityOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
                     </Field>
-                    <Field as="div" label={messages.searchSkills}>
+                    <div className={cn(searchScope ? 'grid grid-cols-1 gap-3 sm:col-span-2 sm:grid-cols-2' : 'contents')}>
+                    <Field as="div" className={cn(searchScope && "sm:col-span-2")} label={messages.searchSkills}>
                       {/* 🔴 辞書からの選択のみ（自由入力は別名候補の起票であり `S-007` の責務。
                           `F-010 AC-1`「採用されるまで検索の正規化に使われない」）。 */}
                       {/* ✅ 2026-11-01（人間の指示）: 複数選択は共通部品に統一（`<select multiple>` をやめた）。
@@ -421,12 +442,12 @@ export function EngineerLedgerScreen({
                       />
                       {/* 🔴 `FieldDescription`（`<p>`）にしない —— `<label>` の中に `<p>` を入れると
                           説明文が入力欄のアクセシブル名に畳み込まれる（`@ses/ui` の `field.tsx` 冒頭）。 */}
-                      <span className="text-xs text-fg-muted">{messages.searchSkillsHint}</span>
+                      {!searchScope ? <span className="text-xs text-fg-muted">{messages.searchSkillsHint}</span> : null}
                     </Field>
                     <Field label={messages.searchSkillMode}>
                       <Select
                         name="skillMode"
-                        defaultValue={filters.skillMode}
+                        defaultValue={searchScope && filters.skills.length === 0 && filters.skillMode === 'AND' ? 'OR' : filters.skillMode}
                         data-testid="engineer-list-filter-skill-mode"
                       >
                         {skillModeOptions.map((option) => (
@@ -446,6 +467,21 @@ export function EngineerLedgerScreen({
                         data-testid="engineer-list-filter-years-min"
                       />
                     </Field>
+                    </div>
+                    <Field label={searchScope ? t('engineers.searchPanel.workStyle') : messages.searchRemote}>
+                      <Select
+                        name="remote"
+                        defaultValue={filters.remote}
+                        data-testid="engineer-list-filter-remote"
+                      >
+                        {remoteOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {searchScope && option.value === 'ONSITE_ONLY' ? t('engineers.searchPanel.onsite') : searchScope && option.value === 'PARTIAL_REMOTE' ? t('engineers.searchPanel.partialRemote') : searchScope && option.value === 'FULL_REMOTE' ? t('engineers.searchPanel.fullRemote') : option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                      <div className={cn(searchScope ? 'grid grid-cols-2 gap-2' : 'contents')}>
                     <Field label={messages.searchPriceMin}>
                       <Input
                         type="number"
@@ -466,15 +502,12 @@ export function EngineerLedgerScreen({
                         data-testid="engineer-list-filter-price-max"
                       />
                     </Field>
-                    <Field label={messages.searchAvailableBy}>
-                      <Input
-                        type="date"
-                        name="availableBy"
-                        defaultValue={filters.availableBy}
-                        data-testid="engineer-list-filter-available-by"
-                      />
-                    </Field>
-                    <Field label={messages.searchPrefecture}>
+                      </div>
+                    {searchScope ? <Field label={t('engineers.searchPanel.residence')}>
+                      <Select name="residencePrefecture" defaultValue={filters.residencePrefecture ?? ''} data-testid="engineer-list-filter-residence">
+                        {prefectureOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </Select>
+                    </Field> : <Field label={messages.searchPrefecture}>
                       <Select
                         name="prefecture"
                         defaultValue={filters.prefecture}
@@ -486,35 +519,42 @@ export function EngineerLedgerScreen({
                           </option>
                         ))}
                       </Select>
+                    </Field> }
+                    <Field label={messages.searchAvailableBy}>
+                      <Input
+                        type="date"
+                        name="availableBy"
+                        defaultValue={filters.availableBy}
+                        data-testid="engineer-list-filter-available-by"
+                      />
                     </Field>
-                    <Field label={messages.searchRemote}>
+                    </div>
+                    <EngineerDetailSection enabled={Boolean(searchScope)}>
+                    <div className={cn(searchScope ? 'grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-4' : 'contents')}>
+                    {searchScope ? <Field label={messages.searchPrefecture}>
                       <Select
-                        name="remote"
-                        defaultValue={filters.remote}
-                        data-testid="engineer-list-filter-remote"
+                        name="prefecture"
+                        defaultValue={filters.prefecture}
+                        data-testid="engineer-list-filter-prefecture"
                       >
-                        {remoteOptions.map((option) => (
+                        {prefectureOptions.map((option) => (
                           <option key={option.value} value={option.value}>
                             {option.label}
                           </option>
                         ))}
                       </Select>
+                    </Field> : null}
+                    {searchScope ? <Field as="div" className="sm:col-span-2" label={t('projects.search.utilization')}>
+                      <EngineerUtilizationFilter initial={filters.utilizationBand ?? ''} />
+                    </Field> : null}
+                    <Field className={cn("sm:col-span-2 xl:col-span-4", !searchScope && "lg:col-span-3")} label={messages.searchQ}>
+                      <Input
+                        type="search"
+                        name="q"
+                        defaultValue={filters.q}
+                        data-testid="engineer-list-filter-q"
+                      />
                     </Field>
-                    <Field label={messages.searchAvailability}>
-                      <Select
-                        name="availability"
-                        defaultValue={filters.availability}
-                        data-testid="engineer-list-filter-availability"
-                      >
-                        {availabilityOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                    {/* 🔴 絞り込みチェックボックス 2 種（docs/04 §S-005 セクション 2）。**既定オフ**であり、
-                        オフのときに何が起きるかを直下に書く（`F-009 AC-5` / `docs/02` A-03）。 */}
                     <Field as="div">
                       <label className="flex items-center gap-2 text-body">
                         <Checkbox
@@ -538,10 +578,12 @@ export function EngineerLedgerScreen({
                         {messages.searchCheckboxNote}
                       </span>
                     </Field>
+                    </div>
+                    </EngineerDetailSection>
                     {/* 🔴 送信と「条件をクリア」は必ず 1 行を占める（列の途中に紛れると押せる場所が
                         毎回変わる）。`justify-end` はカードの中で右に寄せるための配置の調整であり、
                         共有定数（`FILTER_ACTIONS_CLASSES`）は変えていない。 */}
-                    <div className={cn(FILTER_ACTIONS_CLASSES, 'justify-end')}>
+                    {!searchScope ? <div className={cn(FILTER_ACTIONS_CLASSES, 'justify-end')}>
                       {activeFilters.length === 0 ? null : (
                         <Link
                           className={SECONDARY_LINK_CLASSES}
@@ -554,20 +596,23 @@ export function EngineerLedgerScreen({
                       <Button type="submit" data-testid="engineer-list-search">
                         {messages.searchSubmit}
                       </Button>
-                    </div>
+                    </div> : null}
                   </fieldset>
                 </form>
+                </EngineerSearchPanel>
 
                 {/* 🔴 まだ無い機能を黙って消さない（`engineers.careers.comingSoon` と同じ規律）。
                     押しても効かない検索欄を描くより、いま何ができないのかを書く。
                     ✅ SP-22 段④: 場所を絞り込みカードの中へ移した（**どの条件が無いのか**は
                        条件の群の隣で読むものであり、一覧の上の独立した行ではない）。 */}
+                {!searchScope ? <>
                 <p className="mt-3 text-xs text-fg-muted" data-testid="engineer-list-search-coming-soon">
                   {messages.searchComingSoon}
                 </p>
                 <p className="mt-1 text-xs text-fg-muted" data-testid="engineer-list-experience-coming-soon">
                   {messages.experienceComingSoon}
                 </p>
+                </> : null}
               </CardContent>
             </Card>
           }

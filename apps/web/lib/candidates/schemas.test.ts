@@ -40,8 +40,10 @@ describe('candidateCursorSchema（並びのキー）', () => {
 });
 
 describe('projectCandidateListQuerySchema（#30）', () => {
-  it('検索条件は `S-005`（#15）と同じ項目である（キー集合が一致する）', () => {
-    const own = Object.keys(engineerListQuerySchema.shape).sort();
+  it('匿名候補に稼働率を開示せず、他の検索条件は自社人材と共有する', () => {
+    const own = Object.keys(engineerListQuerySchema.shape).filter((key) => key !== 'utilizationBand' && key !== 'residencePrefecture').sort();
+    expect(projectCandidateListQuerySchema.shape).not.toHaveProperty('utilizationBand');
+    expect(projectCandidateListQuerySchema.shape).not.toHaveProperty('residencePrefecture');
     const candidates = Object.keys(projectCandidateListQuerySchema.shape).sort();
     expect(candidates).toEqual(own);
   });

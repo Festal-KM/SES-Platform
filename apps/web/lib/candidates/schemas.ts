@@ -11,6 +11,7 @@
 //    次ページは「そのキーより後ろ」として決まる。形はスキーマで固定し、UUID（`S-005` のカーソル）
 //    と混同した要求は 400 にする（黙って先頭に戻さない）。
 import { z } from 'zod';
+import { PREFECTURE_CODES, PROJECT_UTILIZATION_BANDS } from '@ses/domain';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 import { cursorPageQuerySchema } from '../api/pagination';
 import { optionalFilter } from '../api/query-filters';
@@ -101,6 +102,8 @@ assertNoIsolationKeys(Object.keys(candidateProjectParamsSchema.shape), 'candidat
  */
 export const engineerListApiQuerySchema = cursorPageQuerySchema.extend({
   ...engineerSearchCriteriaFields,
+  residencePrefecture: optionalFilter(z.enum(PREFECTURE_CODES)),
+  utilizationBand: optionalFilter(z.enum(PROJECT_UTILIZATION_BANDS)),
   projectId: optionalFilter(z.uuid()),
   cursor: optionalFilter(z.union([z.uuid(), candidateCursorSchema])),
 });

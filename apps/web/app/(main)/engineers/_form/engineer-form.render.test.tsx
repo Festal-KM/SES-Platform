@@ -666,3 +666,9 @@ describe('🔴 枠: 中央カラムの幅を守る段の組み方（入れ子を
     expect(submit).toBeGreaterThan(conditions);
   });
 });
+
+
+it('在住地の入力欄は自社人材の登録・編集にだけ出す', () => {
+  expect(render({ canUseResidence: true })).toContain('data-testid="engineer-residence-prefecture"');
+  expect(render()).not.toContain('data-testid="engineer-residence-prefecture"');
+});

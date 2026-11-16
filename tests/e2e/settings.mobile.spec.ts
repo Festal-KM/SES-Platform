@@ -128,7 +128,7 @@ test.describe('モバイルビューポートのスモーク（S-036 / S-014 / S
       // ① 画面が描画される。
       await expect(session.page.getByTestId('engineer-ledger-screen')).toBeVisible();
       await expect(
-        session.page.getByRole('heading', { name: t('engineers.list.title') }),
+        session.page.getByRole('heading', { name: t('engineers.searchPanel.title') }),
       ).toBeVisible();
 
       // ③ 主要素（母集団の明示 + 一覧テーブル）が可視。`seed:isolation` のホスト所有 1 件

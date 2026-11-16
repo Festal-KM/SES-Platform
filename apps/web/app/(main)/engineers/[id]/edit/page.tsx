@@ -72,6 +72,7 @@ export default async function EditEngineerPage({
       <PageHeading trail={ENGINEER_EDIT_TRAIL} title={t('engineers.edit.title')} />
       <EngineerForm
         mode="EDIT"
+        canUseResidence={outcome.ctx.partnerCompanyId === null}
         engineerId={view.id}
         initial={toEngineerFormValues(view)}
         skillDictionary={skillDictionary}

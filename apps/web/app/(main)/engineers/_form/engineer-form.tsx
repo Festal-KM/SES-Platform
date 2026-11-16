@@ -57,6 +57,7 @@ import { IntakeStart } from '../../../_components/intake-start';
 //    - 削除は保存前に限り取り消せる（保存後の復元は持たない —— 監査ログの「削除」が確定した事実か
 //      一時的なものか読めなくなる）。
 //    - 🔴 `id` は既存行にだけ付けて送る（無いと「編集」と「削除 + 追加」が区別できず監査が嘘になる）。
+import { t } from '@ses/i18n';
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import Link from 'next/link';
 import {
@@ -137,6 +138,8 @@ export type EngineerFormValues = {
   readonly displayName: string;
   readonly availability: string;
   readonly availableFrom: string;
+  readonly utilizationRate?: string;
+  readonly residencePrefecture?: string;
   readonly unitPriceMin: string;
   readonly unitPriceMax: string;
   readonly prefecture: string;
@@ -277,6 +280,7 @@ export type EngineerFormMessages = {
 export type EngineerFormProps = {
   readonly mode: 'CREATE' | 'EDIT';
   readonly canUseIntake?: boolean;
+  readonly canUseResidence?: boolean;
   /** `EDIT` のときだけ非 null。`PATCH /api/engineers/{id}` の対象。 */
   readonly engineerId: string | null;
   readonly initial: EngineerFormValues;
@@ -353,11 +357,13 @@ function numberOrNull(value: string): number | null {
  * 送信する body（docs/05 §6.4 #16 の `EngineerInput`）。
  * 🔴 ここに `ownerPartnerCompanyId` を組み立てる余地が無い（値そのものを画面が知らない）。
  */
-function toRequestBody(values: EngineerFormValues) {
+function toRequestBody(values: EngineerFormValues, canUseResidence: boolean) {
   return {
     displayName: values.displayName.trim(),
     availability: values.availability,
     availableFrom: emptyToNull(values.availableFrom),
+    utilizationRate: numberOrNull(values.utilizationRate ?? ''),
+    ...(canUseResidence ? { residencePrefecture: emptyToNull(values.residencePrefecture ?? '') } : {}),
     unitPriceMin: numberOrNull(values.unitPriceMin),
     unitPriceMax: numberOrNull(values.unitPriceMax),
     prefecture: emptyToNull(values.prefecture),
@@ -389,6 +395,7 @@ function toRequestBody(values: EngineerFormValues) {
 export function EngineerForm({
   mode,
   canUseIntake = false,
+  canUseResidence = false,
   engineerId,
   initial,
   skillDictionary,
@@ -617,7 +624,7 @@ export function EngineerForm({
         {
           method: mode === 'CREATE' ? 'POST' : 'PATCH',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(toRequestBody(values)),
+          body: JSON.stringify(toRequestBody(values, canUseResidence)),
         },
       );
       if (!response.ok) {
@@ -1323,6 +1330,11 @@ export function EngineerForm({
             ))}
           </Select>
         </Field>
+        <Field className="mb-4" label={t('projects.search.utilizationPercent')}>
+          <Input name="utilizationRate" type="number" min={0} max={100} step={1}
+            value={values.utilizationRate ?? ''} onChange={(event) => update({ utilizationRate: event.target.value })}
+            disabled={phase === 'submitting'} data-testid="engineer-utilization-rate" />
+        </Field>
         <Field className="mb-4" label={messages.availableFromLabel}>
           <Input
             name="availableFrom"
@@ -1367,6 +1379,12 @@ export function EngineerForm({
             />
           </Field>
         </fieldset>
+        {canUseResidence ? <Field className="mb-4" label={t('engineers.searchPanel.residence')}>
+          <Select name="residencePrefecture" value={values.residencePrefecture ?? ''} onChange={(event) => update({ residencePrefecture: event.target.value })} data-testid="engineer-residence-prefecture">
+            <option value="">{messages.valueUnset}</option>
+            {prefectureOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </Select>
+        </Field> : null}
         <Field className="mb-4" label={messages.prefectureLabel}>
           <Select
             name="prefecture"
