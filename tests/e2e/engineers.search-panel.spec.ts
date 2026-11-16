@@ -29,7 +29,7 @@ test('自社人材の検索条件を保存し、折りたたんでも検索で�
     await expect(page).not.toHaveURL(/q=/);
     await page.getByRole('button', { name: t('engineers.searchPanel.expand') }).click();
     await expect(page.getByTestId('engineer-list-filter-q')).toHaveValue('');
-    await page.getByTestId('engineer-list-utilization-segment-UNDER_HALF').check();
+    await page.getByTestId('engineer-list-utilization-segment-UNDER_HALF').locator('..').click();
     await page.getByTestId('engineer-list-search').click();
     await expect(page).toHaveURL(/utilizationBand=UNDER_HALF/);
     await expectNoHorizontalOverflow('人材検索', page);
