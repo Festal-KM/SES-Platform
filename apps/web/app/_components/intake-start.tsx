@@ -50,7 +50,8 @@ export function IntakeStart({ kind, skillDictionary, onApply }: {
     <Field as="div" label={t('intake.ai.textLabel')}>
       <Textarea aria-label={t('intake.ai.textLabel')} value={text} onChange={(event) => setText(event.target.value)} rows={8} maxLength={20000} data-testid="intake-text" />
     </Field>
-    <div><Button type="button" onClick={() => void analyze()} data-testid="intake-analyze">{t('intake.ai.analyze')}</Button></div>
+    <div className="flex flex-wrap gap-2"><Button type="button" onClick={() => void analyze()} data-testid="intake-analyze">{t('intake.ai.analyze')}</Button>
+      <Button type="button" variant="secondary" onClick={() => document.getElementById('intake-manual-start')?.focus()} data-testid="intake-manual">{t('intake.ai.manual')}</Button></div>
     {busy ? <div role="status" className="flex flex-col gap-2"><span>{t('intake.ai.loading')}</span><Skeleton lines={2} className="motion-reduce:animate-none" /></div> : null}
     {error ? <p role="alert" className="m-0 text-danger">{error}</p> : null}
     {notice ? <p role="status" className="m-0 text-fg-muted">{notice}</p> : null}

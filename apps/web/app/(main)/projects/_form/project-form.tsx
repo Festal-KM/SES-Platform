@@ -472,6 +472,7 @@ export function ProjectForm({
         });
         setDirty(true); setPhase((current) => current === 'saved' ? 'idle' : current);
       }} /> : null}
+      <span id="intake-manual-start" tabIndex={-1} />
       {phase === 'error' ? (
         <p role="alert" className="text-body text-danger" data-testid="project-form-error">
           {messages.saveError}

@@ -704,6 +704,7 @@ export function EngineerForm({
         });
         setDirty(true); setPhase((current) => current === 'saved' ? 'idle' : current);
       }} /> : null}
+      <span id="intake-manual-start" tabIndex={-1} />
       {phase === 'error' ? (
         <p role="alert" className="text-body text-danger" data-testid="engineer-form-error">
           {messages.saveError}
