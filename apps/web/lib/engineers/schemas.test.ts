@@ -123,6 +123,7 @@ describe('🔴 F-008 AC-1 / BR-52: 営業判断に不要な項目を入力欄と
         'skills',
         'unitPriceMax',
         'unitPriceMin',
+        'utilizationRate',
       ].sort(),
     );
   });

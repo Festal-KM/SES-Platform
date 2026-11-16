@@ -13,6 +13,13 @@ type Scope = { readonly tenantId: string; readonly userId: string };
 export function EngineerSearchPanel({ children, activeFilters, scope }: {
   readonly children: ReactNode; readonly activeFilters: readonly EngineerActiveFilterView[]; readonly scope?: Scope;
 }) {
+  if (!scope) return <>{children}</>;
+  return <EngineerSearchPanelInner activeFilters={activeFilters} scope={scope}>{children}</EngineerSearchPanelInner>;
+}
+
+function EngineerSearchPanelInner({ children, activeFilters, scope }: {
+  readonly children: ReactNode; readonly activeFilters: readonly EngineerActiveFilterView[]; readonly scope: Scope;
+}) {
   const router = useRouter();
   const [tab, setTab] = useState('SEARCH');
   const [expanded, setExpanded] = useState(true);
@@ -22,10 +29,9 @@ export function EngineerSearchPanel({ children, activeFilters, scope }: {
   const [savedQuery, setSavedQuery] = useState('');
   const [notice, setNotice] = useState('');
   const [resetVersion, setResetVersion] = useState(0);
-  const storageKey = scope ? `ses.engineers.savedSearches.v1.${scope.tenantId}.${scope.userId}` : null;
+  const storageKey = `ses.engineers.savedSearches.v1.${scope.tenantId}.${scope.userId}`;
 
   useEffect(() => {
-    if (!storageKey) return;
     try {
       const raw = window.localStorage.getItem(storageKey);
       if (!raw) { setItems([]); return; }
@@ -37,7 +43,6 @@ export function EngineerSearchPanel({ children, activeFilters, scope }: {
   }, [storageKey]);
 
   function persist(next: readonly SavedSearch[]) {
-    if (!storageKey) return false;
     try { window.localStorage.setItem(storageKey, JSON.stringify(next)); setItems(next); return true; }
     catch { setNotice(t('engineers.searchPanel.storageError')); return false; }
   }
@@ -67,7 +72,6 @@ export function EngineerSearchPanel({ children, activeFilters, scope }: {
       <Tooltip content={t('projects.search.remove')}><IconButton type="button" variant="ghost" size="sm" icon={<Icon name="trash" />} aria-label={`${item.name} ${t('projects.search.remove')}`} onClick={() => persist(items.filter((entry) => entry.id !== item.id))} /></Tooltip>
     </div>)}
   </div>;
-  if (!scope) return <>{children}</>;
   return <div onSubmitCapture={submit}>
     <Tabs label={t('engineers.list.search.legend')} value={tab} onValueChange={(value) => { setTab(value); setExpanded(true); }}
       headerRight={<><Tooltip content={t('projects.search.save')}><IconButton type="button" variant="ghost" size="sm" icon={<Icon name="list-plus" />} aria-label={t('projects.search.save')} onClick={openSave} /></Tooltip>
