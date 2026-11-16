@@ -112,6 +112,8 @@ import {
 } from './jobs/index.js';
 import { runScheduled, type SchedulerRunDetail } from './scheduler.js';
 import { createCandidateMatchHandler } from './jobs/match-candidates.js';
+import { createIntakeParseHandler } from './jobs/intake-parse.js';
+import { INTAKE_PARSE_JOB } from '@ses/connectors';
 
 /** 停止できるもの（`close()` を 1 本にまとめるための最小の形）。 */
 type Closable = { close(): Promise<void> };
@@ -436,6 +438,9 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
     ? createAiClient('real', { messagesApi: createAnthropicMessagesApiFrom(env.ANTHROPIC_API_KEY) })
     : aiClient;
   const candidateMatchHandler = createCandidateMatchHandler({ now, aiClient: candidateAiClient, models, aiDailyCostLimitUsd });
+  const intakeAiClient = env.APP_ENV === 'development' && env.DEVELOPMENT_INTAKE_AI_REAL ? candidateAiClient : aiClient;
+  const intakeParseHandler = createIntakeParseHandler({ now, aiClient: intakeAiClient, models, aiDailyCostLimitUsd });
+  track(createBullMqWorker({ queueName: INTAKE_PARSE_JOB, connection, handler: (payload, jobId) => intakeParseHandler(payload, jobId) }));
   track(createBullMqWorker({ queueName: MATCH_CANDIDATES_JOB, connection, handler: (payload, jobId) => candidateMatchHandler(payload, jobId) }));
   track(
     createBullMqWorker({

@@ -15,7 +15,7 @@ describe('PURGE_SPEC（docs/05 §9.7 / F-064 AC-3）', () => {
   // 候補選出の一時データには候補への参照が含まれるため、行ごと削除する。
   it('🔴 行ごと削除する表を固定する（行削除を安易に広げない）', () => {
     const rowDeletes = PURGE_SPEC.delete.filter(isPurgeRowsSpec).map((spec) => spec.table);
-    expect(rowDeletes).toEqual(['project_candidate_ai_runs', 'engineer_careers', 'chat_saved_messages', 'chat_thread_announcements']);
+    expect(rowDeletes).toEqual(['project_candidate_ai_runs', 'intake_ai_runs', 'engineer_careers', 'chat_saved_messages', 'chat_thread_announcements']);
   });
 
   it('同じ表が delete と retain の両方に現れず、delete / retain の中でも重複しない', () => {

@@ -1,6 +1,7 @@
 'use client';
 import { t } from '@ses/i18n';
 import { PROJECT_DEVELOPMENT_PHASES, PROJECT_DEVELOPMENT_METHODS } from '@ses/domain';
+import { IntakeStart } from '../../../_components/intake-start';
 
 // apps/web/app/(main)/projects/_form/project-form.tsx
 // `S-012` 案件の登録・編集 — フォーム本体（docs/04 §S-012 / `F-013` / `F-010`）。T-06-01。
@@ -457,6 +458,21 @@ export function ProjectForm({
       data-mode={mode}
       className="flex flex-col gap-8"
     >
+      {mode === 'CREATE' ? <IntakeStart kind="PROJECT" skillDictionary={skillDictionary} onApply={(draft, skills) => {
+        setValues((current) => {
+          const known = new Set(current.requirements.map((entry) => entry.skillId));
+          return { ...current,
+            name: current.name || draft.name?.slice(0, 200) || '',
+            publicSummary: current.publicSummary || draft.summary || '',
+            startDate: current.startDate || draft.availableFrom || '',
+            unitPriceMin: current.unitPriceMin || (draft.priceMin === undefined ? '' : String(draft.priceMin)),
+            unitPriceMax: current.unitPriceMax || (draft.priceMax === undefined ? '' : String(draft.priceMax)),
+            requirements: [...current.requirements, ...skills.filter((skill) => !known.has(skill.id)).map((skill) => ({ key: `intake-${skill.id}`, kind: 'NICE', skillId: skill.id, skillName: skill.name, freeText: '', requiredYears: '' }))],
+          };
+        });
+        setDirty(true); setPhase((current) => current === 'saved' ? 'idle' : current);
+      }} /> : null}
+      <span id="intake-manual-start" tabIndex={-1} />
       {phase === 'error' ? (
         <p role="alert" className="text-body text-danger" data-testid="project-form-error">
           {messages.saveError}

@@ -116,7 +116,8 @@ describe('#2 全表にポリシーが 1 つ以上ある（docs/05 §4.7 #2）', 
     // 🔴 2026-10-26 チャットレーンで `chat_thread_announcements`（部屋のアナウンス。読み = 部屋が読める / migration 20261026010000）を足した。
     // 🔴 2026-11-01 チャットレーンで `chat_thread_member_windows`（グループに後から足した人の入った時刻と読める範囲。読み = 本人 / migration 20261101000000）を足した。
     // 候補検索の要求と結果を一時保存する表を追加した。
-    expect(tables).toHaveLength(65);
+    // 登録 AI の一時保存表も、全表の RLS 検証に含める。
+    expect(tables).toHaveLength(66);
 
     const policies = await readPolicies(db);
     const withPolicy = new Set(policies.map((policy) => policy.table));

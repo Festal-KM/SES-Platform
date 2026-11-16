@@ -180,6 +180,7 @@ export const INTERNAL_JOB_NAMES = [
   'export.generate',
   // AI の再試行はロール実行内で管理する。
   'match.candidates',
+  'intake.parse',
 ] as const;
 
 export type InternalJobName = (typeof INTERNAL_JOB_NAMES)[number];
@@ -276,6 +277,7 @@ export const QUEUE_DEFINITIONS = {
   }),
   'scan.poll': internalQueue('scan.poll', { attempts: 3 }),
   'match.candidates': internalQueue('match.candidates', { attempts: 1 }),
+  'intake.parse': internalQueue('intake.parse', { attempts: 1 }),
   // 🔴 T-07-11（docs/05 §9.8）。席数の日次スナップショット（毎日 01:00 JST）。
   //    `scan.poll` と同じ性質（読み取り + 冪等な upsert）なのでバックオフを持たない。
   'usage.seat-snapshot': internalQueue('usage.seat-snapshot', { attempts: 3 }),
@@ -355,6 +357,10 @@ export const GATE_RUN_JOB = 'gate.run' satisfies InternalJobName;
 export const MATCH_CANDIDATES_JOB = 'match.candidates' satisfies InternalJobName;
 export type MatchCandidatesJob = { readonly tenantId: string; readonly runId: string };
 export type MatchCandidatesJobQueue = { enqueue(job: MatchCandidatesJob): Promise<void> };
+
+export const INTAKE_PARSE_JOB = 'intake.parse' satisfies InternalJobName;
+export type IntakeParseJob = { readonly tenantId: string; readonly runId: string };
+export type IntakeParseJobQueue = { enqueue(job: IntakeParseJob): Promise<void> };
 
 /**
  * 🔴 区切り文字（docs/05 §9.3 のスケッチは `:` だったが **`.` に変えた**。T-07-08 / §11.10）。

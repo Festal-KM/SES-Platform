@@ -2617,6 +2617,17 @@ const ja = {
   // 🔴 `docs/04` §10.1 `S-005`: **初回空と絞り込み 0 件は文言も導線も別物**である。
   //    絞り込みがまだ無い（T-06-04）ため、本リリースで到達するのは**初回空だけ**である
   //    —— 到達しない状態の文言を先回りで置かない（`engineers.notFound` の判断と同じ）。
+  'intake.ai.projectTitle': '文章から案件を入力',
+  'intake.ai.engineerTitle': '文章から人材を入力',
+  'intake.ai.description': '文章から下書きを作り、対応する技術名を AI で整理します。文章・氏名・企業名・単価は AI に送らず、入力済みの欄は上書きしません。',
+  'intake.ai.textLabel': 'サマリー文章',
+  'intake.ai.analyze': 'AIで内容を整理',
+  'intake.ai.manual': '手動で入力',
+  'intake.ai.loading': '内容を整理しています',
+  'intake.ai.noSkills': '対応する技術名を確認できませんでした。下のフォームから手動で入力してください。',
+  'intake.ai.error': 'AI による整理ができませんでした。時間をおいて再度お試しください。',
+  'intake.ai.projectReview': '入力欄に反映しました。技術は尚可として追加しています。内容を確認してから登録してください。',
+  'intake.ai.engineerReview': '入力欄に反映しました。経験年数などを確認してから登録してください。',
   'engineers.list.title': '人材台帳',
   // ⚠️ T-22-09: ホームからの独立したナビゲーションリンクを撤去したため**画面からの参照は無い**
   //    （入口は `SummaryStrip` の `人材` の値に移った）。🔴 **キーは消さない**（`U-22`）。
@@ -4831,6 +4842,7 @@ const ja = {
   'retention.schedule.kind.send_attempts': '送信試行の失敗詳細',
   'retention.schedule.kind.data_export_requests': '返却データ（生成済みの CSV 一式）',
   'retention.schedule.kind.project_candidate_ai_runs': 'AI候補検索の一時データ',
+  'retention.schedule.kind.intake_ai_runs': '登録AIの一時データ',
   'retention.section.export': 'データの返却（CSV）',
   'retention.export.lead':
     'エンジニア台帳・案件・提案履歴・稼働を CSV 一式（ZIP）で返却します。取引先が持ち込んだ人材のうち、提案として開示されていないものは含まれません。',

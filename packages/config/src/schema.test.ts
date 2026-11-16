@@ -497,3 +497,12 @@ describe('開発用の候補説明 AI', () => {
     expect(() => loadAppEnv({ ...buildValidEnv('demo'), DEVELOPMENT_CANDIDATE_AI_REAL: 'true' })).toThrow();
   });
 });
+
+
+describe('開発環境の登録 AI 接続', () => {
+  it('候補 AI とキーが有効な開発環境だけで明示的に使える', () => {
+    expect(loadAppEnv({ ...buildValidEnv('development'), ANTHROPIC_API_KEY: 'sk-ant-test-key', DEVELOPMENT_CANDIDATE_AI_REAL: 'true', DEVELOPMENT_INTAKE_AI_REAL: 'true' }).DEVELOPMENT_INTAKE_AI_REAL).toBe(true);
+    expect(() => loadAppEnv({ ...buildValidEnv('development'), ANTHROPIC_API_KEY: 'sk-ant-test-key', DEVELOPMENT_INTAKE_AI_REAL: 'true' })).toThrow();
+    expect(() => loadAppEnv({ ...buildValidEnv('demo'), ANTHROPIC_API_KEY: 'sk-ant-test-key', DEVELOPMENT_INTAKE_AI_REAL: 'true' })).toThrow();
+  });
+});

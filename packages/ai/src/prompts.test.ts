@@ -50,7 +50,7 @@ describe('プロンプトの登録表（docs/05 §7.7）', () => {
   });
 
   it('登録済みのロールはすべて AI_ROLES の値である', () => {
-    expect(registeredPromptRoles()).toEqual(['gate-inspector', 'match-explainer']);
+    expect(registeredPromptRoles()).toEqual(['gate-inspector', 'match-explainer', 'skill-normalizer']);
   });
 
   it('🔴 未登録の版を引いたら例外になる（現行版へ暗黙にフォールバックしない）', () => {
