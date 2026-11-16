@@ -497,7 +497,7 @@ export function EngineerLedgerScreen({
                     </div>
                     {searchScope ? <p className="m-0 bg-bg-subtle px-3 py-3 text-body font-semibold text-fg">{t('projects.search.advanced')}</p> : null}
                     <div className={cn(searchScope ? 'grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-4' : 'contents')}>
-                    <Field className="sm:col-span-2 xl:col-span-4" label={messages.searchQ}>
+                    <Field className={cn("sm:col-span-2 xl:col-span-4", !searchScope && "lg:col-span-3")} label={messages.searchQ}>
                       <Input
                         type="search"
                         name="q"
