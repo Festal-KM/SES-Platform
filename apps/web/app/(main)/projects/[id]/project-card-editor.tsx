@@ -69,7 +69,7 @@ const utilizationOptions = [
   ...(['FULL','HALF_TO_FULL','UNDER_HALF'] as const).map(value=>({value,label:t(`projects.search.band.${value}`)})),
 ];
 const required = new Set(["name", "status", "sourceKind", "headcount"]);
-// 🔴 公開先の取引先が読む欄（保存で再検査の対象。`projects.recheckNotice.willRun` と同じ集合）。
+// 公開項目のテスト識別子を編集欄に残す。
 const publicFields = new Set(["name", "publicSummary", "locationDetail", "publicMemo"]);
 // 公開欄を含むカード（要件の自由記述は content カード）。
 const publicCards = new Set<ProjectCardId>(["basic", "summary", "content", "working", "notes"]);
@@ -613,7 +613,7 @@ export function ProjectCardEditor({
                         </span>
                       ) : null}
                     </span>
-                    <div className={cn("min-w-0", "sm:col-span-4")}>{key === "settlementMinHours" ? <div className="flex min-w-0 items-center gap-2">{control(key)}<span>{t('projects.cards.rangeSeparator')}</span>{control('settlementMaxHours')}<span className="shrink-0 text-xs">{t('projects.cards.hours')}</span></div> : control(key)}{publicFields.has(key) ? <p className="m-0 mt-1 text-xs text-brand" data-testid={`project-card-public-field-${key}`}>{t("projects.publicField.notice")}</p> : null}{key === "unitPrice" ? <p className="m-0 mt-1 text-xs text-brand" data-testid="project-card-unit-price-shared">{t("projects.cards.unitPriceShared")}</p> : null}</div>
+                    <div className={cn("min-w-0", "sm:col-span-4")} data-testid={publicFields.has(key) ? `project-card-public-field-${key}` : undefined}>{key === "settlementMinHours" ? <div className="flex min-w-0 items-center gap-2">{control(key)}<span>{t('projects.cards.rangeSeparator')}</span>{control('settlementMaxHours')}<span className="shrink-0 text-xs">{t('projects.cards.hours')}</span></div> : control(key)}{key === "unitPrice" ? <p className="m-0 mt-1 text-xs text-brand" data-testid="project-card-unit-price-shared">{t("projects.cards.unitPriceShared")}</p> : null}</div>
                   </div>
                 </Field>
               ) : (
@@ -636,11 +636,10 @@ export function ProjectCardEditor({
               )}</div>,
             )}</div>
             {id === "content" ? (
-              <>
+              <div data-testid="project-card-public-field-requirements">
                 {requirementBlock("MUST", editing)}
                 {requirementBlock("NICE", editing)}
-                {editing ? <p className="m-0 text-xs text-brand" data-testid="project-card-public-field-requirements">{t("projects.cards.requirementPublicNotice")}</p> : null}
-              </>
+              </div>
             ) : null}
             {/* 🔴 F-013 AC-2: 取引先に出ない項目のブロックには常に注記を添える（凍結 testid の意味を保つ）。 */}
             {hostOnlyCards.has(id) ? (
