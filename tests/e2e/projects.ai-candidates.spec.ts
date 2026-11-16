@@ -41,7 +41,7 @@ test('候補パネルで検査済みの候補と理由を確認し、失敗を�
     await expect(panel.getByText('Java の経験')).toBeVisible();
     await page.setViewportSize({ width: 1908, height: 900 });
     const panelBox = await panel.boundingBox();
-    const detailBox = await page.getByTestId('project-detail-screen').boundingBox();
+    const detailBox = await page.getByTestId('project-ai-content').boundingBox();
     const headerBox = await page.getByTestId('app-header').boundingBox();
     expect(panelBox).not.toBeNull();
     expect(detailBox).not.toBeNull();
@@ -51,6 +51,18 @@ test('候補パネルで検査済みの候補と理由を確認し、失敗を�
     expect(panelBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
     expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(900);
     await expectNoHorizontalOverflow('PC の案件候補パネル', page);
+    const transition = await panel.evaluate((element) => getComputedStyle(element).transitionProperty);
+    expect(transition).toContain('translate');
+    expect(transition).toContain('opacity');
+    const searchButton = page.getByTestId('project-detail-candidates');
+    await expect(searchButton).toBeDisabled();
+    const buttonBefore = await searchButton.boundingBox();
+    await panel.getByRole('button', { name: t('projects.aiCandidates.close') }).click();
+    await expect(panel).toBeHidden();
+    await expect(searchButton).toBeEnabled();
+    const buttonAfter = await searchButton.boundingBox();
+    expect(buttonAfter?.x).toBe(buttonBefore?.x);
+    expect(buttonAfter?.y).toBe(buttonBefore?.y);
   } finally {
     await session.close();
   }
