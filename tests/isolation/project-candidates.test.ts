@@ -396,6 +396,25 @@ describe('AI 候補選出の一時データ', () => {
   });
 });
 
+describe('登録 AI の一時データ', () => {
+  it('依頼者とテナントを分離し、同じ要求を一度だけ処理する', async () => {
+    const { createIntakeAiRun, readIntakeAiRun, claimIntakeAiRun, finishIntakeAiRun } = await import('@ses/db');
+    const now = new Date();
+    const run = await createIntakeAiRun(hostA, { kind: 'ENGINEER', payload: { skills: ['Java'] }, expiresAt: new Date(now.getTime() + 60_000) });
+    const hostB = await resolveTenantCtx({ tenantId: TENANT_B, lifecycleState: 'ACTIVE', partnerCompanyId: null, partnerSuspendedAt: null, twoFactor: 'NOT_ENROLLED', userId: USER_B_HOST, role: 'SALES' }, { deviceKind: 'api' });
+    expect(await readIntakeAiRun(hostB, { id: run.id, now })).toBeNull();
+    await expect(readIntakeAiRun(partnerA1, { id: run.id, now })).rejects.toThrow();
+    const job = { queue: 'intake.parse', jobId: 'intake-isolation' };
+    expect(await claimIntakeAiRun(systemTenantCtx(TENANT_B, job), run.id, now)).toBeNull();
+    const system = systemTenantCtx(TENANT_A, job);
+    expect(await claimIntakeAiRun(system, run.id, now)).not.toBeNull();
+    expect(await claimIntakeAiRun(system, run.id, now)).toBeNull();
+    await finishIntakeAiRun(system, { id: run.id, now, output: { skills: ['Java'] } });
+    expect((await readIntakeAiRun(hostA, { id: run.id, now }))?.status).toBe('COMPLETED');
+    expect(await readIntakeAiRun(hostA, { id: run.id, now: new Date(now.getTime() + 120_000) })).toBeNull();
+  });
+});
+
 describe('AI 候補の結果表示', () => {
   it('自社候補の表示枠に収まらないスキルも AI 入力に含める', async () => {
     const { configureMatchCandidatesQueue } = await import('../../apps/web/lib/jobs/match-candidates-queue');

@@ -139,6 +139,11 @@ export function currentGateInspectorPrompt(): GateInspectorPromptModule {
   return ROLE_PROMPTS['gate-inspector'];
 }
 
+/** 登録時のスキル名を整理する、版管理されたプロンプト。 */
+export function currentSkillNormalizerPrompt() {
+  return ROLE_PROMPTS['skill-normalizer'];
+}
+
 /** 案件の候補選出に使う、版管理されたプロンプト。 */
 export function currentMatchExplainerPrompt() {
   return ROLE_PROMPTS['match-explainer'];

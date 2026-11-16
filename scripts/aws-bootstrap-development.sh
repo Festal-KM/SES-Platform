@@ -78,6 +78,8 @@ if pathlib.Path('/workspaces/ses-config/candidate-ai-enabled').exists():
     if not isinstance(key, str) or not key.startswith('sk-ant-') or '\n' in key or '\r' in key:
         raise SystemExit('候補 AI の専用シークレットが不正です')
     content = 'DEVELOPMENT_CANDIDATE_AI_REAL=true\nANTHROPIC_API_KEY=' + key + '\n'
+    if pathlib.Path('/workspaces/ses-config/intake-ai-enabled').exists():
+        content += 'DEVELOPMENT_INTAKE_AI_REAL=true\n'
 fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
 with os.fdopen(fd, 'w') as file:
     file.write(content)

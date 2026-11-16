@@ -823,3 +823,5 @@ export type { AuditLogExportMeta, AuditLogExportOutcome } from './audit-log-expo
 //    （`chat_read_states` の C7 SELF は変えない）。
 export { readDmPeerReadMessageIds } from './chat-dm-peer-read.js';
 export { isChatAnnouncementOutsideMyWindow } from './chat-announcement-window.js';
+
+export { createIntakeAiRun, readIntakeAiRun, failPendingIntakeAiRun, claimIntakeAiRun, finishIntakeAiRun } from './intake-ai.js';

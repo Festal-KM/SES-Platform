@@ -1,4 +1,5 @@
 'use client';
+import { IntakeStart } from '../../../_components/intake-start';
 
 // apps/web/app/(main)/engineers/_form/engineer-form.tsx
 // `S-007` エンジニアの登録・編集 — フォーム本体（docs/04 §S-007 / `F-008` / `F-010`）。T-05-01。
@@ -687,6 +688,17 @@ export function EngineerForm({
       data-mode={mode}
       className="flex flex-col gap-6"
     >
+      {mode === 'CREATE' ? <IntakeStart kind="ENGINEER" skillDictionary={skillDictionary} onApply={(draft, skills) => {
+        const known = new Set(values.skills.map((entry) => entry.skillId));
+        update({
+          displayName: draft.name?.slice(0, 200) ?? values.displayName,
+          preferenceNote: draft.summary ?? values.preferenceNote,
+          availableFrom: draft.availableFrom ?? values.availableFrom,
+          unitPriceMin: draft.priceMin === undefined ? values.unitPriceMin : String(draft.priceMin),
+          unitPriceMax: draft.priceMax === undefined ? values.unitPriceMax : String(draft.priceMax),
+          skills: [...values.skills, ...skills.filter((skill) => !known.has(skill.id)).map((skill) => ({ skillId: skill.id, name: skill.name, yearsOfExperience: '', level: '' }))],
+        });
+      }} /> : null}
       {phase === 'error' ? (
         <p role="alert" className="text-body text-danger" data-testid="engineer-form-error">
           {messages.saveError}

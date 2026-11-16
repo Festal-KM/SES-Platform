@@ -35,3 +35,5 @@ export {
   type AiUsagePurpose,
   type ApprovalModeConfigurableRole,
 } from './roles.js';
+
+export { isSafeIntakeSkill } from './intake-skills.js';

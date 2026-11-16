@@ -1,6 +1,7 @@
 'use client';
 import { t } from '@ses/i18n';
 import { PROJECT_DEVELOPMENT_PHASES, PROJECT_DEVELOPMENT_METHODS } from '@ses/domain';
+import { IntakeStart } from '../../../_components/intake-start';
 
 // apps/web/app/(main)/projects/_form/project-form.tsx
 // `S-012` 案件の登録・編集 — フォーム本体（docs/04 §S-012 / `F-013` / `F-010`）。T-06-01。
@@ -457,6 +458,17 @@ export function ProjectForm({
       data-mode={mode}
       className="flex flex-col gap-8"
     >
+      {mode === 'CREATE' ? <IntakeStart kind="PROJECT" skillDictionary={skillDictionary} onApply={(draft, skills) => {
+        const known = new Set(values.requirements.map((entry) => entry.skillId));
+        update({
+          name: draft.name?.slice(0, 200) ?? values.name,
+          publicSummary: draft.summary ?? values.publicSummary,
+          startDate: draft.availableFrom ?? values.startDate,
+          unitPriceMin: draft.priceMin === undefined ? values.unitPriceMin : String(draft.priceMin),
+          unitPriceMax: draft.priceMax === undefined ? values.unitPriceMax : String(draft.priceMax),
+          requirements: [...values.requirements, ...skills.filter((skill) => !known.has(skill.id)).map((skill) => ({ key: `intake-${skill.id}`, kind: 'NICE', skillId: skill.id, skillName: skill.name, freeText: '', requiredYears: '' }))],
+        });
+      }} /> : null}
       {phase === 'error' ? (
         <p role="alert" className="text-body text-danger" data-testid="project-form-error">
           {messages.saveError}

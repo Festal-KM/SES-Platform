@@ -382,3 +382,5 @@ export function createConnectors(
     }),
   };
 }
+
+export { INTAKE_PARSE_JOB, type IntakeParseJob, type IntakeParseJobQueue } from './queues.js';
