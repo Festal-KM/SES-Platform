@@ -46,7 +46,11 @@ import { isPageActionRole, ENGINEER_LIST_TRAIL } from '../../../../lib/shell/pag
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = { title: t('engineers.list.title') };
+export async function generateMetadata(): Promise<Metadata> {
+  const outcome = await resolveTenantCtxOutcome();
+  const own = outcome.status === 'AUTHENTICATED' && outcome.ctx.partnerCompanyId === null;
+  return { title: t(own ? 'engineers.searchPanel.title' : 'engineers.list.title') };
+}
 
 export default async function EngineerLedgerPage({
   searchParams,
