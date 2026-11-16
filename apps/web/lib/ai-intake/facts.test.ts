@@ -11,5 +11,6 @@ describe('登録文から AI に送る情報', () => {
   it('正規化と重複排除を行い、許可リストにない辞書の語を除く', () => {
     expect(intakeSkillsForAi('John Smith', ['John Smith'])).toEqual([]);
     expect(intakeSkillsForAi('Ｊａｖａ', ['Java', 'Java'])).toEqual(['Java']);
+    expect(intakeSkillsForAi('C# と C++', ['C', 'C#', 'C++'])).toEqual(['C#', 'C++']);
   });
 });
