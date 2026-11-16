@@ -3073,9 +3073,9 @@ const ja = {
   'projects.detail.proposals.comingSoon': '提案の一覧は後続のリリースで表示されます。',
   // ✅ T-08-05: `S-016` へ接続した（それまでは `projects.detail.candidates.comingSoon` の注記だった）。
   'projects.detail.candidates.open': '候補を探す',
-  'projects.aiCandidates.open': 'AIで要員候補を探す',
+  'projects.aiCandidates.open': 'AIリサーチ',
   'projects.aiCandidates.openList': '候補一覧を開く',
-  'projects.aiCandidates.title': 'AI候補検索',
+  'projects.aiCandidates.title': 'AIリサーチ',
   'projects.aiCandidates.close': '閉じる',
   'projects.aiCandidates.prompt': '重視するスキルを入力',
   'projects.aiCandidates.send': '探す',
@@ -3083,7 +3083,7 @@ const ja = {
   'projects.aiCandidates.empty': '該当する候補が見つかりませんでした',
   'projects.aiCandidates.error': '候補を取得できませんでした。時間をおいて再度お試しください。',
   'projects.aiCandidates.shared': '共有候補',
-  'projects.aiCandidates.hint': '案件の条件による候補一覧から先頭20件を表示し、AIがスキルの理由を説明します。入力したスキル名は理由の説明に使います。',
+  'projects.aiCandidates.hint': '案件と人材のスキルを比較します。追加条件には登録済みのスキル名を入力してください。',
 
   // --- 🔴 T-12-10 公開の状態（`docs/04` 改訂 14 §S-011 の 4 値 / `F-014 AC-6`〜`AC-13` / `UC-26`）---
   // 🔴 **4 値はどれも別の語である**（`CLAUDE.md` §4.2「失敗と保留を混同しない」）。

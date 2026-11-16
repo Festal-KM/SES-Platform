@@ -425,6 +425,26 @@ describe('AI 候補の結果表示', () => {
     }
   });
 
+  it('AI が選んだ候補だけを表示する', async () => {
+    const { configureMatchCandidatesQueue } = await import('../../apps/web/lib/jobs/match-candidates-queue');
+    const { startAiCandidates, readAiCandidates } = await import('../../apps/web/lib/candidates/ai-service');
+    configureMatchCandidatesQueue({ enqueue: async () => undefined });
+    const { runId } = await startAiCandidates(hostA, PROJECT_A_PUBLISHED, '', null);
+    const now = new Date();
+    const system = systemTenantCtx(TENANT_A, { queue: 'match.candidates', jobId: 'candidate-selection-test' });
+    const claimed = await claimProjectCandidateAiRun(system, runId, now);
+    const refs = (claimed!.input as { refs: { token: string; key: string }[] }).refs;
+    expect(refs.length).toBeGreaterThan(1);
+    const selected = refs[refs.length - 1]!;
+    await finishProjectCandidateAiRun(system, {
+      id: runId, now, output: { rationales: [{ token: selected.token, reason: 'スキルを確認' }] },
+    });
+    const result = await readAiCandidates(hostA, PROJECT_A_PUBLISHED, runId, null);
+    expect(result.status).toBe('COMPLETED');
+    if (result.status !== 'COMPLETED') throw new Error('結果が完了していません');
+    expect(result.candidates.map((item) => item.candidate.key)).toEqual([selected.key]);
+  });
+
   it('結果取得前に共有解除された候補を表示せず、残りの順序を保つ', async () => {
     const { configureMatchCandidatesQueue } = await import('../../apps/web/lib/jobs/match-candidates-queue');
     const { startAiCandidates, readAiCandidates } = await import('../../apps/web/lib/candidates/ai-service');
