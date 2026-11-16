@@ -459,15 +459,18 @@ export function ProjectForm({
       className="flex flex-col gap-8"
     >
       {mode === 'CREATE' ? <IntakeStart kind="PROJECT" skillDictionary={skillDictionary} onApply={(draft, skills) => {
-        const known = new Set(values.requirements.map((entry) => entry.skillId));
-        update({
-          name: draft.name?.slice(0, 200) ?? values.name,
-          publicSummary: draft.summary ?? values.publicSummary,
-          startDate: draft.availableFrom ?? values.startDate,
-          unitPriceMin: draft.priceMin === undefined ? values.unitPriceMin : String(draft.priceMin),
-          unitPriceMax: draft.priceMax === undefined ? values.unitPriceMax : String(draft.priceMax),
-          requirements: [...values.requirements, ...skills.filter((skill) => !known.has(skill.id)).map((skill) => ({ key: `intake-${skill.id}`, kind: 'NICE', skillId: skill.id, skillName: skill.name, freeText: '', requiredYears: '' }))],
+        setValues((current) => {
+          const known = new Set(current.requirements.map((entry) => entry.skillId));
+          return { ...current,
+            name: current.name || draft.name?.slice(0, 200) || '',
+            publicSummary: current.publicSummary || draft.summary || '',
+            startDate: current.startDate || draft.availableFrom || '',
+            unitPriceMin: current.unitPriceMin || (draft.priceMin === undefined ? '' : String(draft.priceMin)),
+            unitPriceMax: current.unitPriceMax || (draft.priceMax === undefined ? '' : String(draft.priceMax)),
+            requirements: [...current.requirements, ...skills.filter((skill) => !known.has(skill.id)).map((skill) => ({ key: `intake-${skill.id}`, kind: 'NICE', skillId: skill.id, skillName: skill.name, freeText: '', requiredYears: '' }))],
+          };
         });
+        setDirty(true); setPhase((current) => current === 'saved' ? 'idle' : current);
       }} /> : null}
       {phase === 'error' ? (
         <p role="alert" className="text-body text-danger" data-testid="project-form-error">

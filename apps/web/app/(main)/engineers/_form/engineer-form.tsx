@@ -691,15 +691,18 @@ export function EngineerForm({
       className="flex flex-col gap-6"
     >
       {mode === 'CREATE' && canUseIntake ? <IntakeStart kind="ENGINEER" skillDictionary={skillDictionary} onApply={(draft, skills) => {
-        const known = new Set(values.skills.map((entry) => entry.skillId));
-        update({
-          displayName: draft.name?.slice(0, 200) ?? values.displayName,
-          preferenceNote: draft.summary ?? values.preferenceNote,
-          availableFrom: draft.availableFrom ?? values.availableFrom,
-          unitPriceMin: draft.priceMin === undefined ? values.unitPriceMin : String(draft.priceMin),
-          unitPriceMax: draft.priceMax === undefined ? values.unitPriceMax : String(draft.priceMax),
-          skills: [...values.skills, ...skills.filter((skill) => !known.has(skill.id)).map((skill) => ({ skillId: skill.id, name: skill.name, yearsOfExperience: '', level: '' }))],
+        setValues((current) => {
+          const known = new Set(current.skills.map((entry) => entry.skillId));
+          return { ...current,
+            displayName: current.displayName || draft.name?.slice(0, 200) || '',
+            preferenceNote: current.preferenceNote || draft.summary || '',
+            availableFrom: current.availableFrom || draft.availableFrom || '',
+            unitPriceMin: current.unitPriceMin || (draft.priceMin === undefined ? '' : String(draft.priceMin)),
+            unitPriceMax: current.unitPriceMax || (draft.priceMax === undefined ? '' : String(draft.priceMax)),
+            skills: [...current.skills, ...skills.filter((skill) => !known.has(skill.id)).map((skill) => ({ skillId: skill.id, name: skill.name, yearsOfExperience: '', level: '' }))],
+          };
         });
+        setDirty(true); setPhase((current) => current === 'saved' ? 'idle' : current);
       }} /> : null}
       {phase === 'error' ? (
         <p role="alert" className="text-body text-danger" data-testid="engineer-form-error">
