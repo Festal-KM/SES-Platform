@@ -1,4 +1,3 @@
-import { z } from 'zod';
 import { isSafeIntakeSkill } from '@ses/domain';
 import { createRoleRunner, skillNormalizerSpec, mask, type RoleModelResolver, createAiClient } from '@ses/ai';
 import { claimIntakeAiRun, finishIntakeAiRun, systemTenantCtx } from '@ses/db';
@@ -6,9 +5,17 @@ import { createAiCostGuard } from '../ai/cost-guard.js';
 import { createAiUsageRecorder } from '../ai/usage-recorder.js';
 import { InvalidJobPayloadError, requireUuid } from './payload.js';
 
-const inputSchema = z.object({ skills: z.array(z.string().min(1).max(80).refine(isSafeIntakeSkill)).max(50) }).strict();
+function parseIntakeInput(input: unknown): { readonly skills: string[] } {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) throw new Error('技術名が不正です');
+  const value = input as Record<string, unknown>;
+  if (Object.keys(value).some((key) => key !== 'skills') || !Array.isArray(value.skills) || value.skills.length > 50
+    || value.skills.some((name) => typeof name !== 'string' || name.length === 0 || name.length > 80 || !isSafeIntakeSkill(name))) {
+    throw new Error('技術名が不正です');
+  }
+  return { skills: value.skills as string[] };
+}
 export function intakeFactsForAi(input: unknown): string {
-  const parsed = inputSchema.parse(input);
+  const parsed = parseIntakeInput(input);
   if (new Set(parsed.skills).size !== parsed.skills.length) throw new Error('技術名が重複しています');
   return JSON.stringify({ skills: parsed.skills });
 }
@@ -28,7 +35,7 @@ export function createIntakeParseHandler(deps: {
     if (!run) return;
     try {
       const facts = intakeFactsForAi(run.input);
-      const original = inputSchema.parse(run.input).skills;
+      const original = parseIntakeInput(run.input).skills;
       if (original.length === 0) {
         await finishIntakeAiRun(ctx, { id: runId, now: deps.now(), output: { skills: [] } });
         return;
