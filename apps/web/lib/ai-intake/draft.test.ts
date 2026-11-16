@@ -7,6 +7,12 @@ describe('登録文の下書き', () => {
       name: 'データ基盤', summary: 'SQL開発', availableFrom: '2027-01-05', priceMin: 600000, priceMax: 800000,
     });
   });
+  it('見出し付きの複数行から概要を取り出し、次の項目で区切る', () => {
+    expect(intakeDraftFromText('【案件名】データ基盤\n【内容】\nSQL開発\n設計と実装\n【単価】80万円', 'PROJECT')).toEqual({
+      name: 'データ基盤', summary: 'SQL開発\n設計と実装', priceMin: 800000, priceMax: 800000,
+    });
+  });
+
   it('単位が不明な単価や逆転した範囲は推測して入力しない', () => {
     expect(intakeDraftFromText('単価：80', 'PROJECT')).toEqual({});
     expect(intakeDraftFromText('単価：90〜60万円', 'PROJECT')).toEqual({});
