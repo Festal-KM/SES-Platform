@@ -57,6 +57,7 @@ export type EngineerWhereFragment = {
   unitPriceMin?: null | { lte: number };
   unitPriceMax?: null | { gte: number };
   availableFrom?: null | { lte: Date } | { gt: Date };
+  residencePrefecture?: PrefectureCode;
   prefecture?: null | PrefectureCode | { not: PrefectureCode };
   remoteMode?: null | RemoteMode | { not: RemoteMode };
   availability?: EngineerAvailability;
@@ -103,6 +104,7 @@ export type EngineerSearchCriteria = {
   /** 稼働可能時期（`YYYY-MM-DD`）。「この日までに稼働できる」。🔴 ソフト条件。 */
   readonly availableBy?: string;
   /** 勤務地（都道府県）。🔴 ソフト条件。 */
+  readonly residencePrefecture?: PrefectureCode;
   readonly prefecture?: PrefectureCode;
   /** リモート可否。🔴 こちらは**ハード条件**である（下記）。 */
   readonly remote?: RemoteMode;
@@ -328,6 +330,7 @@ export function engineerSearchPlan(criteria: EngineerSearchCriteria): EngineerSe
     //    利用者が明示的に選んだ絞り込みそのものである（`commutableCondition` が
     //    フルリモートを救済に使うのとは役割が違う）。
     ...(criteria.remote === undefined ? {} : { remoteMode: criteria.remote }),
+    ...(criteria.residencePrefecture === undefined ? {} : { residencePrefecture: criteria.residencePrefecture }),
     ...(and.length === 0 ? {} : { AND: and }),
   };
 

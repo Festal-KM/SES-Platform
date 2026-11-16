@@ -107,6 +107,7 @@ export type EngineerBaseView = {
   /** `YYYY-MM-DD` または `null`。 */
   readonly availableFrom: string | null;
   readonly utilizationRate?: number | null;
+  readonly residencePrefecture?: PrefectureCode | null;
   readonly unitPriceMin: number | null;
   readonly unitPriceMax: number | null;
   readonly prefecture: PrefectureCode | null;
@@ -294,6 +295,7 @@ export async function createEngineer(
         availability: input.availability,
         availableFrom: toDateOnly(input.availableFrom),
         utilizationRate: input.utilizationRate ?? null,
+        residencePrefecture: input.residencePrefecture ?? null,
         unitPriceMin: input.unitPriceMin,
         unitPriceMax: input.unitPriceMax,
         prefecture: input.prefecture,
@@ -358,6 +360,7 @@ export async function updateEngineer(
         ? {}
         : { availableFrom: toDateOnly(patch.availableFrom) }),
       ...(patch.utilizationRate === undefined ? {} : { utilizationRate: patch.utilizationRate }),
+      ...(patch.residencePrefecture === undefined ? {} : { residencePrefecture: patch.residencePrefecture }),
       ...(patch.unitPriceMin === undefined ? {} : { unitPriceMin: patch.unitPriceMin }),
       ...(patch.unitPriceMax === undefined ? {} : { unitPriceMax: patch.unitPriceMax }),
       ...(patch.prefecture === undefined ? {} : { prefecture: patch.prefecture }),
@@ -402,6 +405,7 @@ const ENGINEER_BASE_SELECT = {
   availability: true,
   availableFrom: true,
   utilizationRate: true,
+  residencePrefecture: true,
   unitPriceMin: true,
   unitPriceMax: true,
   prefecture: true,
@@ -421,6 +425,7 @@ type EngineerBaseRow = {
   readonly availability: string;
   readonly availableFrom: Date | null;
   readonly utilizationRate: number | null;
+  readonly residencePrefecture: string | null;
   readonly unitPriceMin: { toString(): string } | null;
   readonly unitPriceMax: { toString(): string } | null;
   readonly prefecture: string | null;
@@ -440,6 +445,7 @@ function toEngineerBaseView(
     availability: row.availability as EngineerAvailability,
     availableFrom: toDateOnlyString(row.availableFrom),
     utilizationRate: row.utilizationRate,
+    residencePrefecture: row.residencePrefecture as PrefectureCode | null,
     unitPriceMin: decimalToNumber(row.unitPriceMin),
     unitPriceMax: decimalToNumber(row.unitPriceMax),
     prefecture: row.prefecture as PrefectureCode | null,

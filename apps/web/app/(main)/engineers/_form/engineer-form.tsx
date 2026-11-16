@@ -139,6 +139,7 @@ export type EngineerFormValues = {
   readonly availability: string;
   readonly availableFrom: string;
   readonly utilizationRate?: string;
+  readonly residencePrefecture?: string;
   readonly unitPriceMin: string;
   readonly unitPriceMax: string;
   readonly prefecture: string;
@@ -361,6 +362,7 @@ function toRequestBody(values: EngineerFormValues) {
     availability: values.availability,
     availableFrom: emptyToNull(values.availableFrom),
     utilizationRate: numberOrNull(values.utilizationRate ?? ''),
+    residencePrefecture: emptyToNull(values.residencePrefecture ?? ''),
     unitPriceMin: numberOrNull(values.unitPriceMin),
     unitPriceMax: numberOrNull(values.unitPriceMax),
     prefecture: emptyToNull(values.prefecture),
@@ -1375,6 +1377,11 @@ export function EngineerForm({
             />
           </Field>
         </fieldset>
+        <Field className="mb-4" label={t('engineers.searchPanel.residence')}>
+          <Select name="residencePrefecture" value={values.residencePrefecture ?? ''} onChange={(event) => update({ residencePrefecture: event.target.value })} data-testid="engineer-residence-prefecture">
+            {prefectureOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </Select>
+        </Field>
         <Field className="mb-4" label={messages.prefectureLabel}>
           <Select
             name="prefecture"

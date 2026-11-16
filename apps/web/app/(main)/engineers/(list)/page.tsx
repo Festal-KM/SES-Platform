@@ -114,6 +114,7 @@ export default async function EngineerLedgerPage({
           priceMin: query.priceMin === undefined ? '' : String(query.priceMin),
           priceMax: query.priceMax === undefined ? '' : String(query.priceMax),
           availableBy: query.availableBy ?? '',
+          residencePrefecture: query.residencePrefecture ?? '',
           prefecture: query.prefecture ?? '',
           remote: query.remote ?? '',
           availability: query.availability ?? '',

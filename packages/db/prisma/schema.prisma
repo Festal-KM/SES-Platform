@@ -399,6 +399,7 @@ model Engineer {
   /// EngineerAvailability（上記参照。CHECK）
   availability          String    @default("WORKING")
   availableFrom         DateTime? @map("available_from") @db.Date // 稼働可能時期（F-045 が満了日/離任日で更新）
+  residencePrefecture    String? @map("residence_prefecture")
   utilizationRate       Int?      @map("utilization_rate") // 稼働率（0〜100%）
   unitPriceMin          Decimal?  @map("unit_price_min") @db.Decimal(12, 2)
   unitPriceMax          Decimal?  @map("unit_price_max") @db.Decimal(12, 2)

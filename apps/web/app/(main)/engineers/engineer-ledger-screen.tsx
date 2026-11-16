@@ -80,6 +80,7 @@
 //    「文言が無い状態の描画」を試せなくなる。**検索条件つきのリンク（ページング・条件の解除）は
 //    props で受け取る** —— 組み立てはテストできる場所（`engineerListHref`）に置く。
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import { t } from '@ses/i18n';
 import { EngineerSearchPanel, EngineerUtilizationFilter } from './engineer-search-panel';
 import {
@@ -127,6 +128,7 @@ export type EngineerListFilterValues = {
   readonly priceMax: string;
   readonly availableBy: string;
   readonly prefecture: string;
+  readonly residencePrefecture?: string;
   readonly remote: string;
   readonly availability: string;
   readonly utilizationBand?: string;
@@ -314,6 +316,11 @@ function engineerColumns(
   ];
 }
 
+function EngineerDetailSection({ enabled, children }: { readonly enabled: boolean; readonly children: ReactNode }) {
+  if (!enabled) return <>{children}</>;
+  return <details className="min-w-0"><summary className="flex cursor-pointer items-center bg-bg-subtle px-3 py-3 text-body font-semibold text-fg">{t('projects.search.advanced')}</summary><div className="pt-3">{children}</div></details>;
+}
+
 export function EngineerLedgerScreen({
   rows,
   filters,
@@ -418,7 +425,8 @@ export function EngineerLedgerScreen({
                         ))}
                       </Select>
                     </Field>
-                    <Field as="div" label={messages.searchSkills}>
+                    <div className={cn(searchScope ? 'grid grid-cols-1 gap-3 sm:col-span-2 sm:grid-cols-2' : 'contents')}>
+                    <Field as="div" className={cn(searchScope && "sm:col-span-2")} label={messages.searchSkills}>
                       {/* 🔴 辞書からの選択のみ（自由入力は別名候補の起票であり `S-007` の責務。
                           `F-010 AC-1`「採用されるまで検索の正規化に使われない」）。 */}
                       {/* ✅ 2026-11-01（人間の指示）: 複数選択は共通部品に統一（`<select multiple>` をやめた）。
@@ -435,7 +443,31 @@ export function EngineerLedgerScreen({
                           説明文が入力欄のアクセシブル名に畳み込まれる（`@ses/ui` の `field.tsx` 冒頭）。 */}
                       {!searchScope ? <span className="text-xs text-fg-muted">{messages.searchSkillsHint}</span> : null}
                     </Field>
-                    <Field label={messages.searchRemote}>
+                    <Field label={messages.searchSkillMode}>
+                      <Select
+                        name="skillMode"
+                        defaultValue={searchScope && filters.skills.length === 0 && filters.skillMode === 'AND' ? 'OR' : filters.skillMode}
+                        data-testid="engineer-list-filter-skill-mode"
+                      >
+                        {skillModeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label={messages.searchYearsMin}>
+                      <Input
+                        type="number"
+                        name="yearsMin"
+                        min={0}
+                        step={0.5}
+                        defaultValue={filters.yearsMin}
+                        data-testid="engineer-list-filter-years-min"
+                      />
+                    </Field>
+                    </div>
+                    <Field label={searchScope ? t('engineers.searchPanel.workStyle') : messages.searchRemote}>
                       <Select
                         name="remote"
                         defaultValue={filters.remote}
@@ -443,7 +475,7 @@ export function EngineerLedgerScreen({
                       >
                         {remoteOptions.map((option) => (
                           <option key={option.value} value={option.value}>
-                            {option.label}
+                            {searchScope && option.value === 'ONSITE_ONLY' ? t('engineers.searchPanel.onsite') : searchScope && option.value === 'PARTIAL_REMOTE' ? t('engineers.searchPanel.partialRemote') : searchScope && option.value === 'FULL_REMOTE' ? t('engineers.searchPanel.fullRemote') : option.label}
                           </option>
                         ))}
                       </Select>
@@ -470,7 +502,11 @@ export function EngineerLedgerScreen({
                       />
                     </Field>
                       </div>
-                    <Field label={messages.searchPrefecture}>
+                    {searchScope ? <Field label={t('engineers.searchPanel.residence')}>
+                      <Select name="residencePrefecture" defaultValue={filters.residencePrefecture ?? ''} data-testid="engineer-list-filter-residence">
+                        {prefectureOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </Select>
+                    </Field> : <Field label={messages.searchPrefecture}>
                       <Select
                         name="prefecture"
                         defaultValue={filters.prefecture}
@@ -482,7 +518,7 @@ export function EngineerLedgerScreen({
                           </option>
                         ))}
                       </Select>
-                    </Field>
+                    </Field> }
                     <Field label={messages.searchAvailableBy}>
                       <Input
                         type="date"
@@ -491,41 +527,31 @@ export function EngineerLedgerScreen({
                         data-testid="engineer-list-filter-available-by"
                       />
                     </Field>
+                    </div>
+                    <EngineerDetailSection enabled={Boolean(searchScope)}>
+                    <div className={cn(searchScope ? 'grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-4' : 'contents')}>
+                    {searchScope ? <Field label={messages.searchPrefecture}>
+                      <Select
+                        name="prefecture"
+                        defaultValue={filters.prefecture}
+                        data-testid="engineer-list-filter-prefecture"
+                      >
+                        {prefectureOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field> : null}
                     {searchScope ? <Field as="div" className="sm:col-span-2" label={t('projects.search.utilization')}>
                       <EngineerUtilizationFilter initial={filters.utilizationBand ?? ''} />
                     </Field> : null}
-                    </div>
-                    {searchScope ? <p className="m-0 bg-bg-subtle px-3 py-3 text-body font-semibold text-fg">{t('projects.search.advanced')}</p> : null}
-                    <div className={cn(searchScope ? 'grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-4' : 'contents')}>
                     <Field className={cn("sm:col-span-2 xl:col-span-4", !searchScope && "lg:col-span-3")} label={messages.searchQ}>
                       <Input
                         type="search"
                         name="q"
                         defaultValue={filters.q}
                         data-testid="engineer-list-filter-q"
-                      />
-                    </Field>
-                    <Field label={messages.searchSkillMode}>
-                      <Select
-                        name="skillMode"
-                        defaultValue={searchScope && filters.skills.length === 0 && filters.skillMode === 'AND' ? 'OR' : filters.skillMode}
-                        data-testid="engineer-list-filter-skill-mode"
-                      >
-                        {skillModeOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                    <Field label={messages.searchYearsMin}>
-                      <Input
-                        type="number"
-                        name="yearsMin"
-                        min={0}
-                        step={0.5}
-                        defaultValue={filters.yearsMin}
-                        data-testid="engineer-list-filter-years-min"
                       />
                     </Field>
                     <Field as="div">
@@ -552,6 +578,7 @@ export function EngineerLedgerScreen({
                       </span>
                     </Field>
                     </div>
+                    </EngineerDetailSection>
                     {/* 🔴 送信と「条件をクリア」は必ず 1 行を占める（列の途中に紛れると押せる場所が
                         毎回変わる）。`justify-end` はカードの中で右に寄せるための配置の調整であり、
                         共有定数（`FILTER_ACTIONS_CLASSES`）は変えていない。 */}

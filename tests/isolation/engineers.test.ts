@@ -1529,3 +1529,20 @@ describe('人材の稼働率', () => {
     expect((await engineerRow(high)).utilizationRate).toBe(50);
   });
 });
+
+
+describe('人材の在住地', () => {
+  it('希望勤務地と分けて保存し、自社で閲覧できる一致行だけを検索する', async () => {
+    const host = await ctxOf(HOST_1, 'SALES');
+    const partner = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+    const tokyo = await createdIdOf(await postEngineer(host, { displayName: `${MARKER}東京在住`, residencePrefecture: '13', prefecture: '27' }));
+    const osaka = await createdIdOf(await postEngineer(host, { displayName: `${MARKER}大阪在住`, residencePrefecture: '27', prefecture: '13' }));
+    const other = await createdIdOf(await postEngineer(partner, { displayName: `${MARKER}他社在住`, residencePrefecture: '13' }));
+    const result = await listBodyOf(await getEngineers(host, '?residencePrefecture=13'));
+    expect(result.items.map((item) => item.id)).toContain(tokyo);
+    expect(result.items.map((item) => item.id)).not.toContain(osaka);
+    expect(result.items.map((item) => item.id)).not.toContain(other);
+    expect((await patchEngineer(host, tokyo, { residencePrefecture: '27' })).status).toBe(200);
+    expect((await engineerRow(tokyo)).residencePrefecture).toBe('27');
+  });
+});

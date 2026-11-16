@@ -114,6 +114,7 @@ const engineerFields = {
   utilizationRate: z.number().int().min(0).max(100).nullable(),
   unitPriceMin: z.number().int().min(0).max(UNIT_PRICE_MAX).nullable(),
   unitPriceMax: z.number().int().min(0).max(UNIT_PRICE_MAX).nullable(),
+  residencePrefecture: z.enum(PREFECTURE_CODES).nullable(),
   prefecture: z.enum(PREFECTURE_CODES).nullable(),
   remoteMode: z.enum(REMOTE_MODES).nullable(),
   /** 🔴 `BR-52`: 希望条件の自由記述。**営業判断に不要な情報の置き場所にしない**（画面で明示する）。 */
@@ -155,6 +156,7 @@ export const createEngineerBodySchema = z.object({
   utilizationRate: engineerFields.utilizationRate.optional(),
   unitPriceMin: engineerFields.unitPriceMin.default(null),
   unitPriceMax: engineerFields.unitPriceMax.default(null),
+  residencePrefecture: engineerFields.residencePrefecture.optional(),
   prefecture: engineerFields.prefecture.default(null),
   remoteMode: engineerFields.remoteMode.default(null),
   preferenceNote: engineerFields.preferenceNote.default(null),
@@ -184,6 +186,7 @@ export const updateEngineerBodySchema = z.object({
   utilizationRate: engineerFields.utilizationRate.optional(),
   unitPriceMin: engineerFields.unitPriceMin.optional(),
   unitPriceMax: engineerFields.unitPriceMax.optional(),
+  residencePrefecture: engineerFields.residencePrefecture.optional(),
   prefecture: engineerFields.prefecture.optional(),
   remoteMode: engineerFields.remoteMode.optional(),
   preferenceNote: engineerFields.preferenceNote.optional(),
@@ -284,6 +287,7 @@ export const engineerSearchCriteriaFields = {
 
 export const engineerListQuerySchema = idCursorPageQuerySchema.extend({
   ...engineerSearchCriteriaFields,
+  residencePrefecture: optionalFilter(z.enum(PREFECTURE_CODES)),
   utilizationBand: optionalFilter(z.enum(PROJECT_UTILIZATION_BANDS)),
 });
 

@@ -11,6 +11,7 @@ test('自社人材の検索条件を保存し、折りたたんでも検索で�
     await expect(page.getByRole('heading', { name: t('engineers.searchPanel.title') })).toBeVisible();
     await expect(page.getByText(t('projects.search.basic'), { exact: true })).toBeVisible();
     await expect(page.getByText(t('projects.search.advanced'), { exact: true })).toBeVisible();
+    await page.getByText(t('projects.search.advanced'), { exact: true }).click();
     const query = page.getByTestId('engineer-list-filter-q');
     await query.fill('検索確認');
     await page.getByRole('button', { name: t('projects.search.save'), exact: true }).click();
@@ -29,6 +30,7 @@ test('自社人材の検索条件を保存し、折りたたんでも検索で�
     await expect(page).not.toHaveURL(/q=/);
     await page.getByRole('button', { name: t('engineers.searchPanel.expand') }).click();
     await expect(page.getByTestId('engineer-list-filter-q')).toHaveValue('');
+    await page.getByText(t('projects.search.advanced'), { exact: true }).click();
     await page.getByTestId('engineer-list-utilization-segment-UNDER_HALF').locator('..').click();
     await page.getByTestId('engineer-list-search').click();
     await expect(page).toHaveURL(/utilizationBand=UNDER_HALF/);

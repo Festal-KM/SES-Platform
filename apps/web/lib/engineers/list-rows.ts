@@ -201,6 +201,7 @@ export function engineerListHref(query: EngineerListQuery, cursor: string | null
   if (query.priceMin !== undefined) params.set('priceMin', String(query.priceMin));
   if (query.priceMax !== undefined) params.set('priceMax', String(query.priceMax));
   if (query.availableBy !== undefined) params.set('availableBy', query.availableBy);
+  if (query.residencePrefecture !== undefined) params.set('residencePrefecture', query.residencePrefecture);
   if (query.prefecture !== undefined) params.set('prefecture', query.prefecture);
   if (query.remote !== undefined) params.set('remote', query.remote);
   if (query.availability !== undefined) params.set('availability', query.availability);
@@ -315,6 +316,9 @@ export function activeEngineerFilters(
       `${t('engineers.list.search.availableBy')}: ${query.availableBy}`,
       without(query, { availableBy: undefined }),
     );
+  }
+  if (query.residencePrefecture !== undefined) {
+    push('residencePrefecture', `${t('engineers.searchPanel.residence')}: ${t(PREFECTURE_MESSAGE_KEYS[query.residencePrefecture])}`, without(query, { residencePrefecture: undefined }));
   }
   if (query.prefecture !== undefined) {
     push(
