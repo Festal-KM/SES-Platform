@@ -9,8 +9,8 @@ import { candidateReference } from '../db/bootstrap';
 import { requireMatchCandidatesQueue } from '../jobs/match-candidates-queue';
 import { listProjectCandidates } from './list';
 import { candidateListRows, type CandidateRowView } from './list-rows';
-import type { ProjectCandidateListQuery } from './schemas';
-import { findRequestedSkills, orderCandidateReasons, prepareCandidateFacts, selectCandidatesForExplanation } from './ai-input';
+import { projectCandidateListQuerySchema, type ProjectCandidateListQuery } from './schemas';
+import { findRequestedSkills, orderCandidateReasons, prepareCandidateFacts } from './ai-input';
 
 const MAX_CANDIDATES = 1000;
 const RUN_TTL_MS = 15 * 60 * 1000;
@@ -26,9 +26,7 @@ async function readCandidates(ctx: AuthenticatedTenantCtx, projectId: string, ip
   let initialQuery: ProjectCandidateListQuery | undefined;
   let requiredSkills: string[] = [];
   do {
-    const request = initialQuery
-      ? { kind: 'CRITERIA' as const, query: { ...initialQuery, cursor } }
-      : { kind: 'PROJECT_DEFAULTS' as const, limit: 200 };
+    const request = { kind: 'CRITERIA' as const, query: { ...(initialQuery ?? projectCandidateListQuerySchema.parse({ limit: 200 })), cursor } };
     const view = await listProjectCandidates(ctx, projectId, request, deps);
     initialQuery = view.query;
     if (view.total > MAX_CANDIDATES) throw new Error('候補数が上限を超えています');
@@ -62,7 +60,7 @@ async function readOwnSkills(ctx: AuthenticatedTenantCtx, rows: readonly Candida
 export async function startAiCandidates(ctx: AuthenticatedTenantCtx, projectId: string, message: string, ipAddress: string | null) {
   requireHost(ctx);
   const population = await readCandidates(ctx, projectId, ipAddress);
-  const selected = selectCandidatesForExplanation(population.rows);
+  const selected = population.rows;
   const ownSkills = await readOwnSkills(ctx, selected);
   const allowed = [...population.requiredSkills, ...selected.flatMap((row) => row.kind === 'ANONYMOUS' ? row.allSkills : (ownSkills.get(row.id) ?? row.skills))];
   const prepared = prepareCandidateFacts(selected, randomUUID, ownSkills);

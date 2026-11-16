@@ -12,9 +12,9 @@ describe('候補選出の AI ロール', () => {
     expect(prompt.user).toContain('<untrusted_document>');
     expect(prompt.user).toContain('Java');
     expect(prompt.system).toContain('推測');
-    expect(prompt.system).toContain('候補の選択と並びは決定済み');
-    expect(prompt.system).toContain('すべての候補');
-    expect(matchExplainerSpec.promptVersion).toBe('match-explainer.v1');
+    expect(prompt.system).toContain('適合する候補だけを最大20件');
+    expect(prompt.system).toContain('適合する候補がいなければ');
+    expect(matchExplainerSpec.promptVersion).toBe('match-explainer.v2');
   });
 
   it('候補識別子と理由のある応答だけを受け取る', () => {

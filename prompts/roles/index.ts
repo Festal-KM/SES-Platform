@@ -10,6 +10,7 @@
 
 import { prompt as gateInspectorV1 } from './gate-inspector.v1.js';
 import { prompt as matchExplainerV1 } from './match-explainer.v1.js';
+import { prompt as matchExplainerV2 } from './match-explainer.v2.js';
 import type { GateInspectorPromptModule } from './contracts.js';
 
 export type {
@@ -33,6 +34,7 @@ export type GateInspectorPromptVersion = keyof typeof GATE_INSPECTOR_PROMPTS;
 
 export const MATCH_EXPLAINER_PROMPTS = {
   'match-explainer.v1': matchExplainerV1,
+  'match-explainer.v2': matchExplainerV2,
 } as const;
 
 /**
@@ -45,7 +47,7 @@ export const MATCH_EXPLAINER_PROMPTS = {
  */
 export const ROLE_PROMPTS = {
   'gate-inspector': GATE_INSPECTOR_PROMPTS['gate-inspector.v1'],
-  'match-explainer': MATCH_EXPLAINER_PROMPTS['match-explainer.v1'],
+  'match-explainer': MATCH_EXPLAINER_PROMPTS['match-explainer.v2'],
 } as const;
 
 export type RegisteredPromptRole = keyof typeof ROLE_PROMPTS;

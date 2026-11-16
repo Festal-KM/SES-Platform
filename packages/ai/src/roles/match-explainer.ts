@@ -28,5 +28,5 @@ export const matchExplainerSpec = defineRoleSpec<MatchExplainerInput, MatchExpla
   buildPrompt: (input) => prompt.build(PROMPT_KIT, input),
   defaultModel: 'DEFAULT',
   maxOutputTokens: 2048,
-  timeoutMs: 20000,
+  timeoutMs: 50000,
 });
