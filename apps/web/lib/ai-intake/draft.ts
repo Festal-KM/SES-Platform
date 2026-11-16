@@ -10,7 +10,7 @@ export type IntakeDraft = {
 function labeledLine(text: string, labels: readonly string[], multiline = false): string | undefined {
   const label = labels.join('|');
   const pattern = new RegExp(`^\\s*(?:[【\\[](?:${label})[】\\]]\\s*[：:]?|(?:${label})\\s*[：:])\\s*(.*?)\\s*$`, 'iu');
-  const nextHeader = /^\s*(?:[【\[][^】\]]{1,40}[】\]]|[^：:]{1,30}[：:])/u;
+  const nextHeader = /^\s*(?:【[^】]{1,40}】|\[.{1,40}?\]|[^：:]{1,30}[：:])/u;
   const lines = text.split(/\r?\n/u);
   for (let index = 0; index < lines.length; index += 1) {
     const match = pattern.exec(lines[index] ?? '');
