@@ -96,6 +96,15 @@ test.describe('モバイルビューポートのスモーク（S-010 / S-011 は
         'HOST',
       );
       await expect(session.page.getByTestId('project-detail-name')).toBeVisible();
+      const projectUrl = session.page.url();
+      await session.page.getByTestId('project-detail-candidates').click();
+      const research = session.page.getByRole('complementary', { name: 'AIリサーチ' });
+      await expect(research).toBeVisible();
+      await expect(research.getByText('AIへの質問と候補の検索は準備中です。')).toBeVisible();
+      await expect(research.getByLabel('質問の入力は準備中です')).toBeDisabled();
+      expect(session.page.url()).toBe(projectUrl);
+      await research.getByRole('button', { name: '閉じる' }).click();
+      await expect(research).toBeHidden();
 
       // ③ 判断材料が可視: 見出し（状態・単価・開始日など）と必須要件のブロック。
       //    🔴 Tier 2 でも**要件は落とさない**（提案の可否を判断する材料そのもの）。

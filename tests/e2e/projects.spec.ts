@@ -90,6 +90,14 @@ test.describe('S-012 案件の登録・編集（T-06-01 / 遷移先は T-06-02 �
         'HOST',
       );
       await expect(session.page.getByTestId('project-detail-name')).toHaveText(name);
+      const projectUrl = session.page.url();
+      await session.page.getByTestId('project-detail-candidates').click();
+      const research = session.page.getByRole('complementary', { name: 'AIリサーチ' });
+      await expect(research).toBeVisible();
+      expect(session.page.url()).toBe(projectUrl);
+      await session.page.keyboard.press('Escape');
+      await expect(research).toBeHidden();
+      await expect(session.page.getByTestId('project-detail-candidates')).toBeFocused();
       // 🔴 `F-014 AC-2`: 保存しただけでは誰にも公開されていない。登録者がその場で気づける。
       await expect(session.page.getByTestId('project-detail-visibility-warning')).toBeVisible();
 

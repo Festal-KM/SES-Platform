@@ -446,6 +446,8 @@ describe('添付に合わせたコンパクトなホスト見出し',()=>{
   it('状態と主要項目を残して候補検索・コピーをタイトル横に配置する',()=>{
     const html=renderToStaticMarkup(createElement(ProjectDetailScreen,{view:hostView(),requirementKinds:REQUIREMENT_KINDS,canEdit:true,messages,compactHeader:{categoryLabel:'カテゴリ',sourceKindLabel:'案件区分',category:'バックエンド',sourceKind:'自社案件',updatedAt:'2026-10-31',assignee:'サンプル担当者',copyText:'提出用サマリ',updatedLabel:'更新日時',assigneeLabel:'担当者',candidatesLabel:'候補を探す',statusOptions:[{value:'OPEN',label:'募集中'},{value:'CLOSED',label:'終了'}]}}));
     for(const id of ['project-detail-headline','project-detail-headline-status','project-detail-candidates','project-detail-copy-summary'])expect(html).toContain(`data-testid="${id}"`);
+    expect(html).toContain('AIリサーチで候補を探す');
+    expect(html).toMatch(/<button[^>]*data-testid="project-detail-candidates"/);
     // ✅ 2026-11-02: 募集人数・開始時期はタブの上の共通サマリーへ移した（見出しには重複させない）。
     for(const id of ['project-detail-headline-headcount','project-detail-headline-startDate'])expect(html).not.toContain(`data-testid="${id}"`);
     expect(html).toContain('サンプル担当者');
