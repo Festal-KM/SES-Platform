@@ -2661,6 +2661,7 @@ const ja = {
     '「経験年数」は、登録されたスキルの経験年数で判定します（スキルを指定した場合はそのスキル、指定しない場合は最も長いスキル）。1 人あたりの集約値を列として表示するのは、後続のリリースです。スキルごとの経験年数は人材の詳細で確認できます。',
   // --- 検索条件（`docs/04` §S-005 セクション 1・2 / `F-009`）。T-06-04 ---
   'engineers.searchPanel.title': '自社人材管理',
+  'engineers.searchPanel.unknownSkill': '不明なスキル',
   'engineers.searchPanel.residence': '在住',
   'engineers.searchPanel.workStyle': '勤務形態',
   'engineers.searchPanel.onsite': '出社可',

@@ -112,6 +112,7 @@ export function ActiveFilterBar({
   onCancel,
   messages,
   testIdPrefix,
+  formId,
 }: {
   readonly chips: readonly ProjectSearchChip[];
   readonly pending: boolean;
@@ -124,6 +125,7 @@ export function ActiveFilterBar({
   readonly onCancel?: () => void;
   readonly messages: ActiveFilterBarMessages;
   readonly testIdPrefix: string;
+  readonly formId?: string;
 }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
@@ -309,7 +311,7 @@ export function ActiveFilterBar({
             data-testid={`${testIdPrefix}clear`} onClick={onClear} />
         </Tooltip>
         <Tooltip content={messages.submit}>
-          <IconButton type="submit" variant="primary" aria-label={messages.submit} aria-busy={submitting} icon={<Icon name="search" />}
+          <IconButton type="submit" form={formId} variant="primary" aria-label={messages.submit} aria-busy={submitting} icon={<Icon name="search" />}
             data-testid={`${testIdPrefix}search`} />
         </Tooltip>
       </div> : null}

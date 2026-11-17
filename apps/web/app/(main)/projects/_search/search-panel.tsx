@@ -101,7 +101,8 @@ import {
 // 🔴 overlay 部品（Radix）は `@ses/ui/client` に分かれている。
 //    🔴 **import する側が `'use client'` を宣言している**
 //       （`tests/static/ui-dependency-single-path.test.ts` (i)⑤。このファイルの 1 行目）。
-import { Dialog, Tabs, Tooltip } from '@ses/ui/client';
+import { Dialog, Tooltip } from '@ses/ui/client';
+import { SearchPanelTabs } from '../../_shared/search-panel-tabs';
 import { ActiveFilterBar, type ActiveFilterBarMessages } from './active-filter-bar';
 import {
   projectDraftKeywordGroups,
@@ -538,8 +539,7 @@ export function SearchPanel({
           });
         }}
       >
-        <Tabs
-          className="gap-0 [&_[role=tab]]:text-cell [&_[role=tab][data-state=active]]:border-b-fg [&_[role=tab][data-state=active]]:text-fg"
+        <SearchPanelTabs
           label={messages.tabsLabel}
           value={tab}
           onValueChange={(value) => {

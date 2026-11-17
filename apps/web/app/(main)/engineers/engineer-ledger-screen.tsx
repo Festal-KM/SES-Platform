@@ -82,7 +82,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { t } from '@ses/i18n';
-import { EngineerSearchPanel, EngineerUtilizationFilter } from './engineer-search-panel';
+import { EngineerSearchPanel, EngineerUtilizationFilter, EngineerFilterSelect } from './engineer-search-panel';
 import {
   Button,
   Card,
@@ -395,12 +395,12 @@ export function EngineerLedgerScreen({
             <Card className="w-full">
               {/* `CardContent` は `p-4 pt-0`。見出しを持たないカードなので上の余白を戻す
                   （`cn()` = `tailwind-merge` が `pt-0` を落とす）。 */}
-              <CardContent className="pt-4">
+              <CardContent className={searchScope ? 'p-0' : 'pt-4'}>
                 {/* 🔴 検索条件（docs/04 §S-005 セクション 1）。`method="get"` なので、実行した検索が
                     そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。
                     ⚠️ `mb-0` / `w-full` は帯の中に置いたための余白・幅の調整である（`cn()` の規律 1）。
                        `FILTER_FORM_CLASSES` の `mb-6` は帯の外に置く 3 画面がまだ使っている。 */}
-                <EngineerSearchPanel activeFilters={activeFilters} scope={searchScope}>
+                <EngineerSearchPanel activeFilters={activeFilters} scope={searchScope} options={{ skills: skillOptions, availability: availabilityOptions, remote: remoteOptions, prefecture: prefectureOptions, skillMode: skillModeOptions }}>
                 <form
                   key={JSON.stringify(filters)}
                   className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full', searchScope && 'flex flex-col items-stretch gap-4')}
@@ -413,7 +413,9 @@ export function EngineerLedgerScreen({
                     <legend className="sr-only">{messages.searchLegend}</legend>
                     {searchScope ? <p className="m-0 bg-bg-subtle px-3 py-3 text-body font-semibold text-fg">{t('projects.search.basic')}</p> : null}
                     <div className={cn(searchScope ? 'grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-4' : 'contents')}>
-                    <Field label={messages.searchAvailability}>
+                    {searchScope ? <Field as="div" labelClassName="text-xs text-fg-muted" label={messages.searchAvailability}>
+                      <EngineerFilterSelect name="availability" initial={filters.availability} label={messages.searchAvailability} options={availabilityOptions} testId="engineer-list-filter-availability" />
+                    </Field> : <Field label={messages.searchAvailability}>
                       <Select
                         name="availability"
                         defaultValue={filters.availability}
@@ -425,7 +427,7 @@ export function EngineerLedgerScreen({
                           </option>
                         ))}
                       </Select>
-                    </Field>
+                    </Field> }
                     <div className={cn(searchScope ? 'grid grid-cols-1 gap-3 sm:col-span-2 sm:grid-cols-2' : 'contents')}>
                     <Field as="div" className={cn(searchScope && "sm:col-span-2")} label={messages.searchSkills}>
                       {/* 🔴 辞書からの選択のみ（自由入力は別名候補の起票であり `S-007` の責務。
@@ -444,7 +446,9 @@ export function EngineerLedgerScreen({
                           説明文が入力欄のアクセシブル名に畳み込まれる（`@ses/ui` の `field.tsx` 冒頭）。 */}
                       {!searchScope ? <span className="text-xs text-fg-muted">{messages.searchSkillsHint}</span> : null}
                     </Field>
-                    <Field label={messages.searchSkillMode}>
+                    {searchScope ? <Field as="div" labelClassName="text-xs text-fg-muted" label={messages.searchSkillMode}>
+                      <EngineerFilterSelect name="skillMode" initial={filters.skills.length === 0 && filters.skillMode === 'AND' ? 'OR' : filters.skillMode} label={messages.searchSkillMode} options={skillModeOptions} testId="engineer-list-filter-skill-mode" />
+                    </Field> : <Field label={messages.searchSkillMode}>
                       <Select
                         name="skillMode"
                         defaultValue={searchScope && filters.skills.length === 0 && filters.skillMode === 'AND' ? 'OR' : filters.skillMode}
@@ -456,7 +460,7 @@ export function EngineerLedgerScreen({
                           </option>
                         ))}
                       </Select>
-                    </Field>
+                    </Field> }
                     <Field label={messages.searchYearsMin}>
                       <Input
                         type="number"
@@ -468,7 +472,9 @@ export function EngineerLedgerScreen({
                       />
                     </Field>
                     </div>
-                    <Field label={searchScope ? t('engineers.searchPanel.workStyle') : messages.searchRemote}>
+                    {searchScope ? <Field as="div" labelClassName="text-xs text-fg-muted" label={t('engineers.searchPanel.workStyle')}>
+                      <EngineerFilterSelect name="remote" initial={filters.remote} label={t('engineers.searchPanel.workStyle')} options={remoteOptions.map((option) => ({ ...option, label: option.value === 'ONSITE_ONLY' ? t('engineers.searchPanel.onsite') : option.value === 'PARTIAL_REMOTE' ? t('engineers.searchPanel.partialRemote') : option.value === 'FULL_REMOTE' ? t('engineers.searchPanel.fullRemote') : option.label }))} testId="engineer-list-filter-remote" />
+                    </Field> : <Field label={searchScope ? t('engineers.searchPanel.workStyle') : messages.searchRemote}>
                       <Select
                         name="remote"
                         defaultValue={filters.remote}
@@ -480,7 +486,7 @@ export function EngineerLedgerScreen({
                           </option>
                         ))}
                       </Select>
-                    </Field>
+                    </Field> }
                       <div className={cn(searchScope ? 'grid grid-cols-2 gap-2' : 'contents')}>
                     <Field label={messages.searchPriceMin}>
                       <Input
@@ -503,10 +509,8 @@ export function EngineerLedgerScreen({
                       />
                     </Field>
                       </div>
-                    {searchScope ? <Field label={t('engineers.searchPanel.residence')}>
-                      <Select name="residencePrefecture" defaultValue={filters.residencePrefecture ?? ''} data-testid="engineer-list-filter-residence">
-                        {prefectureOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </Select>
+                    {searchScope ? <Field as="div" labelClassName="text-xs text-fg-muted" label={t('engineers.searchPanel.residence')}>
+                      <EngineerFilterSelect name="residencePrefecture" initial={filters.residencePrefecture ?? ''} label={t('engineers.searchPanel.residence')} options={prefectureOptions} testId="engineer-list-filter-residence" />
                     </Field> : <Field label={messages.searchPrefecture}>
                       <Select
                         name="prefecture"
