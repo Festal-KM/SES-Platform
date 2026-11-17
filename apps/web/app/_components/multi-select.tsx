@@ -581,6 +581,7 @@ export function FormMultiSelect({
   label,
   testIdPrefix,
   testId,
+  onChange,
 }: {
   readonly name: string;
   readonly options: readonly MultiSelectOption[];
@@ -589,11 +590,12 @@ export function FormMultiSelect({
   readonly label: string;
   readonly testIdPrefix: string;
   readonly testId?: string;
+  readonly onChange?: (values: readonly string[]) => void;
 }) {
   const [values, setValues] = useState<readonly string[]>(defaultValues);
   return (
     <>
-      <MultiSelect options={options} values={values} onChange={setValues} messages={skillMultiSelectMessages(label)} testIdPrefix={testIdPrefix} testId={testId} />
+      <MultiSelect options={options} values={values} onChange={(next) => { setValues(next); onChange?.(next); }} messages={skillMultiSelectMessages(label)} testIdPrefix={testIdPrefix} testId={testId} />
       {values.map((value) => (
         <input key={value} type="hidden" name={name} value={value} />
       ))}

@@ -9,25 +9,30 @@ import {
 } from '@ses/ui';
 import { DropdownMenu } from '@ses/ui/client';
 import type { ProjectSearchChip } from './filters';
-import type { SavedSearch } from './saved-searches';
+type SavedSearchEntry = {
+  readonly id: string;
+  readonly name: string;
+  readonly updatedAt: string;
+  readonly lastUsedAt?: string;
+};
 
 export type SavedSearchSort = 'RECENT' | 'UPDATED' | 'NAME';
 export const SAVED_SEARCH_PAGE_SIZE = 10;
 
 /** 保存名と条件の全文を対象にAND検索する。保存順・条件本体は書き換えない。 */
-export function visibleSavedSearches(
-  items: readonly SavedSearch[],
+export function visibleSavedSearches<T extends SavedSearchEntry>(
+  items: readonly T[],
   query: string,
   sort: SavedSearchSort,
-  chipsOf: (item: SavedSearch) => readonly ProjectSearchChip[],
-): SavedSearch[] {
+  chipsOf: (item: T) => readonly ProjectSearchChip[],
+): T[] {
   const terms = query.toLocaleLowerCase('ja').trim().split(/\s+/u).filter(Boolean);
   return items.filter((item) => {
     const text = [item.name, ...chipsOf(item).map((chip) => chip.label)].join(' ').toLocaleLowerCase('ja');
     return terms.every((term) => text.includes(term));
   }).sort((a, b) => {
     if (sort === 'NAME') return a.name.localeCompare(b.name, 'ja') || a.id.localeCompare(b.id);
-    const dateOf = (item: SavedSearch): string => sort === 'RECENT' ? item.lastUsedAt ?? item.updatedAt : item.updatedAt;
+    const dateOf = (item: T): string => sort === 'RECENT' ? item.lastUsedAt ?? item.updatedAt : item.updatedAt;
     return dateOf(b).localeCompare(dateOf(a)) || a.name.localeCompare(b.name, 'ja') || a.id.localeCompare(b.id);
   });
 }
@@ -59,20 +64,20 @@ export type SavedSearchListMessages = {
   readonly next: string;
 };
 
-export function SavedSearchList({
+export function SavedSearchList<T extends SavedSearchEntry>({
   items, activeId, broken, maxChips, chipsOf, onApply, onRename, onOverwrite, onRemove,
   onSaveCurrent, messages, testIdPrefix,
 }: {
-  readonly items: readonly SavedSearch[];
+  readonly items: readonly T[];
   /** 編集中も適用元の保存条件のIDを維持する。 */
   readonly activeId: string | null;
   readonly broken: boolean;
   readonly maxChips: number;
-  readonly chipsOf: (item: SavedSearch) => readonly ProjectSearchChip[];
-  readonly onApply: (item: SavedSearch) => void;
-  readonly onRename: (item: SavedSearch) => void;
-  readonly onOverwrite: (item: SavedSearch) => void;
-  readonly onRemove: (item: SavedSearch) => void;
+  readonly chipsOf: (item: T) => readonly ProjectSearchChip[];
+  readonly onApply: (item: T) => void;
+  readonly onRename: (item: T) => void;
+  readonly onOverwrite: (item: T) => void;
+  readonly onRemove: (item: T) => void;
   readonly onSaveCurrent: () => void;
   readonly messages: SavedSearchListMessages;
   readonly testIdPrefix: string;

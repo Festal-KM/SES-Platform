@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { t } from '@ses/i18n';
 import { type ProjectKeywordGroup } from '@ses/domain';
 import { Button, Field, Icon, IconButton, Input, Radio, SEARCH_KEYWORD_CHIP_CLASSES, cn } from '@ses/ui';
@@ -11,13 +11,15 @@ function readGroups(draft: ProjectSearchDraft): ProjectKeywordGroup[] {
   return groups.length ? groups : [{ mode: 'OR', terms: [] }];
 }
 
-export function KeywordGroups({ compact = false, openRequest = 0, draft, onChange, onComposingChange, testIdPrefix }: {
+export function KeywordGroups({ compact = false, openRequest = 0, draft, onChange, onComposingChange, testIdPrefix, targetLabel, children }: {
   readonly compact?: boolean;
   readonly openRequest?: number;
   readonly draft: ProjectSearchDraft;
   readonly onChange: (patch: Partial<ProjectSearchDraft>) => void;
   readonly onComposingChange: (value: boolean) => void;
   readonly testIdPrefix: string;
+  readonly targetLabel?: string;
+  readonly children?: ReactNode;
 }) {
   const [groups, setGroups] = useState<ProjectKeywordGroup[]>(() => readGroups(draft));
   const [pending, setPending] = useState<Readonly<Record<number, string>>>({});
@@ -65,7 +67,7 @@ export function KeywordGroups({ compact = false, openRequest = 0, draft, onChang
   const active = groups.filter(group => group.terms.length);
   const expression = active.map(group => group.terms.length > 1 ? `(${group.terms.join(` ${group.mode} `)})` : group.terms[0]).join(` ${t('projects.search.and')} `);
   return <details ref={root} className="border-t border-border pt-3" open={open} onToggle={event => setOpen(event.currentTarget.open)} data-testid={`${testIdPrefix}advanced`}>
-    <summary className="flex cursor-pointer flex-wrap items-center gap-3 bg-bg-subtle px-3 py-3 text-body text-fg" title={t('projects.search.advancedTargets')}>
+    <summary className="flex cursor-pointer flex-wrap items-center gap-3 bg-bg-subtle px-3 py-3 text-body text-fg" title={targetLabel ?? t('projects.search.advancedTargets')}>
       <span className="font-semibold">{t('projects.search.advanced')}</span>
       <span className="rounded-sm bg-brand-bg px-2 py-1 text-xs text-brand">{groups.length}{t('projects.search.groupCountSuffix')}</span>
       {open ? <span className="min-w-0 flex-1 text-xs text-fg-muted">{t('projects.search.advancedLead')}</span> : null}
@@ -96,7 +98,7 @@ export function KeywordGroups({ compact = false, openRequest = 0, draft, onChang
               </span>)}
               {!group.terms.length ? <Button type="button" variant="ghost" size="sm" className="border border-dashed border-brand text-brand" onClick={() => focusInput(index)} data-testid={`${testIdPrefix}keyword-empty-${index}`}><Icon name="plus" />{t('projects.search.firstKeyword')}</Button> : null}
               <Input data-keyword-input className="w-auto min-w-24 flex-1" name={index === 0 ? 'q' : undefined} value={pending[index] ?? ''} maxLength={200} placeholder={t('projects.search.keywordInput')}
-                aria-label={`${t('projects.search.addKeyword')} ${index + 1}`} data-testid={index === 0 ? `project-list-filter-q` : `${testIdPrefix}keyword-group-${index}`}
+                aria-label={`${t('projects.search.addKeyword')} ${index + 1}`} data-testid={index === 0 && testIdPrefix === 'project-list-filter-' ? `project-list-filter-q` : index === 0 ? `engineer-list-filter-q` : `${testIdPrefix}keyword-group-${index}`}
                 onChange={event => { const value = event.currentTarget.value; setPending(current => ({ ...current, [index]: value })); }}
                 onCompositionStart={() => onComposingChange(true)} onCompositionEnd={() => onComposingChange(false)}
                 onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); addTerm(index); } }} />
@@ -123,6 +125,7 @@ export function KeywordGroups({ compact = false, openRequest = 0, draft, onChang
           </span>
         </span>) : <span className="text-fg-muted">{t('projects.search.noKeywords')}</span>}
       </div>
+      {children}
     </div>
   </details>;
 }

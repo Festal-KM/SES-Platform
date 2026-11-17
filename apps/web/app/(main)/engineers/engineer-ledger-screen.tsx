@@ -82,7 +82,8 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { t } from '@ses/i18n';
-import { EngineerSearchPanel, EngineerUtilizationFilter } from './engineer-search-panel';
+import { EngineerSearchPanel, EngineerUtilizationFilter, EngineerFilterSelect, EngineerKeywordGroups, EngineerSkillsFilter } from './engineer-search-panel';
+import { EngineerSummaryPanel } from './engineer-summary-panel';
 import {
   Button,
   Card,
@@ -91,9 +92,12 @@ import {
   DataTable,
   EmptyState,
   Field,
-  Icon,
   Input,
   Pagination,
+  PAGE_BODY_ASIDE_ROW_CLASSES_BY_FROM,
+  PAGE_BODY_SPLIT_MAIN_CLASSES_BY_FROM,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES,
+  DETAIL_PANE_VIEWPORT_CLASSES,
   SECONDARY_LINK_CLASSES,
   StatusBadge,
   Select,
@@ -122,6 +126,7 @@ export type EngineerFilterOption = {
 /** フォームに戻す現在の検索条件（未指定は空文字 / チェックボックスは真偽）。 */
 export type EngineerListFilterValues = {
   readonly q: string;
+  readonly keywordGroups?: string;
   readonly skills: readonly string[];
   readonly skillMode: string;
   readonly yearsMin: string;
@@ -213,6 +218,7 @@ function EngineerPagingLink({ href, className, children, 'data-testid': testId }
 function engineerColumns(
   messages: EngineerLedgerScreenMessages,
   showOwnershipColumn: boolean,
+  selectHrefOf?: (id: string) => string,
 ): readonly DataTableColumn<EngineerListRowView>[] {
   return [
     {
@@ -225,7 +231,7 @@ function engineerColumns(
       //    導線 / `lg` 未満 = 折り返し）。**閲覧の監査記録は遷移先が書く**（`BR-27`）。
       nameCell: {
         name: (row) => row.displayName,
-        href: (row) => `/engineers/${row.id}`,
+        href: (row) => selectHrefOf ? selectHrefOf(row.id) : `/engineers/${row.id}`,
       },
     },
     // 🔴 取引先には所属区分の列を出さない（全件が自社であるため意味がない）。**DOM から取り除く**。
@@ -317,9 +323,14 @@ function engineerColumns(
   ];
 }
 
-function EngineerDetailSection({ enabled, children }: { readonly enabled: boolean; readonly children: ReactNode }) {
+function EngineerDetailSection({ enabled, initialQ, initialGroups, children }: { readonly enabled: boolean; readonly initialQ: string; readonly initialGroups: string; readonly children: ReactNode }) {
   if (!enabled) return <>{children}</>;
-  return <details className="min-w-0"><summary className="flex cursor-pointer items-center bg-bg-subtle px-3 py-3 text-body font-semibold text-fg">{t('projects.search.advanced')}<Icon name="chevron-down" className="ml-auto" /></summary><div className="pt-3">{children}</div></details>;
+  return <EngineerKeywordGroups initialQ={initialQ} initialGroups={initialGroups}>{children}</EngineerKeywordGroups>;
+}
+
+function EngineerResultsCard({ enabled, children }: { readonly enabled: boolean; readonly children: ReactNode }) {
+  if (!enabled) return <>{children}</>;
+  return <Card className="overflow-hidden" data-testid="engineer-list-results-card">{children}</Card>;
 }
 
 export function EngineerLedgerScreen({
@@ -337,6 +348,8 @@ export function EngineerLedgerScreen({
   nextPageHref,
   firstPageHref,
   messages,
+  selectedRow,
+  selectHrefOf,
 }: {
   readonly rows: readonly EngineerListRowView[];
   readonly filters: EngineerListFilterValues;
@@ -363,9 +376,12 @@ export function EngineerLedgerScreen({
   /** 2 ページ目以降でだけ「最初のページに戻る」を出す（無ければ `null`）。 */
   readonly firstPageHref: string | null;
   readonly messages: EngineerLedgerScreenMessages;
+  readonly selectedRow?: EngineerListRowView | null;
+  readonly selectHrefOf?: (id: string) => string;
 }) {
   return (
-    <div data-testid="engineer-ledger-screen">
+    <div className={searchScope ? cn(PAGE_BODY_ASIDE_ROW_CLASSES_BY_FROM.lg, 'gap-4 lg:items-start') : undefined} data-testid="engineer-ledger-screen">
+      <div className={searchScope ? cn(PAGE_BODY_SPLIT_MAIN_CLASSES_BY_FROM.lg, 'flex flex-col gap-4') : undefined}>
       {/* 🔴 §5-13 の `Toolbar`: **母集団の 1 行（§3.2-2 の #2）と検索の帯の置き場所をここに固定する。**
           画面ごとに位置が変わると、取引先が「自社分だけか」を毎画面で探すことになる。
 
@@ -377,14 +393,15 @@ export function EngineerLedgerScreen({
              画面から上書きできない）。 */}
       <div data-testid="engineer-list-population">
         <Toolbar
+          className={searchScope ? 'gap-0' : undefined}
           testIdPrefix="engineer-list-"
-          population={messages.populationLabel}
+          population={searchScope ? '' : messages.populationLabel}
           note={
             /* 🔴 並び順の説明（docs/04 §S-005「並び順の説明を一覧の上部に 1 行で書く」）。
                スコア・順位・重み・一致度の語を含めない（`F-009 AC-2`）。
                🔴 **選べる形にしない** —— `#15` の query に `?sort=` が無い（`HANDOFF.md` §5）。
                ⚠️ 器の `data-testid` は凍結済みの `engineer-list-order-note` である（`U-22`）。 */
-            <p className="text-xs text-fg-muted" data-testid="engineer-list-order-note">
+            <p className={cn('text-xs text-fg-muted', searchScope && 'sr-only')} data-testid="engineer-list-order-note">
               {messages.orderNote}
             </p>
           }
@@ -395,12 +412,12 @@ export function EngineerLedgerScreen({
             <Card className="w-full">
               {/* `CardContent` は `p-4 pt-0`。見出しを持たないカードなので上の余白を戻す
                   （`cn()` = `tailwind-merge` が `pt-0` を落とす）。 */}
-              <CardContent className="pt-4">
+              <CardContent className={searchScope ? 'p-0' : 'pt-4'}>
                 {/* 🔴 検索条件（docs/04 §S-005 セクション 1）。`method="get"` なので、実行した検索が
                     そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。
                     ⚠️ `mb-0` / `w-full` は帯の中に置いたための余白・幅の調整である（`cn()` の規律 1）。
                        `FILTER_FORM_CLASSES` の `mb-6` は帯の外に置く 3 画面がまだ使っている。 */}
-                <EngineerSearchPanel activeFilters={activeFilters} scope={searchScope}>
+                <EngineerSearchPanel activeFilters={activeFilters} scope={searchScope} options={{ skills: skillOptions, availability: availabilityOptions, remote: remoteOptions.map((option) => ({ ...option, label: option.value === 'ONSITE_ONLY' ? t('engineers.searchPanel.onsite') : option.value === 'PARTIAL_REMOTE' ? t('engineers.searchPanel.partialRemote') : option.value === 'FULL_REMOTE' ? t('engineers.searchPanel.fullRemote') : option.label })), prefecture: prefectureOptions, skillMode: skillModeOptions }}>
                 <form
                   key={JSON.stringify(filters)}
                   className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full', searchScope && 'flex flex-col items-stretch gap-4')}
@@ -413,7 +430,9 @@ export function EngineerLedgerScreen({
                     <legend className="sr-only">{messages.searchLegend}</legend>
                     {searchScope ? <p className="m-0 bg-bg-subtle px-3 py-3 text-body font-semibold text-fg">{t('projects.search.basic')}</p> : null}
                     <div className={cn(searchScope ? 'grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-4' : 'contents')}>
-                    <Field label={messages.searchAvailability}>
+                    {searchScope ? <Field as="div" labelClassName="text-xs text-fg-muted" label={messages.searchAvailability}>
+                      <EngineerFilterSelect name="availability" initial={filters.availability} label={messages.searchAvailability} options={availabilityOptions} testId="engineer-list-filter-availability" />
+                    </Field> : <Field label={messages.searchAvailability}>
                       <Select
                         name="availability"
                         defaultValue={filters.availability}
@@ -425,26 +444,28 @@ export function EngineerLedgerScreen({
                           </option>
                         ))}
                       </Select>
-                    </Field>
+                    </Field> }
                     <div className={cn(searchScope ? 'grid grid-cols-1 gap-3 sm:col-span-2 sm:grid-cols-2' : 'contents')}>
                     <Field as="div" className={cn(searchScope && "sm:col-span-2")} label={messages.searchSkills}>
                       {/* 🔴 辞書からの選択のみ（自由入力は別名候補の起票であり `S-007` の責務。
                           `F-010 AC-1`「採用されるまで検索の正規化に使われない」）。 */}
                       {/* ✅ 2026-11-01（人間の指示）: 複数選択は共通部品に統一（`<select multiple>` をやめた）。
                           送信は hidden input（`name="skills"`）で、query の形は変わらない。 */}
-                      <FormMultiSelect
+                      {searchScope ? <EngineerSkillsFilter options={skillOptions} initial={filters.skills} label={messages.searchSkills} /> : <FormMultiSelect
                         name="skills"
                         options={skillOptions}
                         defaultValues={filters.skills}
                         label={messages.searchSkills}
                         testIdPrefix="engineer-list-filter-"
                         testId="engineer-list-filter-skills"
-                      />
+                      />}
                       {/* 🔴 `FieldDescription`（`<p>`）にしない —— `<label>` の中に `<p>` を入れると
                           説明文が入力欄のアクセシブル名に畳み込まれる（`@ses/ui` の `field.tsx` 冒頭）。 */}
                       {!searchScope ? <span className="text-xs text-fg-muted">{messages.searchSkillsHint}</span> : null}
                     </Field>
-                    <Field label={messages.searchSkillMode}>
+                    {searchScope ? <Field as="div" labelClassName="text-xs text-fg-muted" label={messages.searchSkillMode}>
+                      <EngineerFilterSelect name="skillMode" initial={filters.skills.length === 0 && filters.skillMode === 'AND' ? 'OR' : filters.skillMode} label={messages.searchSkillMode} options={skillModeOptions} testId="engineer-list-filter-skill-mode" />
+                    </Field> : <Field label={messages.searchSkillMode}>
                       <Select
                         name="skillMode"
                         defaultValue={searchScope && filters.skills.length === 0 && filters.skillMode === 'AND' ? 'OR' : filters.skillMode}
@@ -456,7 +477,7 @@ export function EngineerLedgerScreen({
                           </option>
                         ))}
                       </Select>
-                    </Field>
+                    </Field> }
                     <Field label={messages.searchYearsMin}>
                       <Input
                         type="number"
@@ -468,7 +489,9 @@ export function EngineerLedgerScreen({
                       />
                     </Field>
                     </div>
-                    <Field label={searchScope ? t('engineers.searchPanel.workStyle') : messages.searchRemote}>
+                    {searchScope ? <Field as="div" labelClassName="text-xs text-fg-muted" label={t('engineers.searchPanel.workStyle')}>
+                      <EngineerFilterSelect name="remote" initial={filters.remote} label={t('engineers.searchPanel.workStyle')} options={remoteOptions.map((option) => ({ ...option, label: option.value === 'ONSITE_ONLY' ? t('engineers.searchPanel.onsite') : option.value === 'PARTIAL_REMOTE' ? t('engineers.searchPanel.partialRemote') : option.value === 'FULL_REMOTE' ? t('engineers.searchPanel.fullRemote') : option.label }))} testId="engineer-list-filter-remote" />
+                    </Field> : <Field label={searchScope ? t('engineers.searchPanel.workStyle') : messages.searchRemote}>
                       <Select
                         name="remote"
                         defaultValue={filters.remote}
@@ -480,8 +503,14 @@ export function EngineerLedgerScreen({
                           </option>
                         ))}
                       </Select>
-                    </Field>
-                      <div className={cn(searchScope ? 'grid grid-cols-2 gap-2' : 'contents')}>
+                    </Field> }
+                    {searchScope ? <Field as="div" labelClassName="text-xs text-fg-muted" label={t('projects.list.search.price')}>
+                      <div className="flex items-center gap-2">
+                        <Input type="number" name="priceMin" min={0} step={10000} defaultValue={filters.priceMin} placeholder={t('projects.list.search.priceMinPlaceholder')} aria-label={messages.searchPriceMin} data-testid="engineer-list-filter-price-min" />
+                        <span aria-hidden className="shrink-0 text-body text-fg-muted">{t('projects.list.search.priceRangeSeparator')}</span>
+                        <Input type="number" name="priceMax" min={0} step={10000} defaultValue={filters.priceMax} placeholder={t('projects.list.search.priceMaxPlaceholder')} aria-label={messages.searchPriceMax} data-testid="engineer-list-filter-price-max" />
+                      </div>
+                    </Field> : <div className={cn(searchScope ? 'grid grid-cols-2 gap-2' : 'contents')}>
                     <Field label={messages.searchPriceMin}>
                       <Input
                         type="number"
@@ -502,11 +531,9 @@ export function EngineerLedgerScreen({
                         data-testid="engineer-list-filter-price-max"
                       />
                     </Field>
-                      </div>
-                    {searchScope ? <Field label={t('engineers.searchPanel.residence')}>
-                      <Select name="residencePrefecture" defaultValue={filters.residencePrefecture ?? ''} data-testid="engineer-list-filter-residence">
-                        {prefectureOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </Select>
+                      </div> }
+                    {searchScope ? <Field as="div" labelClassName="text-xs text-fg-muted" label={t('engineers.searchPanel.residence')}>
+                      <EngineerFilterSelect name="residencePrefecture" initial={filters.residencePrefecture ?? ''} label={t('engineers.searchPanel.residence')} options={prefectureOptions} testId="engineer-list-filter-residence" />
                     </Field> : <Field label={messages.searchPrefecture}>
                       <Select
                         name="prefecture"
@@ -529,7 +556,7 @@ export function EngineerLedgerScreen({
                       />
                     </Field>
                     </div>
-                    <EngineerDetailSection enabled={Boolean(searchScope)}>
+                    <EngineerDetailSection enabled={Boolean(searchScope)} initialQ={filters.q} initialGroups={filters.keywordGroups ?? ''}>
                     <div className={cn(searchScope ? 'grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-4' : 'contents')}>
                     {searchScope ? <Field label={messages.searchPrefecture}>
                       <Select
@@ -547,14 +574,14 @@ export function EngineerLedgerScreen({
                     {searchScope ? <Field as="div" className="sm:col-span-2" label={t('projects.search.utilization')}>
                       <EngineerUtilizationFilter initial={filters.utilizationBand ?? ''} />
                     </Field> : null}
-                    <Field className={cn("sm:col-span-2 xl:col-span-4", !searchScope && "lg:col-span-3")} label={messages.searchQ}>
+                    {!searchScope ? <Field className="sm:col-span-2 xl:col-span-4 lg:col-span-3" label={messages.searchQ}>
                       <Input
                         type="search"
                         name="q"
                         defaultValue={filters.q}
                         data-testid="engineer-list-filter-q"
                       />
-                    </Field>
+                    </Field> : null}
                     <Field as="div">
                       <label className="flex items-center gap-2 text-body">
                         <Checkbox
@@ -636,11 +663,15 @@ export function EngineerLedgerScreen({
         </p>
       )}
 
+      <EngineerResultsCard enabled={Boolean(searchScope)}>
       <DataTable
+        containerClassName={searchScope ? 'rounded-none border-x-0' : undefined}
+        className={searchScope ? '[&_tbody_tr]:border-b [&_tbody_tr]:border-border-row [&_td]:py-3 [&_thead]:bg-bg' : undefined}
         testIdPrefix="engineer-list-"
-        columns={engineerColumns(messages, showOwnershipColumn)}
+        columns={engineerColumns(messages, showOwnershipColumn, selectHrefOf)}
         rows={rows}
         rowKey={(row) => row.id}
+        rowAttributes={searchScope ? (row) => ({ 'data-selected': row.id === selectedRow?.id ? 'true' : undefined, 'data-state': row.id === selectedRow?.id ? 'selected' : undefined }) : undefined}
         linkComponent={Link}
         empty={
           // 🔴 docs/04 §10.1 `S-005`: **初回空と絞込 0 件は文言も導線も別物**である
@@ -700,6 +731,10 @@ export function EngineerLedgerScreen({
           />
         </div>
       )}
+      {searchScope ? <div className="px-4 py-3 text-xs text-fg-muted">{messages.populationLabel}</div> : null}
+      </EngineerResultsCard>
+      </div>
+      {searchScope ? <aside className={cn(PAGE_BODY_ASIDE_WIDTH_CLASSES, DETAIL_PANE_VIEWPORT_CLASSES, 'bg-bg-subtle')}><EngineerSummaryPanel row={selectedRow ?? null} /></aside> : null}
     </div>
   );
 }
