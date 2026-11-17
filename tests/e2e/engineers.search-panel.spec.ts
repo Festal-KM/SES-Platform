@@ -9,6 +9,8 @@ test('自社人材の検索条件を保存し、折りたたんでも検索で�
   try {
     await page.goto('/engineers');
     await expect(page.getByRole('heading', { name: t('engineers.searchPanel.title') })).toBeVisible();
+    await expect(page.getByTestId('engineer-list-panel')).toBeVisible();
+    await expect(page.getByTestId('engineer-list-panel-open')).toHaveAttribute('href', /\/engineers\//);
     await expect(page.getByText(t('projects.search.basic'), { exact: true })).toBeVisible();
     await expect(page.getByText(t('projects.search.advanced'), { exact: true })).toBeVisible();
     await page.getByText(t('projects.search.advanced'), { exact: true }).click();
@@ -34,6 +36,12 @@ test('自社人材の検索条件を保存し、折りたたんでも検索で�
     await page.getByTestId('engineer-list-utilization-segment-UNDER_HALF').locator('..').click();
     await page.getByTestId('engineer-list-search').click();
     await expect(page).toHaveURL(/utilizationBand=UNDER_HALF/);
+    await page.getByText(t('projects.search.advanced'), { exact: true }).click();
+    await page.getByTestId('engineer-list-filter-q').fill('Java');
+    await page.getByTestId('engineer-list-filter-q').press('Enter');
+    await expect(page.getByTestId('engineer-list-filter-keyword-term-0-0')).toContainText('Java');
+    await page.getByTestId('engineer-list-search').click();
+    await expect(page).toHaveURL(/keywordGroups=/);
     await expectNoHorizontalOverflow('人材検索', page);
     session.outbound.assertNone();
   } finally { await session.close(); }

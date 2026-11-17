@@ -169,7 +169,8 @@ function EngineerSearchPanelInner({ children, activeFilters, scope, options }: {
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen} title={t(dialogKind === 'SAVE' ? 'projects.search.save' : dialogKind === 'RENAME' ? 'projects.list.search.savedRename' : dialogKind === 'OVERWRITE' ? 'projects.list.search.savedOverwrite' : 'projects.list.search.savedRemove')} body={t('engineers.searchPanel.localNote')} panelClassName={DIALOG_PANEL_NARROW_CLASSES}
       field={dialogKind === 'SAVE' || dialogKind === 'RENAME' ? <Field label={t('engineers.searchPanel.name')}><Input value={name} maxLength={40} onChange={(event) => setName(event.target.value)} /></Field> : undefined}
       cancelLabel={t('projects.search.cancel')} confirm={<Button type="button" onClick={() => {
-        if ((dialogKind === 'SAVE' || dialogKind === 'RENAME') && (!name.trim() || (dialogKind === 'SAVE' && items.length >= 30))) { setNotice(t('engineers.searchPanel.saveError')); return; }
+        if ((dialogKind === 'SAVE' || dialogKind === 'RENAME') && !name.trim()) { setNotice(t('projects.list.search.nameError')); return; }
+        if (dialogKind === 'SAVE' && items.length >= 30) { setNotice(t('projects.list.search.limitError')); return; }
         const now = new Date().toISOString();
         const next = dialogKind === 'SAVE' ? [...items, { id: crypto.randomUUID(), name: name.trim(), query: savedQuery, updatedAt: now }] : dialogKind === 'REMOVE' ? items.filter((item) => item.id !== targetId) : items.map((item) => item.id !== targetId ? item : { ...item, ...(dialogKind === 'RENAME' ? { name: name.trim() } : { query: savedQuery }), updatedAt: now });
         if (persist(next)) { if (dialogKind === 'REMOVE' && activeId === targetId) setActiveId(null); setDialogOpen(false); setNotice(''); }
