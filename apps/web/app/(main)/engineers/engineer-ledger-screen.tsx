@@ -232,6 +232,7 @@ function engineerColumns(
       nameCell: {
         name: (row) => row.displayName,
         href: (row) => selectHrefOf ? selectHrefOf(row.id) : `/engineers/${row.id}`,
+        ...(selectHrefOf ? { stretch: true as const } : {}),
       },
     },
     // 🔴 取引先には所属区分の列を出さない（全件が自社であるため意味がない）。**DOM から取り除く**。
@@ -666,7 +667,7 @@ export function EngineerLedgerScreen({
       <EngineerResultsCard enabled={Boolean(searchScope)}>
       <DataTable
         containerClassName={searchScope ? 'rounded-none border-x-0' : undefined}
-        className={searchScope ? '[&_tbody_tr]:border-b [&_tbody_tr]:border-border-row [&_td]:py-3 [&_thead]:bg-bg' : undefined}
+        className={searchScope ? '[&_tbody_tr]:border-b [&_tbody_tr]:border-border-row [&_td]:py-3 [&_thead]:bg-bg [&_tbody_td:first-child_a]:font-normal' : undefined}
         testIdPrefix="engineer-list-"
         columns={engineerColumns(messages, showOwnershipColumn, selectHrefOf)}
         rows={rows}
