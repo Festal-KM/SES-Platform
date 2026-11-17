@@ -98,7 +98,7 @@ export function KeywordGroups({ compact = false, openRequest = 0, draft, onChang
               </span>)}
               {!group.terms.length ? <Button type="button" variant="ghost" size="sm" className="border border-dashed border-brand text-brand" onClick={() => focusInput(index)} data-testid={`${testIdPrefix}keyword-empty-${index}`}><Icon name="plus" />{t('projects.search.firstKeyword')}</Button> : null}
               <Input data-keyword-input className="w-auto min-w-24 flex-1" name={index === 0 ? 'q' : undefined} value={pending[index] ?? ''} maxLength={200} placeholder={t('projects.search.keywordInput')}
-                aria-label={`${t('projects.search.addKeyword')} ${index + 1}`} data-testid={index === 0 ? `${testIdPrefix}q` : `${testIdPrefix}keyword-group-${index}`}
+                aria-label={`${t('projects.search.addKeyword')} ${index + 1}`} data-testid={index === 0 && testIdPrefix === 'project-list-filter-' ? `project-list-filter-q` : index === 0 ? `engineer-list-filter-q` : `${testIdPrefix}keyword-group-${index}`}
                 onChange={event => { const value = event.currentTarget.value; setPending(current => ({ ...current, [index]: value })); }}
                 onCompositionStart={() => onComposingChange(true)} onCompositionEnd={() => onComposingChange(false)}
                 onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); addTerm(index); } }} />

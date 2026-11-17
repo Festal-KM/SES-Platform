@@ -574,7 +574,7 @@ export function EngineerLedgerScreen({
                     {searchScope ? <Field as="div" className="sm:col-span-2" label={t('projects.search.utilization')}>
                       <EngineerUtilizationFilter initial={filters.utilizationBand ?? ''} />
                     </Field> : null}
-                    {!searchScope ? <Field className="lg:col-span-3" label={messages.searchQ}>
+                    {!searchScope ? <Field className="sm:col-span-2 xl:col-span-4 lg:col-span-3" label={messages.searchQ}>
                       <Input
                         type="search"
                         name="q"
