@@ -33,7 +33,7 @@ import {
   ENGINEER_SKILL_MODES,
   REMOTE_MODES,
 } from '@ses/db';
-import { PREFECTURE_CODES, YEAR_MONTH_PATTERN, PROJECT_UTILIZATION_BANDS } from '@ses/domain';
+import { PREFECTURE_CODES, YEAR_MONTH_PATTERN, PROJECT_UTILIZATION_BANDS, parseProjectKeywordGroups } from '@ses/domain';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 import { idCursorPageQuerySchema } from '../api/pagination';
 import { checkboxFilter, optionalFilter, optionalListFilter } from '../api/query-filters';
@@ -285,8 +285,13 @@ export const engineerSearchCriteriaFields = {
   onlyCommutable: checkboxFilter(),
 } as const;
 
+export const engineerKeywordGroupsFilter = optionalFilter(z.string().max(4000).refine((value) => {
+    try { return parseProjectKeywordGroups(JSON.parse(value)) !== null; } catch { return false; }
+  }).transform((value) => JSON.stringify(parseProjectKeywordGroups(JSON.parse(value))?.filter((group) => group.terms.length))));
+
 export const engineerListQuerySchema = idCursorPageQuerySchema.extend({
   ...engineerSearchCriteriaFields,
+  keywordGroups: engineerKeywordGroupsFilter,
   residencePrefecture: optionalFilter(z.enum(PREFECTURE_CODES)),
   utilizationBand: optionalFilter(z.enum(PROJECT_UTILIZATION_BANDS)),
 });

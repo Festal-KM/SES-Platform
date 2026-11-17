@@ -16,7 +16,7 @@ import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolat
 import { cursorPageQuerySchema } from '../api/pagination';
 import { optionalFilter } from '../api/query-filters';
 import { CANDIDATE_REF_PATTERN } from '../anonymize/reference';
-import { engineerSearchCriteriaFields } from '../engineers/schemas';
+import { engineerKeywordGroupsFilter, engineerSearchCriteriaFields } from '../engineers/schemas';
 
 /** `sortRef`（base64url 22 文字）。匿名候補は `candidateRef`、自社候補も同じ関数の値である。 */
 const SORT_REF_SOURCE = CANDIDATE_REF_PATTERN.source.replace(/^\^|\$$/g, '');
@@ -102,6 +102,7 @@ assertNoIsolationKeys(Object.keys(candidateProjectParamsSchema.shape), 'candidat
  */
 export const engineerListApiQuerySchema = cursorPageQuerySchema.extend({
   ...engineerSearchCriteriaFields,
+  keywordGroups: engineerKeywordGroupsFilter,
   residencePrefecture: optionalFilter(z.enum(PREFECTURE_CODES)),
   utilizationBand: optionalFilter(z.enum(PROJECT_UTILIZATION_BANDS)),
   projectId: optionalFilter(z.uuid()),

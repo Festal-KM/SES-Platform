@@ -2662,6 +2662,9 @@ const ja = {
   // --- 検索条件（`docs/04` §S-005 セクション 1・2 / `F-009`）。T-06-04 ---
   'engineers.searchPanel.title': '自社人材管理',
   'engineers.searchPanel.unknownSkill': '不明なスキル',
+  'engineers.searchPanel.keywordTargets': '検索対象：氏名・希望条件（部分一致）。',
+  'engineers.list.panel.title': '人材サマリ',
+  'engineers.list.panel.empty': '表示する人材がありません。',
   'engineers.searchPanel.residence': '在住',
   'engineers.searchPanel.workStyle': '勤務形態',
   'engineers.searchPanel.onsite': '出社可',

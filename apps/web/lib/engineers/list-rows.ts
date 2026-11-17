@@ -207,6 +207,7 @@ export function engineerListHref(query: EngineerListQuery, cursor: string | null
   if (query.availability !== undefined) params.set('availability', query.availability);
   if (query.utilizationBand !== undefined) params.set('utilizationBand', query.utilizationBand);
   if (query.q !== undefined) params.set('q', query.q);
+  if (query.keywordGroups !== undefined) params.set('keywordGroups', query.keywordGroups);
   // 🔴 既定オフ（`F-009 AC-5`）。オンのときだけ載る ＝ **URL からオンだと分かる**。
   if (query.onlyInTime) params.set('onlyInTime', '1');
   if (query.onlyCommutable) params.set('onlyCommutable', '1');
@@ -347,6 +348,9 @@ export function activeEngineerFilters(
       `${t('engineers.list.search.q')}: ${query.q}`,
       without(query, { q: undefined }),
     );
+  }
+  if (query.keywordGroups !== undefined && query.keywordGroups !== '[]') {
+    push('keywordGroups', t('projects.search.groups'), without(query, { keywordGroups: undefined }));
   }
   // 🔴 チェックボックスも「効いている条件」である（`docs/04` §10.1 `S-005`:
   //    絞込 0 件のときは「絞り込みチェックボックスがオンです」の注意も出す）。

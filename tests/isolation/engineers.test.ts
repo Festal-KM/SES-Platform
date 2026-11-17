@@ -1546,3 +1546,20 @@ describe('人材の在住地', () => {
     expect((await engineerRow(tokyo)).residencePrefecture).toBe('27');
   });
 });
+
+
+describe('人材のキーワードグループ検索', () => {
+  it('グループ内の OR と AND、グループ間の AND を自社の人材だけに適用する', async () => {
+    const host = await ctxOf(HOST_1, 'SALES');
+    const partner = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+    const match = await createdIdOf(await postEngineer(host, { displayName: `${MARKER}東京候補`, preferenceNote: 'Java 設計' }));
+    const miss = await createdIdOf(await postEngineer(host, { displayName: `${MARKER}大阪候補`, preferenceNote: 'Java 運用' }));
+    const other = await createdIdOf(await postEngineer(partner, { displayName: `${MARKER}東京他社`, preferenceNote: 'Java 設計' }));
+    const groups = JSON.stringify([{ mode: 'OR', terms: ['東京', '大阪'] }, { mode: 'AND', terms: ['Java', '設計'] }]);
+    const result = await listBodyOf(await getEngineers(host, `?keywordGroups=${encodeURIComponent(groups)}`));
+    expect(result.items.map((item) => item.id)).toContain(match);
+    expect(result.items.map((item) => item.id)).not.toContain(miss);
+    expect(result.items.map((item) => item.id)).not.toContain(other);
+    expect((await getEngineers(host, '?keywordGroups=not-json')).status).toBe(400);
+  });
+});

@@ -17,7 +17,7 @@ import type { Metadata } from 'next';
 //    （画面の説明文と母集団の分割が同じ関数を通る）。ここに条件式を書き写さない。
 import { ordersByFit } from '@ses/db';
 import { t } from '@ses/i18n';
-import { PageBody } from '@ses/ui';
+import { PageBody, CONTENT_PADDING_Y_CLASS, cn } from '@ses/ui';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { listEngineers } from '../../../../lib/engineers/list';
 import {
@@ -66,7 +66,8 @@ export default async function EngineerLedgerPage({
   //    `pagination.ts` / `query-filters.ts`）。画面では 400 を出す先が無いので、壊れた条件は
   //    素の一覧へ戻す（URL も揃える）—— 黙って無視すると、URL には残っているのに
   //    効いていない状態になる。
-  const parsed = engineerListQuerySchema.safeParse(await searchParams);
+  const rawParams = await searchParams;
+  const parsed = engineerListQuerySchema.safeParse(rawParams);
   if (!parsed.success) redirect(ENGINEER_LIST_PATH);
 
   const query = parsed.data;
@@ -77,6 +78,14 @@ export default async function EngineerLedgerPage({
   const skillNames = new Map(skills.items.map((skill) => [skill.id, skill.name]));
   const filtered = hasEngineerListFilters(query);
   const isPartner = ctx.partnerCompanyId !== null;
+  const rows = engineerListRows(view.items);
+  const selected = typeof rawParams['selected'] === 'string' ? rawParams['selected'] : undefined;
+  const selectedRow = rows.find((row) => row.id === selected) ?? rows[0] ?? null;
+  const selectHrefOf = (id: string) => {
+    const url = new URL(engineerListHref(query, query.cursor ?? null), 'http://localhost');
+    url.searchParams.set('selected', id);
+    return `${url.pathname}${url.search}`;
+  };
   // 🔴 `VIEWER` は `S-007` に到達できない（docs/04 §S-007 権限差分）。押しても戻されるだけの
   //    導線を描かない。⚠️ 拒否の本体は `#16` のガードと `S-007` のリダイレクトである。
   const canRegister = ctx.role !== 'VIEWER';
@@ -86,7 +95,7 @@ export default async function EngineerLedgerPage({
     //    **クラス A = 全幅**である。**画面ファイルに `max-w-*` を書かない**
     //    （`tests/static/ui-screen-width.test.ts` (c) / `ui-width-class-coverage.test.ts` (k)）——
     //    旧 `max-w-6xl` は 1920px のディスプレイで 8 列 + 12 行を成立させられなかった。
-    <main className="py-6">
+    <main className={cn(CONTENT_PADDING_Y_CLASS, 'min-h-full bg-bg-subtle')}>
       <PageBody widthClass="full">
       {/* 🔴 primary は帯の 1 つだけ（§7.6）。`ACTION` なので `canAct` が偽のロールには
           描かれない（`PageHeading`）。**判定の出所は `canRegister` の 1 つ**であり、
@@ -101,13 +110,16 @@ export default async function EngineerLedgerPage({
       />
       {/* 🔴 帯の「説明 1 行」（`docs/04` §3.1）。母集団が違うので文も違う（§3.2 項目 2）。
           `S-010` と同じ形で帯の直下に置く（`PageHeader` は説明の prop を持たない）。 */}
-      <p className="mb-4 text-body text-fg-muted" data-testid="engineer-list-description">
+      {isPartner ? <p className="mb-4 text-body text-fg-muted" data-testid="engineer-list-description">
         {engineerListDescription(isPartner)}
-      </p>
+      </p> : null}
       <EngineerLedgerScreen
-        rows={engineerListRows(view.items)}
+        rows={rows}
+        selectedRow={isPartner ? undefined : selectedRow}
+        selectHrefOf={isPartner ? undefined : selectHrefOf}
         filters={{
           q: query.q ?? '',
+          keywordGroups: query.keywordGroups ?? '',
           skills: query.skills ?? [],
           skillMode: query.skillMode,
           yearsMin: query.yearsMin === undefined ? '' : String(query.yearsMin),

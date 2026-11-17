@@ -41,9 +41,10 @@ describe('candidateCursorSchema（並びのキー）', () => {
 
 describe('projectCandidateListQuerySchema（#30）', () => {
   it('匿名候補に稼働率を開示せず、他の検索条件は自社人材と共有する', () => {
-    const own = Object.keys(engineerListQuerySchema.shape).filter((key) => key !== 'utilizationBand' && key !== 'residencePrefecture').sort();
+    const own = Object.keys(engineerListQuerySchema.shape).filter((key) => key !== 'utilizationBand' && key !== 'residencePrefecture' && key !== 'keywordGroups').sort();
     expect(projectCandidateListQuerySchema.shape).not.toHaveProperty('utilizationBand');
     expect(projectCandidateListQuerySchema.shape).not.toHaveProperty('residencePrefecture');
+    expect(projectCandidateListQuerySchema.shape).not.toHaveProperty('keywordGroups');
     const candidates = Object.keys(projectCandidateListQuerySchema.shape).sort();
     expect(candidates).toEqual(own);
   });

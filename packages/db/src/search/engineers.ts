@@ -35,7 +35,7 @@
 // 🔴 ソフト条件が 1 つも無いとき（＝ 稼働可能時期も勤務地も指定していない、または両方の
 //    チェックボックスがオン）は**適合の差が生じない**ので、`buckets` は 1 要素になり、
 //    並びは `updated_at` 降順 → `id` 降順だけになる（T-05-09 の既定順序と完全に同じ）。
-import type { PrefectureCode } from '@ses/domain';
+import { parseProjectKeywordGroups, type PrefectureCode } from '@ses/domain';
 import { toDateOnly } from '../date-only.js';
 import type { EngineerAvailability, RemoteMode } from '../schema-value-sets.js';
 import { freeWordOr, type FreeWordFilter } from './free-word.js';
@@ -99,6 +99,7 @@ export type EngineerSearchCriteria = {
   readonly skillMode: EngineerSkillMode;
   /** 経験年数の下限（集約の定義は `engineerSkillConditions` の JSDoc）。 */
   readonly yearsMin?: number;
+  readonly keywordGroups?: string;
   readonly priceMin?: number;
   readonly priceMax?: number;
   /** 稼働可能時期（`YYYY-MM-DD`）。「この日までに稼働できる」。🔴 ソフト条件。 */
@@ -322,6 +323,14 @@ export function engineerSearchPlan(criteria: EngineerSearchCriteria): EngineerSe
     and.push(commutableCondition(criteria.prefecture).match);
   }
   if (criteria.q !== undefined) and.push(freeWordOr(criteria.q, ENGINEER_FREE_WORD_COLUMNS));
+  if (criteria.keywordGroups !== undefined) {
+    const groups = parseProjectKeywordGroups(JSON.parse(criteria.keywordGroups)) ?? [];
+    for (const group of groups) {
+      if (!group.terms.length) continue;
+      const terms = group.terms.map((term) => freeWordOr(term, ENGINEER_FREE_WORD_COLUMNS));
+      and.push(group.mode === 'AND' ? { AND: terms } : { OR: terms });
+    }
+  }
 
   const where: EngineerWhereFragment = {
     ...(criteria.availability === undefined ? {} : { availability: criteria.availability }),

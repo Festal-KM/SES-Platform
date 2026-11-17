@@ -9,6 +9,8 @@ import { SearchPanelTabs } from '../_shared/search-panel-tabs';
 import { ActiveFilterBar } from '../projects/_search/active-filter-bar';
 import { SavedSearchList } from '../projects/_search/saved-search-list';
 import { FilterSelect } from '../projects/_search/filter-select';
+import { KeywordGroups } from '../projects/_search/keyword-groups';
+import { EMPTY_PROJECT_SEARCH_DRAFT, projectDraftKeywordGroups, type ProjectSearchDraft } from '../projects/_search/filters';
 import type { EngineerActiveFilterView } from '../../../lib/engineers/list-rows';
 
 type SavedSearch = { readonly id: string; readonly name: string; readonly query: string; readonly updatedAt: string; readonly lastUsedAt?: string };
@@ -20,8 +22,20 @@ export function EngineerFilterSelect({ name, initial, label, options, testId }: 
   readonly options: readonly { readonly value: string; readonly label: string }[]; readonly testId: string;
 }) {
   const [value, setValue] = useState(initial);
-  return <><input type="hidden" name={name} value={value} /><FilterSelect options={options} value={value} onChange={setValue} label={label} testId={testId}
+  return <><input type="hidden" name={name} value={value} /><FilterSelect options={options} value={value} onChange={setValue} label={label} testId={`${testId}`}
     messages={{ searchLabel: t('projects.list.search.selectSearchLabel'), searchPlaceholder: t('projects.list.search.selectSearchPlaceholder'), noMatch: t('projects.list.search.selectNoMatch') }} /></>;
+}
+
+/** 詳細検索のキーワード操作は案件と同じ部品を使う。 */
+export function EngineerKeywordGroups({ initialQ, initialGroups, children }: { readonly initialQ: string; readonly initialGroups: string; readonly children: ReactNode }) {
+  const [draft, setDraft] = useState<ProjectSearchDraft>({ ...EMPTY_PROJECT_SEARCH_DRAFT, q: initialQ, keywordGroups: initialGroups });
+  const groups = projectDraftKeywordGroups(draft);
+  return <>
+    <KeywordGroups draft={draft} onChange={(patch) => setDraft((current) => ({ ...current, ...patch }))} onComposingChange={() => {}} testIdPrefix="engineer-list-filter-" targetLabel={t('engineers.searchPanel.keywordTargets')}>
+      {children}
+    </KeywordGroups>
+    {groups.length ? <input type="hidden" name="keywordGroups" value={JSON.stringify(groups)} /> : null}
+  </>;
 }
 
 type Option = { readonly value: string; readonly label: string };
@@ -90,12 +104,15 @@ function EngineerSearchPanelInner({ children, activeFilters, scope, options }: {
     setSavedQuery(form ? currentQuery(form) : ''); setName(item.name); setTargetId(item.id); setDialogKind(kind); setDialogOpen(true);
   };
   const chipsOf = (item: SavedSearch) => {
-    const labels: Record<string, string> = { skills: t('engineers.list.search.skills'), availability: t('engineers.list.search.availability'), remote: t('engineers.searchPanel.workStyle'), prefecture: t('engineers.list.search.prefecture'), residencePrefecture: t('engineers.searchPanel.residence'), skillMode: t('engineers.list.search.skillMode'), yearsMin: t('engineers.list.search.yearsMin'), priceMin: t('engineers.list.search.priceMin'), priceMax: t('engineers.list.search.priceMax'), availableBy: t('engineers.list.search.availableBy'), q: t('engineers.list.search.q'), utilizationBand: t('projects.search.utilization'), onlyInTime: t('engineers.list.search.onlyInTime'), onlyCommutable: t('engineers.list.search.onlyCommutable') };
+    const labels: Record<string, string> = { skills: t('engineers.list.search.skills'), availability: t('engineers.list.search.availability'), remote: t('engineers.searchPanel.workStyle'), prefecture: t('engineers.list.search.prefecture'), residencePrefecture: t('engineers.searchPanel.residence'), skillMode: t('engineers.list.search.skillMode'), yearsMin: t('engineers.list.search.yearsMin'), priceMin: t('engineers.list.search.priceMin'), priceMax: t('engineers.list.search.priceMax'), availableBy: t('engineers.list.search.availableBy'), q: t('engineers.list.search.q'), keywordGroups: t('projects.search.groups'), utilizationBand: t('projects.search.utilization'), onlyInTime: t('engineers.list.search.onlyInTime'), onlyCommutable: t('engineers.list.search.onlyCommutable') };
     const choices: Record<string, readonly Option[]> = { skills: options.skills, availability: options.availability, remote: options.remote, prefecture: options.prefecture, residencePrefecture: options.prefecture, skillMode: options.skillMode };
     return [...new URLSearchParams(item.query)].flatMap(([key, value], index) => {
       if (!value || !labels[key]) return [];
       const option = choices[key]?.find((entry) => entry.value === value);
-      const display = key === 'skills' && !option ? t('engineers.searchPanel.unknownSkill') : option?.label ?? value;
+      let display = key === 'skills' && !option ? t('engineers.searchPanel.unknownSkill') : option?.label ?? value;
+      if (key === 'keywordGroups') {
+        try { const groups = JSON.parse(value) as Array<{ terms?: string[] }>; display = groups.flatMap((group) => group.terms ?? []).join(' / '); } catch { return []; }
+      }
       return [{ key: `${key}:${index}`, label: `${labels[key]}: ${display}` }];
     });
   };
@@ -114,7 +131,7 @@ function EngineerSearchPanelInner({ children, activeFilters, scope, options }: {
     <div data-testid="engineer-search-summary">
       <ActiveFilterBar chips={activeFilters} pending={false} formId="engineer-search-form" testIdPrefix="engineer-list-"
         onRemove={(key) => { const filter = activeFilters.find((item) => item.key === key); if (filter) router.push(filter.href, { scroll: false }); }}
-        onClear={() => { setResetVersion((value) => value + 1); router.push('/engineers', { scroll: false }); }}
+        onClear={() => { setActiveId(null); setResetVersion((value) => value + 1); router.push('/engineers', { scroll: false }); }}
         messages={{ label: t('projects.list.search.selectedLabel'), empty: t('projects.list.search.selectedEmpty'), remove: t('projects.list.search.chipRemove'), overflowLabel: t('projects.list.search.chipOverflow'), clear: t('projects.list.search.clear'), submit: t('projects.list.search.submit'), pending: t('projects.list.search.pending'), pendingHint: t('projects.list.search.pendingHint') }} />
     </div>
     {notice ? <p role="status" className="text-xs text-danger">{notice}</p> : null}

@@ -25,7 +25,7 @@ test('自社人材の検索条件を保存し、折りたたんでも検索で�
     await page.getByRole('button', { name: t('engineers.searchPanel.collapse') }).click();
     await expect(page.getByTestId('engineer-list-search')).toBeVisible();
     await page.getByTestId('engineer-list-search').click();
-    await expect(page).toHaveURL(/q=%E6%A4%9C%E7%B4%A2%E7%A2%BA%E8%AA%8D/);
+    await expect(page).toHaveURL(/keywordGroups=/);
     await page.getByTestId('engineer-list-clear').click();
     await expect(page).not.toHaveURL(/q=/);
     await page.getByRole('button', { name: t('engineers.searchPanel.expand') }).click();

@@ -53,12 +53,12 @@ export const dynamic = 'force-dynamic';
 export const GET = withApiRoute(
   { label: 'GET /api/engineers', guards: [], query: engineerListApiQuerySchema },
   async ({ ctx, query }) => {
-    const { projectId, utilizationBand, residencePrefecture, ...rest } = query;
+    const { projectId, utilizationBand, residencePrefecture, keywordGroups, ...rest } = query;
     if (projectId === undefined) {
       if (rest.cursor !== undefined && !isUuidCursor(rest.cursor)) {
         throw new ValidationError(['cursor']);
       }
-      return Response.json(await listEngineers(ctx, { ...rest, utilizationBand, residencePrefecture }));
+      return Response.json(await listEngineers(ctx, { ...rest, utilizationBand, residencePrefecture, keywordGroups }));
     }
     if (rest.cursor !== undefined && isUuidCursor(rest.cursor)) {
       throw new ValidationError(['cursor']);
