@@ -82,7 +82,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { t } from '@ses/i18n';
-import { EngineerSearchPanel, EngineerUtilizationFilter, EngineerFilterSelect, EngineerKeywordGroups } from './engineer-search-panel';
+import { EngineerSearchPanel, EngineerUtilizationFilter, EngineerFilterSelect, EngineerKeywordGroups, EngineerSkillsFilter } from './engineer-search-panel';
 import { EngineerSummaryPanel } from './engineer-summary-panel';
 import {
   Button,
@@ -417,7 +417,7 @@ export function EngineerLedgerScreen({
                     そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。
                     ⚠️ `mb-0` / `w-full` は帯の中に置いたための余白・幅の調整である（`cn()` の規律 1）。
                        `FILTER_FORM_CLASSES` の `mb-6` は帯の外に置く 3 画面がまだ使っている。 */}
-                <EngineerSearchPanel activeFilters={activeFilters} scope={searchScope} options={{ skills: skillOptions, availability: availabilityOptions, remote: remoteOptions, prefecture: prefectureOptions, skillMode: skillModeOptions }}>
+                <EngineerSearchPanel activeFilters={activeFilters} scope={searchScope} options={{ skills: skillOptions, availability: availabilityOptions, remote: remoteOptions.map((option) => ({ ...option, label: option.value === 'ONSITE_ONLY' ? t('engineers.searchPanel.onsite') : option.value === 'PARTIAL_REMOTE' ? t('engineers.searchPanel.partialRemote') : option.value === 'FULL_REMOTE' ? t('engineers.searchPanel.fullRemote') : option.label })), prefecture: prefectureOptions, skillMode: skillModeOptions }}>
                 <form
                   key={JSON.stringify(filters)}
                   className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full', searchScope && 'flex flex-col items-stretch gap-4')}
@@ -451,14 +451,14 @@ export function EngineerLedgerScreen({
                           `F-010 AC-1`「採用されるまで検索の正規化に使われない」）。 */}
                       {/* ✅ 2026-11-01（人間の指示）: 複数選択は共通部品に統一（`<select multiple>` をやめた）。
                           送信は hidden input（`name="skills"`）で、query の形は変わらない。 */}
-                      <FormMultiSelect
+                      {searchScope ? <EngineerSkillsFilter options={skillOptions} initial={filters.skills} label={messages.searchSkills} /> : <FormMultiSelect
                         name="skills"
                         options={skillOptions}
                         defaultValues={filters.skills}
                         label={messages.searchSkills}
                         testIdPrefix="engineer-list-filter-"
                         testId="engineer-list-filter-skills"
-                      />
+                      />}
                       {/* 🔴 `FieldDescription`（`<p>`）にしない —— `<label>` の中に `<p>` を入れると
                           説明文が入力欄のアクセシブル名に畳み込まれる（`@ses/ui` の `field.tsx` 冒頭）。 */}
                       {!searchScope ? <span className="text-xs text-fg-muted">{messages.searchSkillsHint}</span> : null}
@@ -504,7 +504,13 @@ export function EngineerLedgerScreen({
                         ))}
                       </Select>
                     </Field> }
-                      <div className={cn(searchScope ? 'grid grid-cols-2 gap-2' : 'contents')}>
+                    {searchScope ? <Field as="div" labelClassName="text-xs text-fg-muted" label={t('projects.list.search.price')}>
+                      <div className="flex items-center gap-2">
+                        <Input type="number" name="priceMin" min={0} step={10000} defaultValue={filters.priceMin} placeholder={t('projects.list.search.priceMinPlaceholder')} aria-label={messages.searchPriceMin} data-testid="engineer-list-filter-price-min" />
+                        <span aria-hidden className="shrink-0 text-body text-fg-muted">{t('projects.list.search.priceRangeSeparator')}</span>
+                        <Input type="number" name="priceMax" min={0} step={10000} defaultValue={filters.priceMax} placeholder={t('projects.list.search.priceMaxPlaceholder')} aria-label={messages.searchPriceMax} data-testid="engineer-list-filter-price-max" />
+                      </div>
+                    </Field> : <div className={cn(searchScope ? 'grid grid-cols-2 gap-2' : 'contents')}>
                     <Field label={messages.searchPriceMin}>
                       <Input
                         type="number"
@@ -525,7 +531,7 @@ export function EngineerLedgerScreen({
                         data-testid="engineer-list-filter-price-max"
                       />
                     </Field>
-                      </div>
+                      </div> }
                     {searchScope ? <Field as="div" labelClassName="text-xs text-fg-muted" label={t('engineers.searchPanel.residence')}>
                       <EngineerFilterSelect name="residencePrefecture" initial={filters.residencePrefecture ?? ''} label={t('engineers.searchPanel.residence')} options={prefectureOptions} testId="engineer-list-filter-residence" />
                     </Field> : <Field label={messages.searchPrefecture}>
