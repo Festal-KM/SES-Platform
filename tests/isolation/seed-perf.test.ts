@@ -274,9 +274,9 @@ describe('③ 検索が当たる分布（F-009 / F-015）と、transition() を�
     const visibilities = await admin.projectVisibility.findMany({ where, select: { reviewGate: { select: { targetType: true, piiVerdict: true, targetId: true } }, projectId: true } });
     expect(visibilities.length).toBeGreaterThan(published);
     for (const visibility of visibilities) {
-      expect(visibility.reviewGate.targetType).toBe('PROJECT_PUBLISH');
-      expect(visibility.reviewGate.piiVerdict).toBe('PASS');
-      expect(visibility.reviewGate.targetId).toBe(visibility.projectId);
+      expect(visibility.reviewGate?.targetType).toBe('PROJECT_PUBLISH');
+      expect(visibility.reviewGate?.piiVerdict).toBe('PASS');
+      expect(visibility.reviewGate?.targetId).toBe(visibility.projectId);
     }
   });
 

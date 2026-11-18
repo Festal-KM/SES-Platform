@@ -258,7 +258,7 @@ describe('🔴 docs/05 §4.8: 書き込み系（#26 / #28）の応答も「境�
     //    `docs/05` §11.11「T-12-10 の実装の決着」③⑧ / `BR-18`）。
     expectTypeOf<
       Extract<projectSchemas.ProjectRecheckOutcome, { queued: false }>['reason']
-    >().toEqualTypeOf<'NOT_PUBLISHED' | 'PUBLIC_FIELDS_UNCHANGED'>();
+    >().toEqualTypeOf<'NOT_PUBLISHED' | 'PUBLIC_FIELDS_UNCHANGED' | 'NOT_REQUIRED'>();
   });
 
   it('🔴 #28 の応答は `reviewGateId` / `verdict` だけで、公開先の件数を返さない', () => {
@@ -270,7 +270,7 @@ describe('🔴 docs/05 §4.8: 書き込み系（#26 / #28）の応答も「境�
       readonly verdict: projectVisibility.ProjectVisibilityVerdict;
     }>();
     expectTypeOf<projectVisibility.ProjectVisibilityVerdict>().toEqualTypeOf<
-      'PENDING_GATE' | 'NO_PUBLISH_REQUESTED'
+      'PUBLISHED' | 'NO_PUBLISH_REQUESTED'
     >();
   });
 });

@@ -228,14 +228,14 @@ export function projectFormMessages(): ProjectFormMessages {
     internalUnitPriceLabel: t('projects.basic.purchaseUnitPrice'),
 
     publicSummaryLabel: t('projects.basic.businessOverview'),
-    publicSummaryNote: t('projects.publicSummary.note'),
+    publicSummaryNote: t('projects.publicSummary.immediateNote'),
 
     // 🔴 T-12-10（`docs/04` 改訂 14 §S-012 / `F-014 AC-6`）。
     publicFieldNotice: t('projects.publicField.notice'),
     recheckPublishedToPrefix: t('projects.recheckNotice.publishedToPrefix'),
     recheckPublishedToSuffix: t('projects.recheckNotice.publishedToSuffix'),
-    recheckWillRun: t('projects.recheckNotice.willRun'),
-    recheckWillNotRun: t('projects.recheckNotice.willNotRun'),
+    recheckWillRun: t('projects.recheckNotice.immediateChange'),
+    recheckWillNotRun: t('projects.recheckNotice.reviewContent'),
     savedRecheckQueued: t('projects.saved.recheckQueued'),
 
     visibilityNotice: t('projects.visibility.notice'),

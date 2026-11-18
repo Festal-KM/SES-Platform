@@ -278,7 +278,7 @@ assertNoIsolationKeys(Object.keys(updateProjectBodySchema.shape), 'updateProject
  */
 export type ProjectRecheckOutcome =
   | { readonly queued: true; readonly reason?: never }
-  | { readonly queued: false; readonly reason: 'NOT_PUBLISHED' | 'PUBLIC_FIELDS_UNCHANGED' };
+  | { readonly queued: false; readonly reason: 'NOT_PUBLISHED' | 'PUBLIC_FIELDS_UNCHANGED' | 'NOT_REQUIRED' };
 
 /** `POST /api/projects` / `PATCH /api/projects/{id}`（#26）の応答（docs/05 §6.4 #26）。 */
 export type ProjectMutationView = {

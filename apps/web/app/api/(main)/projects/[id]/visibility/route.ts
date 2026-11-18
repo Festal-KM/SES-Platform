@@ -15,9 +15,7 @@
 import { requireExecutable, requireNotViewer, requireRole } from '../../../../../../lib/api/guards';
 import { withApiRoute } from '../../../../../../lib/api/withApiRoute';
 import { readRequestMeta } from '../../../../../../lib/auth/session';
-import { requireGateRunJobQueue } from '../../../../../../lib/jobs/gate-run-queue';
 import { PROJECT_EDITOR_ROLES } from '../../../../../../lib/projects/policy';
-import { createProjectPublishGate } from '../../../../../../lib/projects/publish-gate';
 import { updateProjectVisibility } from '../../../../../../lib/projects/visibility';
 import {
   projectParamsSchema,
@@ -27,12 +25,7 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/**
- * 🔴 応答は `{ reviewGateId, verdict }`（docs/05 §6.4 #28）。
- *    **`verdict` は「公開が成立したか」ではない** —— ゲートは非同期であり（§12.1 のシーケンス）、
- *    この応答時点では合否が存在しない。`PENDING_GATE` は「公開の要求をゲートに預けた ＝
- *    **まだ公開されていない**」を意味する（`lib/projects/visibility.ts`）。
- */
+/** 公開範囲の変更を即時反映する。 */
 export const PUT = withApiRoute(
   {
     label: 'PUT /api/projects/{id}/visibility',
@@ -49,10 +42,7 @@ export const PUT = withApiRoute(
         params.id,
         body,
         { ipAddress: meta.ipAddress, now },
-        // 🔴 T-07-09: 実装の選択は起動時 DI の 1 箇所（`lib/db/bootstrap.ts`）で終わっている。
-        //    未登録なら `requireGateRunJobQueue()` が例外を投げ、**公開要求ごと失敗する** ——
-        //    黙って保留にすると「公開したのに永久に届かない」状態になる（`CLAUDE.md` §11.1）。
-        { gate: createProjectPublishGate({ queue: requireGateRunJobQueue(), now }) },
+
       ),
     );
   },

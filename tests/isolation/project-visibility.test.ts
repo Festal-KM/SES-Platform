@@ -156,7 +156,7 @@ type CreatedBody = { readonly id: string };
 type ErrorBody = { readonly error: { readonly code: string } };
 type VisibilityBody = {
   readonly reviewGateId: string | null;
-  readonly verdict: 'PENDING_GATE' | 'NO_PUBLISH_REQUESTED';
+  readonly verdict: 'PUBLISHED' | 'NO_PUBLISH_REQUESTED';
 };
 type ListBody = {
   /** 🔴 `visibleToCount` は**ホストの応答にしか無い**（`PartnerProjectView` は `?: never`）。 */
@@ -463,71 +463,34 @@ describe('🔴 F-014 AC-2: 既定は誰にも公開されない（「全公開�
   });
 });
 
-describe('🔴 T-06-06 → T-07-09: 公開の要求はゲートに預けられ、その場では成立しない', () => {
-  it('公開先を追加しても `PENDING_GATE` を返し、行が 1 件も増えない', async () => {
+describe('案件の公開先を即時に反映する', () => {
+  it('選択した公開先に即時反映し、品質検査を起動しない', async () => {
     const host = await ctxOf(HOST_1, 'SALES');
-    const id = await createdIdOf(await postProject(host, { name: `${MARKER}保留` }));
-
+    const id = await createdIdOf(await postProject(host, { name: `${MARKER}即時` }));
     const response = await putVisibility(host, id, [PARTNER_1_1.partnerCompanyId]);
-
     expect(response.status).toBe(200);
-    const body = (await response.json()) as VisibilityBody;
-    expect(body.verdict).toBe('PENDING_GATE');
-    // 🔴 `review_gates` には確定した行しか存在できないので、ここでは ID を返せない。
-    expect(body.reviewGateId).toBeNull();
-    expect(await visibilityRows(id)).toHaveLength(0);
+    expect((await response.json()).verdict).toBe('PUBLISHED');
+    const rows = await visibilityRows(id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.publishedBy).toBe(TENANT_1.hostUserId);
+    expect(rows[0]?.reviewGateId).toBeNull();
+    expect(await admin.projectPublishRequest.count({ where: { projectId: id } })).toBe(0);
+    expect(enqueuedGateJobs).toHaveLength(0);
+    const partner = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+    expect((await getProject(partner, id)).status).toBe(200);
+    expect((await getProjects(partner)).items.map((item) => item.id)).toContain(id);
   });
 
-  it('🔴 T-07-09: 「これから公開する相手」が公開要求として残り、`gate.run` が 1 本積まれる', async () => {
-    const host = await ctxOf(HOST_1, 'SALES');
-    const id = await createdIdOf(await postProject(host, { name: `${MARKER}要求` }));
-
-    await putVisibility(host, id, [PARTNER_1_1.partnerCompanyId]);
-
-    const requests = await admin.projectPublishRequest.findMany({ where: { projectId: id } });
-    expect(requests).toHaveLength(1);
-    expect(requests[0]?.partnerCompanyIds).toEqual([PARTNER_1_1.partnerCompanyId]);
-    // 🔴 実施者は操作した本人（`ProjectVisibility.published_by` になる値）。
-    expect(requests[0]?.requestedBy).toBe(TENANT_1.hostUserId);
-
-    // 🔴 payload の `contentHash` は公開要求に残した値と**同じ 1 つ**である
-    //    （`jobId` の材料であり、ジョブ側が突き合わせる鍵でもある）。
-    expect(enqueuedGateJobs).toEqual([
-      {
-        tenantId: TENANT_1.tenantId,
-        targetType: 'PROJECT_PUBLISH',
-        targetId: id,
-        contentHash: requests[0]?.contentHash,
-      },
-    ]);
-  });
-
-  it('🔴 T-07-09: 同じ案件への再要求は行を積み上げず、1 行を差し替える', async () => {
+  it('公開先の再設定は最後に選択した集合を反映する', async () => {
     const host = await ctxOf(HOST_1, 'SALES');
     const id = await createdIdOf(await postProject(host, { name: `${MARKER}差し替え` }));
-
     await putVisibility(host, id, [PARTNER_1_1.partnerCompanyId]);
     await putVisibility(host, id, [PARTNER_1_1.partnerCompanyId, PARTNER_1_2.partnerCompanyId]);
-
-    const requests = await admin.projectPublishRequest.findMany({ where: { projectId: id } });
-    expect(requests).toHaveLength(1);
-    expect([...(requests[0]?.partnerCompanyIds ?? [])].sort()).toEqual(
+    const rows = await visibilityRows(id);
+    expect(rows.filter(row => row.revokedAt === null).map(row => row.partnerCompanyId).sort()).toEqual(
       [PARTNER_1_1.partnerCompanyId, PARTNER_1_2.partnerCompanyId].sort(),
     );
-    // 🔴 公開先が変われば内容も変わる（＝ 別の `jobId`。古い検査結果を使い回さない）。
-    expect(enqueuedGateJobs).toHaveLength(2);
-    expect(enqueuedGateJobs[0]?.contentHash).not.toBe(enqueuedGateJobs[1]?.contentHash);
-    expect(enqueuedGateJobs[1]?.contentHash).toBe(requests[0]?.contentHash);
-  });
-
-  it('🔴 保留された公開先には、案件が依然として現れない（`F-014 AC-1`）', async () => {
-    const host = await ctxOf(HOST_1, 'SALES');
-    const id = await createdIdOf(await postProject(host, { name: `${MARKER}保留-見えない` }));
-    await putVisibility(host, id, [PARTNER_1_1.partnerCompanyId]);
-
-    const partner = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
-    expect((await getProject(partner, id)).status).toBe(404);
-    expect((await getProjects(partner)).items.map((item) => item.id)).not.toContain(id);
+    expect(enqueuedGateJobs).toHaveLength(0);
   });
 
   it('公開先が 1 社も増えないとき（解除のみ）は `NO_PUBLISH_REQUESTED`（ゲートを起動しない）', async () => {
@@ -603,10 +566,10 @@ describe('🔴 F-014 AC-5: 公開範囲の変更が監査ログに残る', () =>
     const summary = summaryOf(rows[0] ?? { summary: null });
     expect(summary['before']).toBe(PARTNER_1_1.partnerCompanyId);
     // 🔴 追加はゲート待ちなので「変更後の公開先」には入らない（`pending` に出る）。
-    expect(summary['after']).toBe('');
-    expect(summary['pending']).toBe(PARTNER_1_2.partnerCompanyId);
+    expect(summary['after']).toBe(PARTNER_1_2.partnerCompanyId);
+    expect(summary['pending']).toBe('');
     expect(summary['revoked']).toBe(PARTNER_1_1.partnerCompanyId);
-    expect(summary['verdict']).toBe('PENDING_GATE');
+    expect(summary['verdict']).toBe('PUBLISHED');
   });
 
   it('🔴 `summary` に社名・案件名を載せない（運営者の横断検索に出るため。docs/05 §16.2）', async () => {
@@ -931,14 +894,14 @@ describe('🔴 T-06-07 / F-014 処理④: 解除で一覧から消えるが、�
     ]);
 
     // 🔴 再公開も「境界を広げる操作」であり、ゲートを通るまで行にならない（`F-014 AC-3`）。
-    expect(((await response.json()) as VisibilityBody).verdict).toBe('PENDING_GATE');
+    expect(((await response.json()) as VisibilityBody).verdict).toBe('PUBLISHED');
     const rows = await visibilityRows(TENANT_1.publishedProjectId);
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.revokedAt).not.toBeNull();
+    expect(rows[0]?.revokedAt).toBeNull();
     // 🔴 SP-07 がゲート通過後に行を作るときは、`@@unique([tenantId, projectId, partnerCompanyId])`
     //    があるため **既存行の `revoked_at` を戻す UPDATE** で行う（INSERT は一意制約に当たる）。
     const partner = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
-    expect((await getProject(partner, TENANT_1.publishedProjectId)).status).toBe(404);
+    expect((await getProject(partner, TENANT_1.publishedProjectId)).status).toBe(200);
   });
 });
 
@@ -1030,5 +993,39 @@ describe('🔴 S-013 の選択肢はホスト専用（他社の社名を取引�
     const mapped = toAppError(error);
     expect(mapped).toBeInstanceOf(NotFoundError);
     expect(mapped.httpStatus).toBe(404);
+  });
+});
+
+
+describe('案件の即時公開', () => {
+  it('選択した取引先に即時公開し、他の取引先には見せず、取り消しも即時反映する', async () => {
+    const host = await ctxOf(HOST_1, 'SALES');
+    const id = await createdIdOf(await postProject(host, { name: `${MARKER}即時公開` }));
+    const response = await putVisibility(host, id, [PARTNER_1_1.partnerCompanyId]);
+    expect(response.status).toBe(200);
+    expect((await response.json()).verdict).toBe('PUBLISHED');
+    expect(await admin.projectPublishRequest.count({ where: { projectId: id } })).toBe(0);
+    expect(enqueuedGateJobs).toHaveLength(0);
+    expect((await getProject(await ctxOf(PARTNER_USER_1, 'PARTNER_SALES'), id)).status).toBe(200);
+    expect((await getProject(await ctxOf(PARTNER_USER_2, 'PARTNER_SALES'), id)).status).toBe(404);
+    expect((await putVisibility(host, id, [])).status).toBe(200);
+    expect((await getProject(await ctxOf(PARTNER_USER_1, 'PARTNER_SALES'), id)).status).toBe(404);
+  });
+});
+
+
+describe('即時公開時の取引先間の情報分離', () => {
+  it('別の取引先名を含む案件名が公開先の詳細・一覧に現れない', async () => {
+    const other = await admin.partnerCompany.findUniqueOrThrow({
+      where: { id: PARTNER_1_2.partnerCompanyId }, select: { name: true },
+    });
+    const host = await ctxOf(HOST_1, 'SALES');
+    const id = await createdIdOf(await postProject(host, { name: `${MARKER}${other.name}案件` }));
+    expect((await putVisibility(host, id, [PARTNER_1_1.partnerCompanyId])).status).toBe(200);
+    const partner = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+    const detail = await getProject(partner, id);
+    expect(detail.status).toBe(200);
+    expect(JSON.stringify(await detail.json())).not.toContain(other.name);
+    expect(JSON.stringify(await getProjects(partner))).not.toContain(other.name);
   });
 });
